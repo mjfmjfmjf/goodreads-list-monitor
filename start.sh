@@ -1,3 +1,3 @@
 nvm use 18
-npm run set-user 970632
+npm run set-user YOUR_GOODREADS_USER_ID
 

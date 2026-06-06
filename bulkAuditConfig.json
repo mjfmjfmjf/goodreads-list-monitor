@@ -667,59 +667,75 @@
   },
   {
     "id": "132768",
-    "nickname": "Best Popular Epic Fa",
+    "nickname": "Best Popular Epic Fantasy",
     "officialTitle": "Best Popular Epic Fantasy Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/132768.Best_Popular_Epic_Fantasy_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 25000
+    }
   },
   {
     "id": "128814",
-    "nickname": "Best Popular Genetic",
+    "nickname": "Best Popular Genetics",
     "officialTitle": "Best Popular Genetics Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/128814.Best_Popular_Genetics_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min:" 500
+    }
   },
   {
     "id": "139840",
-    "nickname": "Best Popular Geograp",
+    "nickname": "Best Popular Geography",
     "officialTitle": "Best Popular Geography Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/139840.Best_Popular_Geography_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 500
+    }
   },
   {
     "id": "143932",
     "nickname": "Best Popular Geology",
     "officialTitle": "Best Popular Geology Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/143932.Best_Popular_Geology_Books_on_Goodreads_",
-    "criteria": {}
+    "criteria": {
+       "min": 500
+    }
   },
   {
     "id": "156482",
-    "nickname": "Best Popular Histori",
+    "nickname": "Best Popular Historical Fiction",
     "officialTitle": "Best Popular Historical Fiction Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/156482.Best_Popular_Historical_Fiction_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 100000
+    }
   },
   {
     "id": "108393",
     "nickname": "Best Popular History",
     "officialTitle": "Best Popular History Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/108393.Best_Popular_History_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 10000
+    }
   },
   {
     "id": "141863",
     "nickname": "Best Popular Judaism",
     "officialTitle": "Best Popular Judaism Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/141863.Best_Popular_Judaism_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 200
+    }
   },
   {
     "id": "128894",
-    "nickname": "Best Popular Languag",
+    "nickname": "Best Popular Language",
     "officialTitle": "Best Popular Language Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/128894.Best_Popular_Language_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 500
+    }
   },
   {
     "id": "149946",
@@ -730,35 +746,43 @@
   },
   {
     "id": "108216",
-    "nickname": "Best Popular Manga B",
+    "nickname": "Best Popular Manga",
     "officialTitle": "Best Popular Manga Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/108216.Best_Popular_Manga_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 5000
+    }
   },
   {
     "id": "152647",
-    "nickname": "Best Popular Medicin",
+    "nickname": "Best Popular Medicine",
     "officialTitle": "Best Popular Medicine Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/152647.Best_Popular_Medicine_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "142359",
-    "nickname": "Best Popular Middle ",
+    "nickname": "Best Popular Middle School",
     "officialTitle": "Best Popular Middle School Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/142359._Best_Popular_Middle_School_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 500
+    }
   },
   {
     "id": "129050",
-    "nickname": "Best Popular Militar",
+    "nickname": "Best Popular Military Science Fiction",
     "officialTitle": "Best Popular Military Science Fiction Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/129050.Best_Popular_Military_Science_Fiction_Books_on_Goodreads_",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "109421",
-    "nickname": "Best Popular Music B",
+    "nickname": "Best Popular Music Books",
     "officialTitle": "Best Popular Music Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/109421.Best_Popular_Music_Books_on_Goodreads",
     "criteria": {}
@@ -2363,7 +2387,7 @@
   },
   {
     "id": "116760",
-    "nickname": "The Best of the New ",
+    "nickname": "The Best of the New Mutants",
     "officialTitle": "The Best of the New Mutants",
     "url": "https://www.goodreads.com/list/show/116760.The_Best_of_the_New_Mutants",
     "criteria": {}
@@ -2377,28 +2401,32 @@
   },
   {
     "id": "172262",
-    "nickname": "The Most Popular Bib",
+    "nickname": "The Most Popular Bibliophilia",
     "officialTitle": "The Most Popular Bibliophilia Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/172262.The_Most_Popular_Bibliophilia_Books_on_Goodreads",
     "criteria": {}
   },
   {
     "id": "35857",
-    "nickname": "The Most Popular Fan",
+    "nickname": "The Most Popular Fantasy",
     "officialTitle": "The Most Popular Fantasy on Goodreads",
     "url": "https://www.goodreads.com/list/show/35857.The_Most_Popular_Fantasy_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 100000
+    }
   },
   {
     "id": "92581",
-    "nickname": "The Most Popular Hor",
+    "nickname": "The Most Popular Horror",
     "officialTitle": "The Most Popular Horror on Goodreads",
     "url": "https://www.goodreads.com/list/show/92581.The_Most_Popular_Horror_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 50000
+    }
   },
   {
     "id": "195574",
-    "nickname": "The Most Popular Mys",
+    "nickname": "The Most Popular Mystery",
     "officialTitle": "The Most Popular Mysteries on Goodreads",
     "url": "https://www.goodreads.com/list/show/195574.The_Most_Popular_Mysteries_on_Goodreads",
     "criteria": {
@@ -2407,31 +2435,37 @@
   },
   {
     "id": "157772",
-    "nickname": "The Most Popular Neu",
+    "nickname": "The Most Popular Neuroscience",
     "officialTitle": "The Most Popular Neuroscience Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/157772.The_Most_Popular_Neuroscience_Books_on_Goodreads",
     "criteria": {}
   },
   {
     "id": "157453",
-    "nickname": "The Most Popular New",
+    "nickname": "The Most Popular New Adult",
     "officialTitle": "The Most Popular New Adult Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/157453.The_Most_Popular_New_Adult_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 40000
+    }
   },
   {
     "id": "36384",
-    "nickname": "The Most Popular Non",
+    "nickname": "The Most Popular Non-Fiction",
     "officialTitle": "The Most Popular Non-Fiction on Goodreads",
     "url": "https://www.goodreads.com/list/show/36384.The_Most_Popular_Non_Fiction_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 100000
+    }
   },
   {
     "id": "159497",
-    "nickname": "The Most Popular Sof",
+    "nickname": "The Most Popular Software Architecture",
     "officialTitle": "The Most Popular Software Architecture Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/159497.The_Most_Popular_Software_Architecture_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 50
+    }
   },
   {
     "id": "200988",
@@ -2449,10 +2483,12 @@
   },
   {
     "id": "93222",
-    "nickname": "The Most Popular You",
+    "nickname": "The Most Popular Young Adult",
     "officialTitle": "The Most Popular Young Adult Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/93222.The_Most_Popular_Young_Adult_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 100000
+    }
   },
   {
     "id": "40972",

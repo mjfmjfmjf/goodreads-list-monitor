@@ -25,6 +25,15 @@ A production-grade CLI tool to monitor, audit, and discover books on Goodreads L
    }
    ```
 
+## Setup
+
+1. **Clone the repository.**
+2. **Install dependencies**: `npm install`
+3. **Configure**: 
+   - Copy `config.example.json` to `config.json`.
+   - Update `config.json` with your Goodreads session cookie (found in your browser's dev tools while logged into Goodreads).
+4. **Initialize User**: Update `start.sh` with your Goodreads User ID and run `./start.sh`.
+
 ## Usage
 
 ### 1. Daily Monitoring
