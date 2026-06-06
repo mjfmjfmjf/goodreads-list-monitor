@@ -1,0 +1,214 @@
+{
+  "tag": "fantasy",
+  "lists": [
+    {
+      "nickname": "pre-tolkien",
+      "officialTitle": "Pre-Tolkien Fantasy",
+      "id": "2365",
+      "url": "https://www.goodreads.com/list/show/2365",
+      "criteria": {
+        "maxYear": 1936
+      }
+    },
+    {
+      "nickname": "1930s",
+      "officialTitle": "Best Fantasy of the 30s",
+      "id": "79774",
+      "url": "https://www.goodreads.com/list/show/79774",
+      "criteria": {
+        "minYear": 1930,
+        "maxYear": 1939
+      }
+    },
+    {
+      "nickname": "1940s",
+      "officialTitle": "Best Fantasy of the 40s",
+      "id": "79807",
+      "url": "https://www.goodreads.com/list/show/79807",
+      "criteria": {
+        "minYear": 1940,
+        "maxYear": 1949
+      }
+    },
+    {
+      "nickname": "1950s",
+      "officialTitle": "Best Fantasy of the 50s",
+      "id": "75483",
+      "url": "https://www.goodreads.com/list/show/75483",
+      "criteria": {
+        "minYear": 1950,
+        "maxYear": 1959
+      }
+    },
+    {
+      "nickname": "1960s",
+      "officialTitle": "Best Fantasy of the 60s",
+      "id": "75425",
+      "url": "https://www.goodreads.com/list/show/75425",
+      "criteria": {
+        "minYear": 1960,
+        "maxYear": 1969
+      }
+    },
+    {
+      "nickname": "1970s",
+      "officialTitle": "Best Fantasy of the 70s",
+      "id": "1116",
+      "url": "https://www.goodreads.com/list/show/1116",
+      "criteria": {
+        "minYear": 1970,
+        "maxYear": 1979
+      }
+    },
+    {
+      "nickname": "1980s",
+      "officialTitle": "Best Fantasy of the 80s",
+      "id": "1117",
+      "url": "https://www.goodreads.com/list/show/1117",
+      "criteria": {
+        "minYear": 1980,
+        "maxYear": 1989
+      }
+    },
+    {
+      "nickname": "1990s",
+      "officialTitle": "Best Fantasy of the 90s",
+      "id": "1118",
+      "url": "https://www.goodreads.com/list/show/1118",
+      "criteria": {
+        "minYear": 1990,
+        "maxYear": 1999
+      }
+    },
+    {
+      "nickname": "2000s",
+      "officialTitle": "Best Fantasy of the 2000s",
+      "id": "38609",
+      "url": "https://www.goodreads.com/list/show/38609",
+      "criteria": {
+        "minYear": 2000,
+        "maxYear": 2009
+      }
+    },
+    {
+      "nickname": "2010s",
+      "officialTitle": "Best Fantasy of the 2010s",
+      "id": "38633",
+      "url": "https://www.goodreads.com/list/show/38633",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2020s",
+      "officialTitle": "Best Fantasy of the 2020s",
+      "id": "146629",
+      "url": "https://www.goodreads.com/list/show/146629",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2029
+      }
+    },
+    {
+      "nickname": "More than 100000",
+      "officialTitle": "The Most Popular Fantasy on Goodreads",
+      "id": "35857",
+      "url": "https://www.goodreads.com/list/show/35857",
+      "criteria": {
+        "min": 100000
+      }
+    },
+    {
+      "nickname": "50000 to 99999",
+      "officialTitle": "Popular Fantasy on Goodreads with  between 50000 and 99999 ratings",
+      "id": "46916",
+      "url": "https://www.goodreads.com/list/show/46916",
+      "criteria": {
+        "min": 50000,
+        "max": 99999
+      }
+    },
+    {
+      "nickname": "25000 to 49999",
+      "officialTitle": "Popular Fantasy on Goodreads with between 25000 and 49999 ratings",
+      "id": "74893",
+      "url": "https://www.goodreads.com/list/show/74893",
+      "criteria": {
+        "min": 25000,
+        "max": 49999
+      }
+    },
+    {
+      "nickname": "10000 to 24999",
+      "officialTitle": "Popular Fantasy on Goodreads with between 10000 and 24999 ratings",
+      "id": "76860",
+      "url": "https://www.goodreads.com/list/show/76860",
+      "criteria": {
+        "min": 10000,
+        "max": 24999
+      }
+    },
+    {
+      "nickname": "1000 to 9999",
+      "officialTitle": "Popular Fantasy on Goodreads with between 1000 and 9999 ratings",
+      "id": "80066",
+      "url": "https://www.goodreads.com/list/show/80066",
+      "criteria": {
+        "min": 1000,
+        "max": 9999
+      }
+    },
+    {
+      "nickname": "100 to 999",
+      "officialTitle": "Popular Fantasy on Goodreads with between 100 and 999 ratings",
+      "id": "79318",
+      "url": "https://www.goodreads.com/list/show/79318",
+      "criteria": {
+        "min": 100,
+        "max": 999
+      }
+    },
+    {
+      "nickname": "Less than 100",
+      "officialTitle": "Best Fantasy on Goodreads with less than 100 ratings",
+      "id": "76987",
+      "url": "https://www.goodreads.com/list/show/76987",
+      "criteria": {
+        "max": 100
+      }
+    },
+    {
+      "nickname": "Best Fantasy Books of the 21st Century",
+      "officialTitle": "Best Fantasy Books of the 21st Century",
+      "id": "88",
+      "url": "https://www.goodreads.com/list/show/88",
+      "criteria": {
+        "minYear": 2000,
+        "maxYear": 2099
+      }
+    },
+    {
+      "nickname": "Best Fantasy of the 20th Century",
+      "officialTitle": "Best Fantasy of the 20th Century",
+      "id": "115751",
+      "url": "https://www.goodreads.com/list/show/115751",
+      "criteria": {
+        "minYear": 1900,
+        "maxYear": 1999,
+        "min": 1000
+      }
+    },
+    {
+      "nickname": "Best Forgotten Fantasy of the 20th Century",
+      "officialTitle": "Best Forgotten Fantasy of the 20th Century",
+      "id": "115805",
+      "url": "https://www.goodreads.com/list/show/115805",
+      "criteria": {
+        "minYear": 1900,
+        "maxYear": 1999,
+        "max": 999
+      }
+    }
+  ]
+}

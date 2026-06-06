@@ -1,0 +1,151 @@
+{
+  "tag": "biography",
+  "lists": [
+    {
+      "nickname": "Best Memory/Biography/autobiography",
+      "officialTitle": "Best Biography/Memoir/Autobiography",
+      "id": "82189",
+      "url": "https://www.goodreads.com/list/show/281",
+      "criteria": {
+        "min": 100000
+      }
+    },
+    {
+      "nickname": "Biography better than fiction",
+      "officialTitle": "Biography and Memoirs that are better than fiction",
+      "id": "82189",
+      "url": "https://www.goodreads.com/list/show/255573",
+      "criteria": {
+        "min": 90000
+      }
+    },
+    {
+      "nickname": "50,000 or more",
+      "officialTitle": "Most Popular Biography/Memoir/Autobiography on Goodreads, 50,000 + ratings",
+      "id": "82189",
+      "url": "https://www.goodreads.com/list/show/82189",
+      "criteria": {
+        "min": 50000
+      }
+    },
+    {
+      "nickname": "25,000 to 49,999",
+      "officialTitle": "Biography/Memoir/Autobiography on Goodreads with 25,000 to 49,999 ratings",
+      "id": "83395",
+      "url": "https://www.goodreads.com/list/show/83395",
+      "criteria": {
+        "min": 25000,
+        "max": 49999
+      }
+    },
+    {
+      "nickname": "10,000 to 24,999",
+      "officialTitle": "Biography/Memoir/Autobiography on Goodreads with 10,000 to 24,999 ratings",
+      "id": "83396",
+      "url": "https://www.goodreads.com/list/show/83396",
+      "criteria": {
+        "min": 10000,
+        "max": 24999
+      }
+    },
+    {
+      "nickname": "5,000 to 9,999",
+      "officialTitle": "Biography/Memoir/Autobiography on Goodreads with 5,000 to 9,999 ratings",
+      "id": "83398",
+      "url": "https://www.goodreads.com/list/show/83398",
+      "criteria": {
+        "min": 5000,
+        "max": 9999
+      }
+    },
+    {
+      "nickname": "2,500 to 4,999",
+      "officialTitle": "Biography/Autobiography/Memoirs with 2500 and 4999 ratings on Goodreads",
+      "id": "84056",
+      "url": "https://www.goodreads.com/list/show/84056",
+      "criteria": {
+        "min": 2500,
+        "max": 4999
+      }
+    },
+    {
+      "nickname": "1,500 to 2,499",
+      "officialTitle": "Biography/Autobiography/Memoirs with 1500 to 2499 ratings on Goodreads",
+      "id": "84053",
+      "url": "https://www.goodreads.com/list/show/84053",
+      "criteria": {
+        "min": 1500,
+        "max": 2499
+      }
+    },
+    {
+      "nickname": "1,000 to 1,499",
+      "officialTitle": "Biography/Autobiography/Memoirs with 1,000 to 1499 ratings on Goodreads",
+      "id": "84054",
+      "url": "https://www.goodreads.com/list/show/84054",
+      "criteria": {
+        "min": 1000,
+        "max": 1499
+      }
+    },
+    {
+      "nickname": "500 to 999",
+      "officialTitle": "Biography/Memoir/Autobiography on Goodreads with 500 to 999 ratings",
+      "id": "84055",
+      "url": "https://www.goodreads.com/list/show/84055",
+      "criteria": {
+        "min": 500,
+        "max": 999
+      }
+    },
+    {
+      "nickname": "less than 500",
+      "officialTitle": "Great Biographies/Autobiographies/Memoirs with under 500 ratings on Goodreads",
+      "id": "83399",
+      "url": "https://www.goodreads.com/list/show/83399",
+      "criteria": {
+        "max": 500
+      }
+    },
+    {
+      "nickname": "2021",
+      "officialTitle": "Biography Published in Year: 2021",
+      "id": "157669",
+      "url": "https://www.goodreads.com/list/show/157669",
+      "criteria": {
+        "minYear": 2021,
+        "maxYear": 2021
+      }
+    },
+    {
+      "nickname": "2020",
+      "officialTitle": "Biography Published in Year: 2020",
+      "id": "135608",
+      "url": "https://www.goodreads.com/list/show/135608",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2020
+      }
+    },
+    {
+      "nickname": "2019",
+      "officialTitle": "Biography Published in Year: 2019",
+      "id": "125377",
+      "url": "https://www.goodreads.com/list/show/125377",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2018",
+      "officialTitle": "Biography Published in Year: 2018",
+      "id": "125145",
+      "url": "https://www.goodreads.com/list/show/125145",
+      "criteria": {
+        "minYear": 2018,
+        "maxYear": 2018
+      }
+    }
+  ]
+}

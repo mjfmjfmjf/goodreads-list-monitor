@@ -1,0 +1,364 @@
+{
+  "tag": "science-fiction",
+  "lists": [
+    {
+      "nickname": "BestSf21stCent",
+      "officialTitle": "Best Science Fiction of the 21st Century",
+      "id": "4893",
+      "url": "https://www.goodreads.com/list/show/4893",
+      "criteria": {
+        "minYear": 2000,
+        "min": 1000
+      }
+    },
+    {
+      "nickname": "BestSf20thCent",
+      "officialTitle": "Best Science Fiction of the 20th Century",
+      "id": "114319",
+      "url": "https://www.goodreads.com/list/show/114319",
+      "criteria": {
+        "minYear": 1900,
+        "maxYear": 1999,
+        "min": 1000
+      }
+    },
+    {
+      "nickname": "1920s",
+      "officialTitle": "Classic Science Fiction of the 1920s",
+      "id": "415656",
+      "url": "https://www.goodreads.com/list/show/415656",
+      "criteria": {
+        "minYear": 1920,
+        "maxYear": 1929
+      }
+    },
+    {
+      "nickname": "1930s",
+      "officialTitle": "Classic Science Fiction of the 1930s",
+      "id": "43374",
+      "url": "https://www.goodreads.com/list/show/43374",
+      "criteria": {
+        "minYear": 1930,
+        "maxYear": 1939
+      }
+    },
+    {
+      "nickname": "1940s",
+      "officialTitle": "Classic Science Fiction of the 1940s",
+      "id": "40744",
+      "url": "https://www.goodreads.com/list/show/40744",
+      "criteria": {
+        "minYear": 1940,
+        "maxYear": 1949
+      }
+    },
+    {
+      "nickname": "1950s",
+      "officialTitle": "Classic Science Fiction of the 1950s",
+      "id": "5152",
+      "url": "https://www.goodreads.com/list/show/5152",
+      "criteria": {
+        "minYear": 1950,
+        "maxYear": 1959
+      }
+    },
+    {
+      "nickname": "1960s",
+      "officialTitle": "Classic Science Fiction of the 1960s",
+      "id": "5158",
+      "url": "https://www.goodreads.com/list/show/5158",
+      "criteria": {
+        "minYear": 1960,
+        "maxYear": 1969
+      }
+    },
+    {
+      "nickname": "1970s",
+      "officialTitle": "Classic Science Fiction of the 1970s",
+      "id": "42069",
+      "url": "https://www.goodreads.com/list/show/42069",
+      "criteria": {
+        "minYear": 1970,
+        "maxYear": 1979
+      }
+    },
+    {
+      "nickname": "1980s",
+      "officialTitle": "Classic Science Fiction of the 1980s",
+      "id": "42417",
+      "url": "https://www.goodreads.com/list/show/42417",
+      "criteria": {
+        "minYear": 1980,
+        "maxYear": 1989
+      }
+    },
+    {
+      "nickname": "1990s",
+      "officialTitle": "Classic Science Fiction of the 1990s",
+      "id": "42875",
+      "url": "https://www.goodreads.com/list/show/42875",
+      "criteria": {
+        "minYear": 1990,
+        "maxYear": 1999
+      }
+    },
+    {
+      "nickname": "2000s",
+      "officialTitle": "Classic Science Fiction 2000-2009",
+      "id": "43319",
+      "url": "https://www.goodreads.com/list/show/43319",
+      "criteria": {
+        "minYear": 2000,
+        "maxYear": 2009
+      }
+    },
+    {
+      "nickname": "2010s",
+      "officialTitle": "Science Fiction Released in the 2010s",
+      "id": "75182",
+      "url": "https://www.goodreads.com/list/show/75182",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2020s",
+      "officialTitle": "Science Fiction Released in the 2020s",
+      "id": "146613",
+      "url": "https://www.goodreads.com/list/show/146613",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2029
+      }
+    },
+    {
+      "nickname": "2025",
+      "officialTitle": "Science Fiction Released in 2025",
+      "id": "242932",
+      "url": "https://www.goodreads.com/list/show/242932",
+      "criteria": {
+        "minYear": 2025,
+        "maxYear": 2025
+      }
+    },
+    {
+      "nickname": "2024",
+      "officialTitle": "Science Fiction Released in 2024",
+      "id": "242933",
+      "url": "https://www.goodreads.com/list/show/242933",
+      "criteria": {
+        "minYear": 2024,
+        "maxYear": 2024
+      }
+    },
+    {
+      "nickname": "2023",
+      "officialTitle": "Science Fiction Released in 2023",
+      "id": "196124",
+      "url": "https://www.goodreads.com/list/show/196124",
+      "criteria": {
+        "minYear": 2023,
+        "maxYear": 2023
+      }
+    },
+    {
+      "nickname": "2022",
+      "officialTitle": "Science Fiction Released in 2022",
+      "id": "196123",
+      "url": "https://www.goodreads.com/list/show/196123",
+      "criteria": {
+        "minYear": 2022,
+        "maxYear": 2022
+      }
+    },
+    {
+      "nickname": "2021",
+      "officialTitle": "Science Fiction Released in 2021",
+      "id": "171985",
+      "url": "https://www.goodreads.com/list/show/171985",
+      "criteria": {
+        "minYear": 2021,
+        "maxYear": 2021
+      }
+    },
+    {
+      "nickname": "2020",
+      "officialTitle": "Science Fiction Released in 2020",
+      "id": "155799",
+      "url": "https://www.goodreads.com/list/show/155799",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2020
+      }
+    },
+    {
+      "nickname": "2019",
+      "officialTitle": "Science Fiction Released in 2019",
+      "id": "155447",
+      "url": "https://www.goodreads.com/list/show/155447",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2018",
+      "officialTitle": "Science Fiction Released in 2018",
+      "id": "155440",
+      "url": "https://www.goodreads.com/list/show/155440",
+      "criteria": {
+        "minYear": 2018,
+        "maxYear": 2018
+      }
+    },
+    {
+      "nickname": "2017",
+      "officialTitle": "Science Fiction Released in 2017",
+      "id": "155402",
+      "url": "https://www.goodreads.com/list/show/155402",
+      "criteria": {
+        "minYear": 2017,
+        "maxYear": 2017
+      }
+    },
+    {
+      "nickname": "2016",
+      "officialTitle": "Science Fiction Released in 2016",
+      "id": "155261",
+      "url": "https://www.goodreads.com/list/show/155261",
+      "criteria": {
+        "minYear": 2016,
+        "maxYear": 2016
+      }
+    },
+    {
+      "nickname": "2015",
+      "officialTitle": "Science Fiction Released in 2015",
+      "id": "155296",
+      "url": "https://www.goodreads.com/list/show/155296",
+      "criteria": {
+        "minYear": 2015,
+        "maxYear": 2015
+      }
+    },
+    {
+      "nickname": "2014",
+      "officialTitle": "Science Fiction Released in 2014",
+      "id": "155307",
+      "url": "https://www.goodreads.com/list/show/155307",
+      "criteria": {
+        "minYear": 2014,
+        "maxYear": 2014
+      }
+    },
+    {
+      "nickname": "2013",
+      "officialTitle": "Science Fiction Released in 2013",
+      "id": "155343",
+      "url": "https://www.goodreads.com/list/show/155343",
+      "criteria": {
+        "minYear": 2013,
+        "maxYear": 2013
+      }
+    },
+    {
+      "nickname": "2012",
+      "officialTitle": "Science Fiction Released in 2012",
+      "id": "155378",
+      "url": "https://www.goodreads.com/list/show/155378",
+      "criteria": {
+        "minYear": 2012,
+        "maxYear": 2012
+      }
+    },
+    {
+      "nickname": "2011",
+      "officialTitle": "Science Fiction Released in 2011",
+      "id": "155391",
+      "url": "https://www.goodreads.com/list/show/155391",
+      "criteria": {
+        "minYear": 2011,
+        "maxYear": 2011
+      }
+    },
+    {
+      "nickname": "2010",
+      "officialTitle": "Science Fiction Released in 2010",
+      "id": "155401",
+      "url": "https://www.goodreads.com/list/show/155401",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2010
+      }
+    },
+    {
+      "nickname": "100,000 and more",
+      "officialTitle": "Popular Science Fiction on Goodreads with 100,000 and more ratings",
+      "id": "35776",
+      "url": "https://www.goodreads.com/list/show/35776",
+      "criteria": {
+        "min": 100000
+      }
+    },
+    {
+      "nickname": "50000 to 99999",
+      "officialTitle": "Popular Science Fiction on Goodreads with between 50,000 and 99,999 ratings",
+      "id": "138257",
+      "url": "https://www.goodreads.com/list/show/138257",
+      "criteria": {
+        "min": 50000,
+        "max": 99999
+      }
+    },
+    {
+      "nickname": "25000 to 49999",
+      "officialTitle": "Popular Science Fiction on Goodreads with between 25,000 and 49,999 ratings",
+      "id": "39287",
+      "url": "https://www.goodreads.com/list/show/39287",
+      "criteria": {
+        "min": 25000,
+        "max": 49999
+      }
+    },
+    {
+      "nickname": "10000 to 24999",
+      "officialTitle": "Popular Science Fiction on Goodreads with between 10,000 and 24,999 ratings",
+      "id": "46769",
+      "url": "https://www.goodreads.com/list/show/46769",
+      "criteria": {
+        "min": 10000,
+        "max": 24999
+      }
+    },
+    {
+      "nickname": "1000 to 9999",
+      "officialTitle": "Best Science Fiction on Goodreads with between 1000 and 9999 ratings",
+      "id": "77875",
+      "url": "https://www.goodreads.com/list/show/77875",
+      "criteria": {
+        "min": 1000,
+        "max": 9999
+      }
+    },
+    {
+      "nickname": "100 to 999",
+      "officialTitle": "Popular Science Fiction on Goodreads with between 100 and 999 ratings",
+      "id": "78128",
+      "url": "https://www.goodreads.com/list/show/78128",
+      "criteria": {
+        "min": 100,
+        "max": 999
+      }
+    },
+    {
+      "nickname": "Less than 100",
+      "officialTitle": "Popular Science Fiction on Goodreads with less than 100 ratings",
+      "id": "79670",
+      "url": "https://www.goodreads.com/list/show/79670",
+      "criteria": {
+        "max": 99
+      }
+    }
+  ]
+}

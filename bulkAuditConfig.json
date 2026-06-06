@@ -1,0 +1,2506 @@
+[
+  {
+    "id": "230634",
+    "nickname": "100 Authors With Hig",
+    "officialTitle": "100 Authors With Highest Average Rating",
+    "url": "https://www.goodreads.com/list/show/230634.100_Authors_With_Highest_Average_Rating",
+    "criteria": {}
+  },
+  {
+    "id": "232696",
+    "nickname": "100 Authors with the",
+    "officialTitle": "100 Authors with the most ratings",
+    "url": "https://www.goodreads.com/list/show/232696.100_Authors_with_the_most_ratings",
+    "criteria": {}
+  },
+  {
+    "id": "183609",
+    "nickname": "100 most frequently challenged 1990-1999",
+    "officialTitle": "100 most frequently challenged books 1990-1999",
+    "url": "https://www.goodreads.com/list/show/183609.100_most_frequently_challenged_books_1990_1999",
+    "criteria": {}
+  },
+  {
+    "id": "183671",
+    "nickname": "100 most frequently challenged 2000-2009",
+    "officialTitle": "100 most frequently challenged books 2000-2009",
+    "url": "https://www.goodreads.com/list/show/183671.100_most_frequently_challenged_books_2000_2009",
+    "criteria": {}
+  },
+  {
+    "id": "184687",
+    "nickname": "100 most frequently ",
+    "officialTitle": "100 most frequently challenged books 2010-2019",
+    "url": "https://www.goodreads.com/list/show/184687.100_most_frequently_challenged_books_2010_2019",
+    "criteria": {}
+  },
+  {
+    "id": "115949",
+    "nickname": "2000 Locus Recommend",
+    "officialTitle": "2000 Locus Recommended Reading List--Science Fiction Novels",
+    "url": "https://www.goodreads.com/list/show/115949.2000_Locus_Recommended_Reading_List_Science_Fiction_Novels",
+    "criteria": {
+      "minYear": 2000,
+      "maxYear": 2000
+    }
+  },
+  {
+    "id": "115951",
+    "nickname": "2001 Locus Recommend",
+    "officialTitle": "2001 Locus Recommended Reading List--Science Fiction Novels",
+    "url": "https://www.goodreads.com/list/show/115951.2001_Locus_Recommended_Reading_List_Science_Fiction_Novels",
+    "criteria": {
+      "minYear": 2001,
+      "maxYear": 2001
+    }
+  },
+  {
+    "id": "116003",
+    "nickname": "2002 Locus Recommend",
+    "officialTitle": "2002 Locus Recommended Reading List--Science Fiction Novels",
+    "url": "https://www.goodreads.com/list/show/116003.2002_Locus_Recommended_Reading_List_Science_Fiction_Novels",
+    "criteria": {
+      "minYear": 2002,
+      "maxYear": 2002
+    }
+  },
+  {
+    "id": "37709",
+    "nickname": "2011 Endeavour Award",
+    "officialTitle": "2011 Endeavour Award Submissions",
+    "url": "https://www.goodreads.com/list/show/37709.2011_Endeavour_Award_Submissions",
+    "criteria": {
+       "minYear": 2010,
+       "maxYear": 2010
+    }
+  },
+  {
+    "id": "35992",
+    "nickname": "2012 Endeavour Award",
+    "officialTitle": "2012 Endeavour Award Submissions",
+    "url": "https://www.goodreads.com/list/show/35992.2012_Endeavour_Award_Submissions",
+    "criteria": {
+       "minYear": 2011,
+       "maxYear": 2011
+    }
+  },
+  {
+    "id": "31757",
+    "nickname": "2013 Endeavour Award",
+    "officialTitle": "2013 Endeavour Award Submissions",
+    "url": "https://www.goodreads.com/list/show/31757.2013_Endeavour_Award_Submissions",
+    "criteria": {}
+  },
+  {
+    "id": "76005",
+    "nickname": "2013 Sci-Fi Award No",
+    "officialTitle": "2013 Sci-Fi Award Nominees",
+    "url": "https://www.goodreads.com/list/show/76005.2013_Sci_Fi_Award_Nominees",
+    "criteria": {}
+  },
+  {
+    "id": "44180",
+    "nickname": "2014 Endeavour Award",
+    "officialTitle": "2014 Endeavour Award Submissions",
+    "url": "https://www.goodreads.com/list/show/44180.2014_Endeavour_Award_Submissions",
+    "criteria": {}
+  },
+  {
+    "id": "78969",
+    "nickname": "2015 Endeavour Award",
+    "officialTitle": "2015 Endeavour Award Submissions",
+    "url": "https://www.goodreads.com/list/show/78969.2015_Endeavour_Award_Submissions",
+    "criteria": {}
+  },
+  {
+    "id": "85379",
+    "nickname": "2015 Sci-Fi Award No",
+    "officialTitle": "2015 Sci-Fi Award Nominees",
+    "url": "https://www.goodreads.com/list/show/85379.2015_Sci_Fi_Award_Nominees",
+    "criteria": {}
+  },
+  {
+    "id": "83265",
+    "nickname": "2015 The Intended Re",
+    "officialTitle": "2015 The Intended Reading List",
+    "url": "https://www.goodreads.com/list/show/83265.2015_The_Intended_Reading_List",
+    "criteria": {}
+  },
+  {
+    "id": "93028",
+    "nickname": "2016 Endeavour Award",
+    "officialTitle": "2016 Endeavour Award Submissions",
+    "url": "https://www.goodreads.com/list/show/93028.2016_Endeavour_Award_Submissions",
+    "criteria": {}
+  },
+  {
+    "id": "95714",
+    "nickname": "2016 Sci-Fi Award No",
+    "officialTitle": "2016 Sci-Fi Award Nominees",
+    "url": "https://www.goodreads.com/list/show/95714.2016_Sci_Fi_Award_Nominees",
+    "criteria": {}
+  },
+  {
+    "id": "104635",
+    "nickname": "2017 Endeavour Award",
+    "officialTitle": "2017 Endeavour Award Submissions",
+    "url": "https://www.goodreads.com/list/show/104635.2017_Endeavour_Award_Submissions",
+    "criteria": {}
+  },
+  {
+    "id": "107855",
+    "nickname": "2017 Sci-Fi Award No",
+    "officialTitle": "2017 Sci-Fi Award Nominees",
+    "url": "https://www.goodreads.com/list/show/107855.2017_Sci_Fi_Award_Nominees",
+    "criteria": {}
+  },
+  {
+    "id": "202924",
+    "nickname": "2020 ALA Best Graphi",
+    "officialTitle": "2020 ALA Best Graphic Novels for Adults",
+    "url": "https://www.goodreads.com/list/show/202924.2020_ALA_Best_Graphic_Novels_for_Adults",
+    "criteria": {}
+  },
+  {
+    "id": "171461",
+    "nickname": "About Comics",
+    "officialTitle": "About Comics",
+    "url": "https://www.goodreads.com/list/show/171461.About_Comics",
+    "criteria": {}
+  },
+  {
+    "id": "111017",
+    "nickname": "Alex Awards from 2000 thru 2009",
+    "officialTitle": "Alex Awards from 2000 thru 2009",
+    "url": "https://www.goodreads.com/list/show/111017.Alex_Awards_from_2000_thru_2009",
+    "criteria": {
+      "minYear": 1999,
+      "maxYear": 2008
+    }
+  },
+  {
+    "id": "111182",
+    "nickname": "Alex Awards from 2010 thru 2019",
+    "officialTitle": "Alex Awards from 2010 thru 2019",
+    "url": "https://www.goodreads.com/list/show/111182.Alex_Awards_from_2010_thru_2019",
+    "criteria": {
+      "minYear": 2009,
+      "maxYear": 2018
+    }
+  },
+  {
+    "id": "158289",
+    "nickname": "Alex Awards from 2020 thru 2029",
+    "officialTitle": "Alex Awards from 2020 thru 2029",
+    "url": "https://www.goodreads.com/list/show/158289.Alex_Awards_from_2020_thru_2029",
+    "criteria": {
+      "minYear": 2019,
+      "maxYear": 2028
+    }
+  },
+  {
+    "id": "154990",
+    "nickname": "All Graphic Novels w1000 to 1999",
+    "officialTitle": "All Graphic Novels with 1,000 to 1,999 ratings",
+    "url": "https://www.goodreads.com/list/show/154990.All_Graphic_Novels_with_1_000_to_1_999_ratings",
+    "criteria": {
+      "min": 1000,
+      "max": 1999
+    }
+  },
+  {
+    "id": "73202",
+    "nickname": "All Graphic Novels w10000 to 24999",
+    "officialTitle": "All Graphic Novels with 10,000 and 24,999 ratings",
+    "url": "https://www.goodreads.com/list/show/73202.All_Graphic_Novels_with_10_000_and_24_999_ratings",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "id": "155022",
+    "nickname": "All Graphic Novels w 2000 to 2999",
+    "officialTitle": "All Graphic Novels with 2,000 to 2,999 ratings",
+    "url": "https://www.goodreads.com/list/show/155022.All_Graphic_Novels_with_2_000_to_2_999_ratings",
+    "criteria": {
+      "min": 2000,
+      "max": 2999
+    }
+  },
+  {
+    "id": "155141",
+    "nickname": "All Graphic Novels w",
+    "officialTitle": "All Graphic Novels with 3,000 to 4,999 ratings",
+    "url": "https://www.goodreads.com/list/show/155141.All_Graphic_Novels_with_3_000_to_4_999_ratings",
+    "criteria": {
+      "min": 3000,
+      "max": 4999
+    }
+  },
+  {
+    "id": "91245",
+    "nickname": "All Graphic Novels w",
+    "officialTitle": "All Graphic Novels with 5,000 to 9,999 ratings",
+    "url": "https://www.goodreads.com/list/show/91245.All_Graphic_Novels_with_5_000_to_9_999_ratings",
+    "criteria": {
+      "min": 5000,
+      "max": 9999
+    }
+  },
+  {
+    "id": "82859",
+    "nickname": "All Non-Fiction on G",
+    "officialTitle": "All Non-Fiction on Goodreads with 10,000 to 24,999 ratings",
+    "url": "https://www.goodreads.com/list/show/82859.All_Non_Fiction_on_Goodreads_with_10_000_to_24_999_ratings",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "id": "76386",
+    "nickname": "All Non-Fiction on G",
+    "officialTitle": "All Non-Fiction on Goodreads with 25,000 to 49,999 ratings",
+    "url": "https://www.goodreads.com/list/show/76386.All_Non_Fiction_on_Goodreads_with_25_000_to_49_999_ratings",
+    "criteria": {
+      "min": 25000,
+      "max": 49999
+    }
+  },
+  {
+    "id": "43611",
+    "nickname": "All Non-Fiction on G",
+    "officialTitle": "All Non-Fiction on Goodreads with 50,000 to 99,999 ratings",
+    "url": "https://www.goodreads.com/list/show/43611.All_Non_Fiction_on_Goodreads_with_50_000_to_99_999_ratings",
+    "criteria": {
+      "min": 50000,
+      "max": 99999
+    }
+  },
+  {
+    "id": "202426",
+    "nickname": "ALSC 2020 Notable Ch",
+    "officialTitle": "ALSC 2020 Notable Children's Books",
+    "url": "https://www.goodreads.com/list/show/202426.ALSC_2020_Notable_Children_s_Books",
+    "criteria": {
+       "minYear": 2019,
+       "maxYear": 2019
+    }
+  },
+  {
+    "id": "202355",
+    "nickname": "ALSC 2021 Notable Ch",
+    "officialTitle": "ALSC 2021 Notable Children's Books",
+    "url": "https://www.goodreads.com/list/show/202355.ALSC_2021_Notable_Children_s_Books",
+    "criteria": {}
+  },
+  {
+    "id": "202252",
+    "nickname": "ALSC 2022 Notable Ch",
+    "officialTitle": "ALSC 2022 Notable Children's Books",
+    "url": "https://www.goodreads.com/list/show/202252.ALSC_2022_Notable_Children_s_Books",
+    "criteria": {}
+  },
+  {
+    "id": "202223",
+    "nickname": "ALSC 2023 Notable Ch",
+    "officialTitle": "ALSC 2023 Notable Children's Books",
+    "url": "https://www.goodreads.com/list/show/202223.ALSC_2023_Notable_Children_s_Books",
+    "criteria": {}
+  },
+  {
+    "id": "202261",
+    "nickname": "ALSC 2024 Notable Ch",
+    "officialTitle": "ALSC 2024 Notable Children's Books",
+    "url": "https://www.goodreads.com/list/show/202261.ALSC_2024_Notable_Children_s_Books",
+    "criteria": {}
+  },
+  {
+    "id": "103454",
+    "nickname": "Andre Norton Award",
+    "officialTitle": "Andre Norton Award",
+    "url": "https://www.goodreads.com/list/show/103454.Andre_Norton_Award",
+    "criteria": {}
+  },
+  {
+    "id": "176418",
+    "nickname": "Andrew Carnegie Meda",
+    "officialTitle": "Andrew Carnegie Medals for Excellence in Fiction and Nonfiction",
+    "url": "https://www.goodreads.com/list/show/176418.Andrew_Carnegie_Medals_for_Excellence_in_Fiction_and_Nonfiction",
+    "criteria": {}
+  },
+  {
+    "id": "35904",
+    "nickname": "Award Winning Fantas",
+    "officialTitle": "Award Winning Fantasy and Science Fiction",
+    "url": "https://www.goodreads.com/list/show/35904.Award_Winning_Fantasy_and_Science_Fiction",
+    "criteria": {}
+  },
+  {
+    "id": "412268",
+    "nickname": "Best Books of Barb R",
+    "officialTitle": "Best Books of Barb Rosenstock",
+    "url": "https://www.goodreads.com/list/show/412268.Best_Books_of_Barb_Rosenstock",
+    "criteria": {}
+  },
+  {
+    "id": "233815",
+    "nickname": "Best Books of Collee",
+    "officialTitle": "Best Books of Colleen Hoover",
+    "url": "https://www.goodreads.com/list/show/233815.Best_Books_of_Colleen_Hoover",
+    "criteria": {}
+  },
+  {
+    "id": "412269",
+    "nickname": "Best Books of Don Br",
+    "officialTitle": "Best Books of Don Brown",
+    "url": "https://www.goodreads.com/list/show/412269.Best_Books_of_Don_Brown",
+    "criteria": {}
+  },
+  {
+    "id": "233816",
+    "nickname": "Best Books of Freida",
+    "officialTitle": "Best Books of Freida McFadden",
+    "url": "https://www.goodreads.com/list/show/233816.Best_Books_of_Freida_McFadden",
+    "criteria": {}
+  },
+  {
+    "id": "233817",
+    "nickname": "Best Books of George",
+    "officialTitle": "Best Books of George Orwell",
+    "url": "https://www.goodreads.com/list/show/233817.Best_Books_of_George_Orwell",
+    "criteria": {}
+  },
+  {
+    "id": "413444",
+    "nickname": "Best Books of Joe Sa",
+    "officialTitle": "Best Books of Joe Sacco",
+    "url": "https://www.goodreads.com/list/show/413444.Best_Books_of_Joe_Sacco",
+    "criteria": {}
+  },
+  {
+    "id": "414429",
+    "nickname": "Best Books of Kather",
+    "officialTitle": "Best Books of Katherine Paterson",
+    "url": "https://www.goodreads.com/list/show/414429.Best_Books_of_Katherine_Paterson",
+    "criteria": {}
+  },
+  {
+    "id": "233818",
+    "nickname": "Best Books of Taylor",
+    "officialTitle": "Best Books of Taylor Jenkins Reid",
+    "url": "https://www.goodreads.com/list/show/233818.Best_Books_of_Taylor_Jenkins_Reid",
+    "criteria": {}
+  },
+  {
+    "id": "146629",
+    "nickname": "Best Fantasy of the 2020s",
+    "officialTitle": "Best Fantasy of the 2020s",
+    "url": "https://www.goodreads.com/list/show/146629.Best_Fantasy_of_the_2020s",
+    "criteria": {
+      "minYear": 2020,
+      "maxYear": 2029
+    }
+  },
+  {
+    "id": "115751",
+    "nickname": "Best Fantasy of the ",
+    "officialTitle": "Best Fantasy of the 20th Century",
+    "url": "https://www.goodreads.com/list/show/115751.Best_Fantasy_of_the_20th_Century",
+    "criteria": {
+      "minYear": 1900,
+      "maxYear": 1999
+    }
+  },
+  {
+    "id": "79774",
+    "nickname": "Best Fantasy of the 30s",
+    "officialTitle": "Best Fantasy of the 30s",
+    "url": "https://www.goodreads.com/list/show/79774.Best_Fantasy_of_the_30s",
+    "criteria": {
+      "minYear": 1930,
+      "maxYear": 1939
+    }
+  },
+  {
+    "id": "79807",
+    "nickname": "Best Fantasy of the ",
+    "officialTitle": "Best Fantasy of the 40s",
+    "url": "https://www.goodreads.com/list/show/79807.Best_Fantasy_of_the_40s",
+    "criteria": {
+      "minYear": 1940,
+      "maxYear": 1949
+    }
+  },
+  {
+    "id": "75483",
+    "nickname": "Best Fantasy of the ",
+    "officialTitle": "Best Fantasy of the 50s",
+    "url": "https://www.goodreads.com/list/show/75483.Best_Fantasy_of_the_50s",
+    "criteria": {}
+  },
+  {
+    "id": "75425",
+    "nickname": "Best Fantasy of the ",
+    "officialTitle": "Best Fantasy of the 60s",
+    "url": "https://www.goodreads.com/list/show/75425.Best_Fantasy_of_the_60s",
+    "criteria": {}
+  },
+  {
+    "id": "76987",
+    "nickname": "Best Fantasy on Good",
+    "officialTitle": "Best Fantasy on Goodreads with less than 100 ratings",
+    "url": "https://www.goodreads.com/list/show/76987.Best_Fantasy_on_Goodreads_with_less_than_100_ratings",
+    "criteria": {
+      "max": 100
+    }
+  },
+  {
+    "id": "115805",
+    "nickname": "Best Forgotten Fanta",
+    "officialTitle": "Best Forgotten Fantasy of the 20th Century",
+    "url": "https://www.goodreads.com/list/show/115805.Best_Forgotten_Fantasy_of_the_20th_Century",
+    "criteria": {
+      "max": 999,
+      "minYear": 1900,
+      "maxYear": 1999
+    }
+  },
+  {
+    "id": "114349",
+    "nickname": "Best Forgotten Scien",
+    "officialTitle": "Best Forgotten Science Fiction of the 20th Century",
+    "url": "https://www.goodreads.com/list/show/114349.Best_Forgotten_Science_Fiction_of_the_20th_Century",
+    "criteria": {
+       "max": 999,
+       "minYear": 1900,
+       "maxYear": 1999
+    }
+  },
+  {
+    "id": "144755",
+    "nickname": "Best Less Popular Co",
+    "officialTitle": "Best Less Popular Computer Science Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/144755.Best_Less_Popular_Computer_Science_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "144626",
+    "nickname": "Best Less Popular Ge",
+    "officialTitle": "Best Less Popular Geology Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/144626.Best_Less_Popular_Geology_Books_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "142702",
+    "nickname": "Best Mysteries from ",
+    "officialTitle": "Best Mysteries from the 1960s",
+    "url": "https://www.goodreads.com/list/show/142702.Best_Mysteries_from_the_1960s",
+    "criteria": {
+      "minYear": 1960,
+      "maxYear": 1969
+    }
+  },
+  {
+    "id": "79359",
+    "nickname": "Best Mysteries from ",
+    "officialTitle": "Best Mysteries from the 2000s",
+    "url": "https://www.goodreads.com/list/show/79359.Best_Mysteries_from_the_2000s",
+    "criteria": {
+      "minYear": 2000,
+      "maxYear": 2009
+    }
+  },
+  {
+    "id": "79879",
+    "nickname": "Best Mysteries from ",
+    "officialTitle": "Best Mysteries from the 2010s",
+    "url": "https://www.goodreads.com/list/show/79879.Best_Mysteries_from_the_2010s",
+    "criteria": {
+      "minYear": 2010,
+      "maxYear": 2019
+    }
+  },
+  {
+    "id": "142806",
+    "nickname": "Best Mysteries of th",
+    "officialTitle": "Best Mysteries of the 20th Century",
+    "url": "https://www.goodreads.com/list/show/142806.Best_Mysteries_of_the_20th_Century_",
+    "criteria": {
+       "minYear": 1900,
+       "maxYear": 1999,
+       "min": 1000
+    }
+  },
+  {
+    "id": "142746",
+    "nickname": "Best Mysteries of the 21st Century",
+    "officialTitle": "Best Mysteries of the 21st Century",
+    "url": "https://www.goodreads.com/list/show/142746.Best_Mysteries_of_the_21st_Century",
+    "criteria": {
+       "minYear": 2000,
+       "maxYear": 2099,
+       "min": 5000
+    }
+  },
+  {
+    "id": "94613",
+    "nickname": "Best Nonfiction Biology",
+    "officialTitle": "Best Nonfiction Biology books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/94613.Best_Nonfiction_Biology_books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "94629",
+    "nickname": "Best Nonfiction Psychology",
+    "officialTitle": "Best Nonfiction Psychology Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/94629.Best_Nonfiction_Psychology_Books_on_Goodreads",
+    "criteria": {
+       "min": 10000
+    }
+  },
+  {
+    "id": "113949",
+    "nickname": "Best of Black Widow",
+    "officialTitle": "Best of Black Widow",
+    "url": "https://www.goodreads.com/list/show/113949.Best_of_Black_Widow",
+    "criteria": {}
+  },
+  {
+    "id": "78073",
+    "nickname": "Best of Brian Michae",
+    "officialTitle": "Best of Brian Michael Bendis",
+    "url": "https://www.goodreads.com/list/show/78073.Best_of_Brian_Michael_Bendis",
+    "criteria": {}
+  },
+  {
+    "id": "82360",
+    "nickname": "Best of Daredevil",
+    "officialTitle": "Best of Daredevil",
+    "url": "https://www.goodreads.com/list/show/82360.Best_of_Daredevil",
+    "criteria": {}
+  },
+  {
+    "id": "84600",
+    "nickname": "Best of Kitty Pryde",
+    "officialTitle": "Best of Kitty Pryde",
+    "url": "https://www.goodreads.com/list/show/84600.Best_of_Kitty_Pryde",
+    "criteria": {}
+  },
+  {
+    "id": "82693",
+    "nickname": "Best of She-Hulk",
+    "officialTitle": "Best of She-Hulk",
+    "url": "https://www.goodreads.com/list/show/82693.Best_of_She_Hulk",
+    "criteria": {}
+  },
+  {
+    "id": "94625",
+    "nickname": "Best Popular Anthropology",
+    "officialTitle": "Best Popular Anthropology Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/94625.Best_Popular_Anthropology_Books_on_Goodreads",
+    "criteria": {
+      "min": 1000
+    }
+  },
+  {
+    "id": "95752",
+    "nickname": "Best Popular Astronomy",
+    "officialTitle": "Best Popular Astronomy Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/95752.Best_Popular_Astronomy_Books_on_Goodreads",
+    "criteria": {
+      "min": 1000
+     }
+  },
+  {
+    "id": "142405",
+    "nickname": "Best Popular Autobiography",
+    "officialTitle": "Best Popular Autobiography Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142405.Best_Popular_Autobiography_Books_on_Goodreads",
+    "criteria": {
+      "min": 50000 
+    }
+  },
+  {
+    "id": "142100",
+    "nickname": "Best Popular Botany ",
+    "officialTitle": "Best Popular Botany Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142100.Best_Popular_Botany_Books_on_Goodreads",
+    "criteria": {
+       "min": 100
+    }
+  },
+  {
+    "id": "107459",
+    "nickname": "Best Popular Classics",
+    "officialTitle": "Best Popular Classics Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107459.Best_Popular_Classics_Books_on_Goodreads",
+    "criteria": {
+       "min": 100000
+    }
+  },
+  {
+    "id": "142329",
+    "nickname": "Best Popular Climate",
+    "officialTitle": "Best Popular Climate Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142329.Best_Popular_Climate_Books_on_Goodreads",
+    "criteria": {
+       "min": 100
+    }
+  },
+  {
+    "id": "94619",
+    "nickname": "Best Popular Compute",
+    "officialTitle": "Best Popular Computer Science Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/94619.Best_Popular_Computer_Science_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "131817",
+    "nickname": "Best Popular Economi",
+    "officialTitle": "Best Popular Economics Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/131817.Best_Popular_Economics_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "132768",
+    "nickname": "Best Popular Epic Fa",
+    "officialTitle": "Best Popular Epic Fantasy Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/132768.Best_Popular_Epic_Fantasy_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "128814",
+    "nickname": "Best Popular Genetic",
+    "officialTitle": "Best Popular Genetics Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/128814.Best_Popular_Genetics_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "139840",
+    "nickname": "Best Popular Geograp",
+    "officialTitle": "Best Popular Geography Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/139840.Best_Popular_Geography_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "143932",
+    "nickname": "Best Popular Geology",
+    "officialTitle": "Best Popular Geology Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/143932.Best_Popular_Geology_Books_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "156482",
+    "nickname": "Best Popular Histori",
+    "officialTitle": "Best Popular Historical Fiction Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/156482.Best_Popular_Historical_Fiction_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "108393",
+    "nickname": "Best Popular History",
+    "officialTitle": "Best Popular History Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/108393.Best_Popular_History_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "141863",
+    "nickname": "Best Popular Judaism",
+    "officialTitle": "Best Popular Judaism Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/141863.Best_Popular_Judaism_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "128894",
+    "nickname": "Best Popular Languag",
+    "officialTitle": "Best Popular Language Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/128894.Best_Popular_Language_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "149946",
+    "nickname": "Best Popular Light N",
+    "officialTitle": "Best Popular Light Novels on Goodreads",
+    "url": "https://www.goodreads.com/list/show/149946._Best_Popular_Light_Novels_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "108216",
+    "nickname": "Best Popular Manga B",
+    "officialTitle": "Best Popular Manga Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/108216.Best_Popular_Manga_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "152647",
+    "nickname": "Best Popular Medicin",
+    "officialTitle": "Best Popular Medicine Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/152647.Best_Popular_Medicine_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "142359",
+    "nickname": "Best Popular Middle ",
+    "officialTitle": "Best Popular Middle School Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142359._Best_Popular_Middle_School_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "129050",
+    "nickname": "Best Popular Militar",
+    "officialTitle": "Best Popular Military Science Fiction Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/129050.Best_Popular_Military_Science_Fiction_Books_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "109421",
+    "nickname": "Best Popular Music B",
+    "officialTitle": "Best Popular Music Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/109421.Best_Popular_Music_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "144834",
+    "nickname": "Best Popular Nature ",
+    "officialTitle": "Best Popular Nature Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/144834._Best_Popular_Nature_Books_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "97141",
+    "nickname": "Best Popular Nonfict",
+    "officialTitle": "Best Popular Nonfiction Politics Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/97141.Best_Popular_Nonfiction_Politics_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "151553",
+    "nickname": "Best Popular Pagan B",
+    "officialTitle": "Best Popular Pagan Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/151553.Best_Popular_Pagan_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "145885",
+    "nickname": "Best Popular Pandemi",
+    "officialTitle": "Best Popular Pandemic Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/145885._Best_Popular_Pandemic_Books_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "107355",
+    "nickname": "Best Popular Philoso",
+    "officialTitle": "Best Popular Philosophy Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107355.Best_Popular_Philosophy_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "107582",
+    "nickname": "Best Popular Picture",
+    "officialTitle": "Best Popular Picture Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107582.Best_Popular_Picture_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "107268",
+    "nickname": "Best Popular Poetry ",
+    "officialTitle": "Best Popular Poetry Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107268.Best_Popular_Poetry_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "139751",
+    "nickname": "Best Popular Product",
+    "officialTitle": "Best Popular Productivity Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/139751.Best_Popular_Productivity_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "142549",
+    "nickname": "Best Popular Racism ",
+    "officialTitle": "Best Popular Racism Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142549.Best_Popular_Racism_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "107404",
+    "nickname": "Best Popular Romance",
+    "officialTitle": "Best Popular Romance Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107404.Best_Popular_Romance_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "143259",
+    "nickname": "Best Popular Science",
+    "officialTitle": "Best Popular Science Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/143259.Best_Popular_Science_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "107662",
+    "nickname": "Best Popular Short S",
+    "officialTitle": "Best Popular Short Stories Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107662.Best_Popular_Short_Stories_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "131865",
+    "nickname": "Best Popular Space O",
+    "officialTitle": "Best Popular Space Opera Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/131865.Best_Popular_Space_Opera_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "131286",
+    "nickname": "Best Popular Steampu",
+    "officialTitle": "Best Popular Steampunk Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/131286.Best_Popular_Steampunk_Books_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "118961",
+    "nickname": "Best Popular Travel ",
+    "officialTitle": "Best Popular Travel Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/118961.Best_Popular_Travel_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "nickname": "BestSf20thCent",
+    "officialTitle": "Best Science Fiction of the 20th Century",
+    "id": "114319",
+    "url": "https://www.goodreads.com/list/show/114319",
+    "criteria": {
+      "minYear": 1900,
+      "maxYear": 1999,
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "BestSf21stCent",
+    "officialTitle": "Best Science Fiction of the 21st Century",
+    "id": "4893",
+    "url": "https://www.goodreads.com/list/show/4893",
+    "criteria": {
+      "minYear": 2000,
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "1000 to 9999",
+    "officialTitle": "Best Science Fiction on Goodreads with between 1000 and 9999 ratings",
+    "id": "77875",
+    "url": "https://www.goodreads.com/list/show/77875",
+    "criteria": {
+      "min": 1000,
+      "max": 9999
+    }
+  },
+  {
+    "id": "40689",
+    "nickname": "Best Technological S",
+    "officialTitle": "Best Technological Singularity Books Fiction or Non-Fiction",
+    "url": "https://www.goodreads.com/list/show/40689.Best_Technological_Singularity_Books_Fiction_or_Non_Fiction",
+    "criteria": {}
+  },
+  {
+    "id": "144176",
+    "nickname": "Bibliography for A S",
+    "officialTitle": "Bibliography for A Short History of Nearly Everything",
+    "url": "https://www.goodreads.com/list/show/144176.Bibliography_for_A_Short_History_of_Nearly_Everything",
+    "criteria": {}
+  },
+  {
+    "id": "134505",
+    "nickname": "Bibliography for The",
+    "officialTitle": "Bibliography for The Uninhabitable Earth",
+    "url": "https://www.goodreads.com/list/show/134505.Bibliography_for_The_Uninhabitable_Earth",
+    "criteria": {}
+  },
+  {
+    "id": "140671",
+    "nickname": "Bibliography for Thi",
+    "officialTitle": "Bibliography for Thinking Fast and Slow",
+    "url": "https://www.goodreads.com/list/show/140671.Bibliography_for_Thinking_Fast_and_Slow",
+    "criteria": {}
+  },
+  {
+    "id": "411895",
+    "nickname": "Bibliography for Wal",
+    "officialTitle": "Bibliography for Walkable City",
+    "url": "https://www.goodreads.com/list/show/411895.Bibliography_for_Walkable_City",
+    "criteria": {}
+  },
+  {
+    "id": "123355",
+    "nickname": "Book Nominated But N",
+    "officialTitle": "Book Nominated But Not Picked By Powells Beaverton SF Group",
+    "url": "https://www.goodreads.com/list/show/123355.Book_Nominated_But_Not_Picked_By_Powells_Beaverton_SF_Group",
+    "criteria": {}
+  },
+  {
+    "id": "84262",
+    "nickname": "Books about Goodread",
+    "officialTitle": "Books about Goodreads",
+    "url": "https://www.goodreads.com/list/show/84262.Books_about_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "132689",
+    "nickname": "Books by Democratic ",
+    "officialTitle": "Books by Democratic Candidates for President in 2020",
+    "url": "https://www.goodreads.com/list/show/132689.Books_by_Democratic_Candidates_for_President_in_2020",
+    "criteria": {}
+  },
+  {
+    "id": "156608",
+    "nickname": "Books Nominated for ",
+    "officialTitle": "Books Nominated for Powells Book Group in Exile but not selected",
+    "url": "https://www.goodreads.com/list/show/156608.Books_Nominated_for_Powells_Book_Group_in_Exile_but_not_selected",
+    "criteria": {}
+  },
+  {
+    "id": "121987",
+    "nickname": "Books Read by Powell",
+    "officialTitle": "Books Read by Powells Beaverton SF Group - Volume One",
+    "url": "https://www.goodreads.com/list/show/121987.Books_Read_by_Powells_Beaverton_SF_Group_Volume_One",
+    "criteria": {}
+  },
+  {
+    "id": "412505",
+    "nickname": "Books Read by Powell",
+    "officialTitle": "Books Read by Powells Beaverton SF Group - Volume Three",
+    "url": "https://www.goodreads.com/list/show/412505.Books_Read_by_Powells_Beaverton_SF_Group_Volume_Three",
+    "criteria": {}
+  },
+  {
+    "id": "412504",
+    "nickname": "Books Read by Powell",
+    "officialTitle": "Books Read by Powells Beaverton SF Group - Volume Two",
+    "url": "https://www.goodreads.com/list/show/412504.Books_Read_by_Powells_Beaverton_SF_Group_Volume_Two",
+    "criteria": {}
+  },
+  {
+    "id": "33605",
+    "nickname": "Books that no one sh",
+    "officialTitle": "Books that no one should read",
+    "url": "https://www.goodreads.com/list/show/33605.Books_that_no_one_should_read",
+    "criteria": {}
+  },
+  {
+    "nickname": "1,000,000 and more",
+    "officialTitle": "Books with 1,000,000 and more to-read shelf counts",
+    "id": "35080",
+    "url": "https://www.goodreads.com/list/show/35080",
+    "criteria": {
+      "min": 1000000
+    }
+  },
+  {
+    "nickname": "10,000 to 15,000",
+    "officialTitle": "Books with 10,000 to 14,999 to-read shelf counts",
+    "id": "141019",
+    "url": "https://www.goodreads.com/list/show/141019",
+    "criteria": {
+      "min": 10000,
+      "max": 14999
+    }
+  },
+  {
+    "nickname": "15,000 to 20,000",
+    "officialTitle": "Books with 15,000 to 19,999 to-read shelf counts",
+    "id": "141016",
+    "url": "https://www.goodreads.com/list/show/141016",
+    "criteria": {
+      "min": 15000,
+      "max": 19999
+    }
+  },
+  {
+    "nickname": "150,000 to 199,999",
+    "officialTitle": "Books with 150,000 to 199,999 to-read shelf counts",
+    "id": "117146",
+    "url": "https://www.goodreads.com/list/show/117146",
+    "criteria": {
+      "min": 150000,
+      "max": 199999
+    }
+  },
+  {
+    "nickname": "20,000 to 25,000",
+    "officialTitle": "Books with 20,000 to 24,999 to-read shelf counts",
+    "id": "141024",
+    "url": "https://www.goodreads.com/list/show/141024",
+    "criteria": {
+      "min": 20000,
+      "max": 24999
+    }
+  },
+  {
+    "nickname": "25,000 to 30,000",
+    "officialTitle": "Books with 25,000 to 29,999 to-read shelf counts",
+    "id": "141025",
+    "url": "https://www.goodreads.com/list/show/141025",
+    "criteria": {
+      "min": 25000,
+      "max": 29999
+    }
+  },
+  {
+    "nickname": "30,000 to 40,000",
+    "officialTitle": "Books with 30,000 to 39,999 to-read shelf counts",
+    "id": "141027",
+    "url": "https://www.goodreads.com/list/show/141027",
+    "criteria": {
+      "min": 30000,
+      "max": 39999
+    }
+  },
+  {
+    "nickname": "40,000 to 50,000",
+    "officialTitle": "Books with 40,000 to 49,999 to-read shelf counts",
+    "id": "141032",
+    "url": "https://www.goodreads.com/list/show/141032",
+    "criteria": {
+      "min": 40000,
+      "max": 49999
+    }
+  },
+  {
+    "nickname": "50,000 to 60,000",
+    "officialTitle": "Books with 50,000 to 59,999 to-read shelf counts",
+    "id": "141033",
+    "url": "https://www.goodreads.com/list/show/141033",
+    "criteria": {
+      "min": 50000,
+      "max": 59999
+    }
+  },
+  {
+    "nickname": "60,000 to 70,000",
+    "officialTitle": "Books with 60,000 to 69,999 to-read shelf counts",
+    "id": "141034",
+    "url": "https://www.goodreads.com/list/show/141034",
+    "criteria": {
+      "min": 60000,
+      "max": 69999
+    }
+  },
+  {
+    "nickname": "70,000 to 80,000",
+    "officialTitle": "Books with 70,000 to 79,999 to-read shelf counts",
+    "id": "141035",
+    "url": "https://www.goodreads.com/list/show/141035",
+    "criteria": {
+      "min": 70000,
+      "max": 79999
+    }
+  },
+  {
+    "nickname": "90,000 to 99,999",
+    "officialTitle": "Books with 90,000 to 99,999 to-read shelf counts",
+    "id": "117368",
+    "url": "https://www.goodreads.com/list/show/117368",
+    "criteria": {
+      "min": 90000,
+      "max": 99999
+    }
+  },
+  {
+    "nickname": "100,000 to 149,999",
+    "officialTitle": "Books with between 100,000 and 149,999 to-read shelf counts",
+    "id": "35708",
+    "url": "https://www.goodreads.com/list/show/35708",
+    "criteria": {
+      "min": 100000,
+      "max": 149999
+    }
+  },
+  {
+    "nickname": "200,000 to 499,999",
+    "officialTitle": "Books with between 200,000 and 499,999 to-read shelf counts",
+    "id": "36647",
+    "url": "https://www.goodreads.com/list/show/36647",
+    "criteria": {
+      "min": 200000,
+      "max": 499999
+    }
+  },
+  {
+    "nickname": "500,000 to 999,999",
+    "officialTitle": "Books with between 500,000 and 999,999 to-read shelf counts",
+    "id": "35177",
+    "url": "https://www.goodreads.com/list/show/35177",
+    "criteria": {
+      "min": 500000,
+      "max": 999999
+    }
+  },
+  {
+    "nickname": "80,000 to 89,999",
+    "officialTitle": "Books with between 80,000 and 89,999 to-read shelf counts",
+    "id": "39332",
+    "url": "https://www.goodreads.com/list/show/39332",
+    "criteria": {
+      "min": 80000,
+      "max": 89999
+    }
+  },
+  {
+    "id": "36448",
+    "nickname": "Books written by Ame",
+    "officialTitle": "Books written by American Presidents (fiction and nonfiction)",
+    "url": "https://www.goodreads.com/list/show/36448.Books_written_by_American_Presidents_fiction_and_nonfiction_",
+    "criteria": {}
+  },
+  {
+    "id": "78217",
+    "nickname": "Books Written by US ",
+    "officialTitle": "Books Written by US Supreme Court Justices",
+    "url": "https://www.goodreads.com/list/show/78217.Books_Written_by_US_Supreme_Court_Justices",
+    "criteria": {}
+  },
+  {
+    "id": "76470",
+    "nickname": "British Science Fict",
+    "officialTitle": "British Science Fiction Association Awards for Best Novel",
+    "url": "https://www.goodreads.com/list/show/76470.British_Science_Fiction_Association_Awards_for_Best_Novel",
+    "criteria": {}
+  },
+  {
+    "id": "105745",
+    "nickname": "Carl Brandon Society",
+    "officialTitle": "Carl Brandon Society Awards",
+    "url": "https://www.goodreads.com/list/show/105745.Carl_Brandon_Society_Awards",
+    "criteria": {}
+  },
+  {
+    "id": "161832",
+    "nickname": "Charlotte Zolotow Aw",
+    "officialTitle": "Charlotte Zolotow Award Commended Books",
+    "url": "https://www.goodreads.com/list/show/161832.Charlotte_Zolotow_Award_Commended_Books",
+    "criteria": {}
+  },
+  {
+    "id": "161828",
+    "nickname": "Charlotte Zolotow Aw",
+    "officialTitle": "Charlotte Zolotow Award Winners and Honors",
+    "url": "https://www.goodreads.com/list/show/161828.Charlotte_Zolotow_Award_Winners_and_Honors",
+    "criteria": {}
+  },
+  {
+    "nickname": "2000s",
+    "officialTitle": "Classic Science Fiction 2000-2009",
+    "id": "43319",
+    "url": "https://www.goodreads.com/list/show/43319",
+    "criteria": {
+      "minYear": 2000,
+      "maxYear": 2009
+    }
+  },
+  {
+    "nickname": "1920s",
+    "officialTitle": "Classic Science Fiction of the 1920s",
+    "id": "415656",
+    "url": "https://www.goodreads.com/list/show/415656",
+    "criteria": {
+      "minYear": 1920,
+      "maxYear": 1929
+    }
+  },
+  {
+    "nickname": "1930s",
+    "officialTitle": "Classic Science Fiction of the 1930s",
+    "id": "43374",
+    "url": "https://www.goodreads.com/list/show/43374",
+    "criteria": {
+      "minYear": 1930,
+      "maxYear": 1939
+    }
+  },
+  {
+    "nickname": "1940s",
+    "officialTitle": "Classic Science Fiction of the 1940s",
+    "id": "40744",
+    "url": "https://www.goodreads.com/list/show/40744",
+    "criteria": {
+      "minYear": 1940,
+      "maxYear": 1949
+    }
+  },
+  {
+    "nickname": "1950s",
+    "officialTitle": "Classic Science Fiction of the 1950s",
+    "id": "5152",
+    "url": "https://www.goodreads.com/list/show/5152",
+    "criteria": {
+      "minYear": 1950,
+      "maxYear": 1959
+    }
+  },
+  {
+    "nickname": "1960s",
+    "officialTitle": "Classic Science Fiction of the 1960s",
+    "id": "5158",
+    "url": "https://www.goodreads.com/list/show/5158",
+    "criteria": {
+      "minYear": 1960,
+      "maxYear": 1969
+    }
+  },
+  {
+    "nickname": "1970s",
+    "officialTitle": "Classic Science Fiction of the 1970s",
+    "id": "42069",
+    "url": "https://www.goodreads.com/list/show/42069",
+    "criteria": {
+      "minYear": 1970,
+      "maxYear": 1979
+    }
+  },
+  {
+    "nickname": "1980s",
+    "officialTitle": "Classic Science Fiction of the 1980s",
+    "id": "42417",
+    "url": "https://www.goodreads.com/list/show/42417",
+    "criteria": {
+      "minYear": 1980,
+      "maxYear": 1989
+    }
+  },
+  {
+    "nickname": "1990s",
+    "officialTitle": "Classic Science Fiction of the 1990s",
+    "id": "42875",
+    "url": "https://www.goodreads.com/list/show/42875",
+    "criteria": {
+      "minYear": 1990,
+      "maxYear": 1999
+    }
+  },
+  {
+    "id": "101744",
+    "nickname": "Compton Crook Award ",
+    "officialTitle": "Compton Crook Award Winners",
+    "url": "https://www.goodreads.com/list/show/101744.Compton_Crook_Award_Winners",
+    "criteria": {}
+  },
+  {
+    "id": "116513",
+    "nickname": "Computer Science Boo",
+    "officialTitle": "Computer Science Books of the 2010s and 2020s",
+    "url": "https://www.goodreads.com/list/show/116513.Computer_Science_Books_of_the_2010s_and_2020s",
+    "criteria": {
+      "minYear": 2010,
+      "maxYear": 2019
+    }
+  },
+  {
+    "id": "142693",
+    "nickname": "Downloadable Audiobo",
+    "officialTitle": "Downloadable Audiobooks from Multnomah County Library",
+    "url": "https://www.goodreads.com/list/show/142693.Downloadable_Audiobooks_from_Multnomah_County_Library",
+    "criteria": {}
+  },
+  {
+    "id": "142837",
+    "nickname": "Edgar Award Winners ",
+    "officialTitle": "Edgar Award Winners for Best First Novel",
+    "url": "https://www.goodreads.com/list/show/142837.Edgar_Award_Winners_for_Best_First_Novel",
+    "criteria": {}
+  },
+  {
+    "id": "191576",
+    "nickname": "Eisner Best Graphic ",
+    "officialTitle": "Eisner Best Graphic Album",
+    "url": "https://www.goodreads.com/list/show/191576.Eisner_Best_Graphic_Album",
+    "criteria": {}
+  },
+  {
+    "id": "232034",
+    "nickname": "Eisner Best Reality-",
+    "officialTitle": "Eisner Best Reality-Based Work",
+    "url": "https://www.goodreads.com/list/show/232034.Eisner_Best_Reality_Based_Work",
+    "criteria": {}
+  },
+  {
+    "id": "46504",
+    "nickname": "Favorite Long Series",
+    "officialTitle": "Favorite Long Series on Goodreads",
+    "url": "https://www.goodreads.com/list/show/46504.Favorite_Long_Series_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "146639",
+    "nickname": "Further Reading from",
+    "officialTitle": "Further Reading from Jared Diamond's Collapse",
+    "url": "https://www.goodreads.com/list/show/146639.Further_Reading_from_Jared_Diamond_s_Collapse",
+    "criteria": {}
+  },
+  {
+    "id": "233968",
+    "nickname": "Great Graphic Novels 2004",
+    "officialTitle": "Great Graphic Novels (released in) 2004",
+    "url": "https://www.goodreads.com/list/show/233968.Great_Graphic_Novels_released_in_2004",
+    "criteria": {
+       "minYear": 2004,
+       "maxYear": 2004
+    }
+  },
+  {
+    "id": "232618",
+    "nickname": "Great Graphic Novels",
+    "officialTitle": "Great Graphic Novels (released in) 2005",
+    "url": "https://www.goodreads.com/list/show/232618.Great_Graphic_Novels_released_in_2005",
+    "criteria": {
+       "minYear": 2005,
+       "maxYear": 2005
+    }
+  },
+  {
+    "id": "232538",
+    "nickname": "Great Graphic Novels",
+    "officialTitle": "Great Graphic Novels (released in) 2006",
+    "url": "https://www.goodreads.com/list/show/232538.Great_Graphic_Novels_released_in_2006",
+    "criteria": {
+       "minYear": 2006,
+       "maxYear": 2006
+    }
+  },
+  {
+    "id": "219509",
+    "nickname": "Great Graphic Novels",
+    "officialTitle": "Great Graphic Novels (released in) 2007",
+    "url": "https://www.goodreads.com/list/show/219509.Great_Graphic_Novels_released_in_2007",
+    "criteria": {
+       "minYear": 2007,
+       "maxYear": 2007
+    }
+  },
+  {
+    "id": "182440",
+    "nickname": "Great Graphic Novels",
+    "officialTitle": "Great Graphic Novels (released in) 2008",
+    "url": "https://www.goodreads.com/list/show/182440.Great_Graphic_Novels_released_in_2008",
+    "criteria": {
+       "minYear": 2008,
+       "maxYear": 2008
+    }
+  },
+  {
+    "id": "154976",
+    "nickname": "Great Graphic Novels",
+    "officialTitle": "Great Graphic Novels (released in) 2010",
+    "url": "https://www.goodreads.com/list/show/154976.Great_Graphic_Novels_released_in_2010",
+    "criteria": {}
+  },
+  {
+    "id": "154778",
+    "nickname": "Great Graphic Novels",
+    "officialTitle": "Great Graphic Novels (released in) 2011",
+    "url": "https://www.goodreads.com/list/show/154778.Great_Graphic_Novels_released_in_2011",
+    "criteria": {}
+  },
+  {
+    "id": "154752",
+    "nickname": "Great Graphic Novels",
+    "officialTitle": "Great Graphic Novels (released in) 2012",
+    "url": "https://www.goodreads.com/list/show/154752.Great_Graphic_Novels_released_in_2012",
+    "criteria": {}
+  },
+  {
+    "id": "154696",
+    "nickname": "Great Graphic Novels",
+    "officialTitle": "Great Graphic Novels (released in) 2013",
+    "url": "https://www.goodreads.com/list/show/154696.Great_Graphic_Novels_released_in_2013",
+    "criteria": {}
+  },
+  {
+    "id": "91145",
+    "nickname": "Hertz Led Science Fi",
+    "officialTitle": "Hertz Led Science Fiction Classics Discussed",
+    "url": "https://www.goodreads.com/list/show/91145.Hertz_Led_Science_Fiction_Classics_Discussed",
+    "criteria": {}
+  },
+  {
+    "id": "250123",
+    "nickname": "Highest Rated Books 2024",
+    "officialTitle": "Highest Rated Books of 2024",
+    "url": "https://www.goodreads.com/list/show/250123.Highest_Rated_Books_of_2024",
+    "criteria": {}
+  },
+  {
+    "id": "202210",
+    "nickname": "Hot Springs and Hot ",
+    "officialTitle": "Hot Springs and Hot Pools and Onsens",
+    "url": "https://www.goodreads.com/list/show/202210.Hot_Springs_and_Hot_Pools_and_Onsens",
+    "criteria": {}
+  },
+  {
+    "id": "235263",
+    "nickname": "Hugo Award Winner fo",
+    "officialTitle": "Hugo Award Winner for Best Series",
+    "url": "https://www.goodreads.com/list/show/235263.Hugo_Award_Winner_for_Best_Series",
+    "criteria": {}
+  },
+  {
+    "id": "46596",
+    "nickname": "Hugo Award Winning B",
+    "officialTitle": "Hugo Award Winning Best Related Work",
+    "url": "https://www.goodreads.com/list/show/46596.Hugo_Award_Winning_Best_Related_Work",
+    "criteria": {}
+  },
+  {
+    "id": "46568",
+    "nickname": "Hugo Award Winning N",
+    "officialTitle": "Hugo Award Winning Novellas",
+    "url": "https://www.goodreads.com/list/show/46568.Hugo_Award_Winning_Novellas",
+    "criteria": {}
+  },
+  {
+    "id": "143898",
+    "nickname": "I Rated it 1 Star!",
+    "officialTitle": "I Rated it 1 Star!",
+    "url": "https://www.goodreads.com/list/show/143898.I_Rated_it_1_Star_",
+    "criteria": {}
+  },
+  {
+    "id": "143897",
+    "nickname": "I Rated it 2 Stars!",
+    "officialTitle": "I Rated it 2 Stars!",
+    "url": "https://www.goodreads.com/list/show/143897.I_Rated_it_2_Stars_",
+    "criteria": {}
+  },
+  {
+    "id": "143893",
+    "nickname": "I Rated it 3 Stars!",
+    "officialTitle": "I Rated it 3 Stars!",
+    "url": "https://www.goodreads.com/list/show/143893.I_Rated_it_3_Stars_",
+    "criteria": {}
+  },
+  {
+    "id": "143890",
+    "nickname": "I Rated it 4 Stars!",
+    "officialTitle": "I Rated it 4 Stars!",
+    "url": "https://www.goodreads.com/list/show/143890.I_Rated_it_4_Stars_",
+    "criteria": {}
+  },
+  {
+    "id": "76144",
+    "nickname": "Io9's The Best Scien",
+    "officialTitle": "Io9's The Best Science Fiction and Fantasy Books of 2012",
+    "url": "https://www.goodreads.com/list/show/76144.Io9_s_The_Best_Science_Fiction_and_Fantasy_Books_of_2012",
+    "criteria": {}
+  },
+  {
+    "id": "197219",
+    "nickname": "iovation social skil",
+    "officialTitle": "iovation social skills bookclub reading list",
+    "url": "https://www.goodreads.com/list/show/197219.iovation_social_skills_bookclub_reading_list",
+    "criteria": {}
+  },
+  {
+    "id": "116305",
+    "nickname": "IT books by Female A",
+    "officialTitle": "IT books by Female Authors",
+    "url": "https://www.goodreads.com/list/show/116305.IT_books_by_Female_Authors",
+    "criteria": {}
+  },
+  {
+    "id": "130123",
+    "nickname": "Lambda Literary Awar",
+    "officialTitle": "Lambda Literary Awards for Speculative Fiction",
+    "url": "https://www.goodreads.com/list/show/130123.Lambda_Literary_Awards_for_Speculative_Fiction",
+    "criteria": {}
+  },
+  {
+    "id": "91576",
+    "nickname": "Locus Forthcoming Bo",
+    "officialTitle": "Locus Forthcoming Books of 2014",
+    "url": "https://www.goodreads.com/list/show/91576.Locus_Forthcoming_Books_of_2014",
+    "criteria": {}
+  },
+  {
+    "id": "91468",
+    "nickname": "Locus Forthcoming Bo",
+    "officialTitle": "Locus Forthcoming Books of 2015",
+    "url": "https://www.goodreads.com/list/show/91468.Locus_Forthcoming_Books_of_2015",
+    "criteria": {}
+  },
+  {
+    "id": "95647",
+    "nickname": "Locus Forthcoming Bo",
+    "officialTitle": "Locus Forthcoming Books of 2016",
+    "url": "https://www.goodreads.com/list/show/95647.Locus_Forthcoming_Books_of_2016",
+    "criteria": {}
+  },
+  {
+    "id": "106093",
+    "nickname": "Locus Forthcoming Bo",
+    "officialTitle": "Locus Forthcoming Books of 2017",
+    "url": "https://www.goodreads.com/list/show/106093.Locus_Forthcoming_Books_of_2017",
+    "criteria": {}
+  },
+  {
+    "id": "46967",
+    "nickname": "Locus Online 2011 No",
+    "officialTitle": "Locus Online 2011 Novels SF Recommended Reading List",
+    "url": "https://www.goodreads.com/list/show/46967.Locus_Online_2011_Novels_SF_Recommended_Reading_List",
+    "criteria": {}
+  },
+  {
+    "id": "31746",
+    "nickname": "Locus Online 2012 No",
+    "officialTitle": "Locus Online 2012 Novels SF Recommended Reading List",
+    "url": "https://www.goodreads.com/list/show/31746.Locus_Online_2012_Novels_SF_Recommended_Reading_List",
+    "criteria": {}
+  },
+  {
+    "id": "69260",
+    "nickname": "Locus Online 2013 No",
+    "officialTitle": "Locus Online 2013 Novels SF Recommended Reading List",
+    "url": "https://www.goodreads.com/list/show/69260.Locus_Online_2013_Novels_SF_Recommended_Reading_List",
+    "criteria": {}
+  },
+  {
+    "id": "98930",
+    "nickname": "Lynd Ward Graphic No",
+    "officialTitle": "Lynd Ward Graphic Novel Prize",
+    "url": "https://www.goodreads.com/list/show/98930.Lynd_Ward_Graphic_Novel_Prize",
+    "criteria": {}
+  },
+  {
+    "id": "78070",
+    "nickname": "Marvel Comics 2013 C",
+    "officialTitle": "Marvel Comics 2013 Collected Editions Worth Reading",
+    "url": "https://www.goodreads.com/list/show/78070.Marvel_Comics_2013_Collected_Editions_Worth_Reading",
+    "criteria": {}
+  },
+  {
+    "id": "84189",
+    "nickname": "Marvel Comics 2015 C",
+    "officialTitle": "Marvel Comics 2015 Collected Editions Worth Reading",
+    "url": "https://www.goodreads.com/list/show/84189.Marvel_Comics_2015_Collected_Editions_Worth_Reading",
+    "criteria": {}
+  },
+  {
+    "id": "96810",
+    "nickname": "Marvel Comics 2016 C",
+    "officialTitle": "Marvel Comics 2016 Collected Editions",
+    "url": "https://www.goodreads.com/list/show/96810.Marvel_Comics_2016_Collected_Editions",
+    "criteria": {}
+  },
+  {
+    "id": "106784",
+    "nickname": "Marvel Comics 2017 C",
+    "officialTitle": "Marvel Comics 2017 Collected Editions",
+    "url": "https://www.goodreads.com/list/show/106784.Marvel_Comics_2017_Collected_Editions",
+    "criteria": {}
+  },
+  {
+    "id": "119247",
+    "nickname": "Marvel Comics 2018 C",
+    "officialTitle": "Marvel Comics 2018 Collected Editions",
+    "url": "https://www.goodreads.com/list/show/119247.Marvel_Comics_2018_Collected_Editions",
+    "criteria": {}
+  },
+  {
+    "id": "131280",
+    "nickname": "Marvel Comics 2019 C",
+    "officialTitle": "Marvel Comics 2019 Collected Editions",
+    "url": "https://www.goodreads.com/list/show/131280.Marvel_Comics_2019_Collected_Editions",
+    "criteria": {}
+  },
+  {
+    "id": "79548",
+    "nickname": "Marvel Knights",
+    "officialTitle": "Marvel Knights",
+    "url": "https://www.goodreads.com/list/show/79548.Marvel_Knights",
+    "criteria": {}
+  },
+  {
+    "id": "75630",
+    "nickname": "Marvel Universe Even",
+    "officialTitle": "Marvel Universe Events",
+    "url": "https://www.goodreads.com/list/show/75630.Marvel_Universe_Events",
+    "criteria": {}
+  },
+  {
+    "id": "176662",
+    "nickname": "Most Challenged Book",
+    "officialTitle": "Most Challenged Books According to OIF",
+    "url": "https://www.goodreads.com/list/show/176662.Most_Challenged_Books_According_to_OIF",
+    "criteria": {}
+  },
+  {
+    "id": "39616",
+    "nickname": "Most Popular Childrens",
+    "officialTitle": "Most Popular Childrens Books on Goodreads with more than 50 thousand ratings",
+    "url": "https://www.goodreads.com/list/show/39616.Most_Popular_Childrens_Books_on_Goodreads_with_more_than_50_thousand_ratings",
+    "criteria": {
+       "min": 50000
+    }
+  },
+  {
+    "id": "73088",
+    "nickname": "Most Popular Graphic Novels",
+    "officialTitle": "Most Popular Graphic Novels on goodreads with over 25 thousand ratings",
+    "url": "https://www.goodreads.com/list/show/73088.Most_Popular_Graphic_Novels_on_goodreads_with_over_25_thousand_ratings",
+    "criteria": {
+       "min": 25000
+    }
+  },
+  {
+    "id": "220708",
+    "nickname": "Most Rated Book by C",
+    "officialTitle": "Most Rated Book by Country",
+    "url": "https://www.goodreads.com/list/show/220708.Most_Rated_Book_by_Country",
+    "criteria": {}
+  },
+  {
+    "id": "235200",
+    "nickname": "Most Rated Books by Year before 18th Century",
+    "officialTitle": "Most Rated Books by Year BEFORE the 18th Century",
+    "url": "https://www.goodreads.com/list/show/235200.Most_Rated_Books_by_Year_BEFORE_the_18th_Century",
+    "criteria": {
+       "maxYear": 1699
+    }
+  },
+  {
+    "id": "235191",
+    "nickname": "Most Rated Books by Year 18th Century",
+    "officialTitle": "Most Rated Books by Year of the 18th Century",
+    "url": "https://www.goodreads.com/list/show/235191.Most_Rated_Books_by_Year_of_the_18th_Century",
+    "criteria": {
+       "minYear": 1700,
+       "maxYear": 1799
+    }
+  },
+  {
+    "id": "234913",
+    "nickname": "Most Rated Books by ",
+    "officialTitle": "Most Rated Books by Year of the 19th Century",
+    "url": "https://www.goodreads.com/list/show/234913.Most_Rated_Books_by_Year_of_the_19th_Century",
+    "criteria": {}
+  },
+  {
+    "id": "43804",
+    "nickname": "Most Rated Books by by year 20th century",
+    "officialTitle": "Most Rated Books by Year of the 20th Century",
+    "url": "https://www.goodreads.com/list/show/43804.Most_Rated_Books_by_Year_of_the_20th_Century",
+    "criteria": {}
+  },
+  {
+    "id": "235122",
+    "nickname": "Most Rated Books by Year 21st century",
+    "officialTitle": "Most Rated Books by Year of the 21st Century",
+    "url": "https://www.goodreads.com/list/show/235122.Most_Rated_Books_by_Year_of_the_21st_Century",
+    "criteria": {}
+  },
+  {
+    "id": "139338",
+    "nickname": "National Academies C",
+    "officialTitle": "National Academies Communications Award",
+    "url": "https://www.goodreads.com/list/show/139338.National_Academies_Communications_Award",
+    "criteria": {}
+  },
+  {
+    "id": "141103",
+    "nickname": "New Speculative Fict",
+    "officialTitle": "New Speculative Fiction Stars 2000-2009",
+    "url": "https://www.goodreads.com/list/show/141103._New_Speculative_Fiction_Stars_2000_2009",
+    "criteria": {}
+  },
+  {
+    "id": "141063",
+    "nickname": "New Speculative Fict",
+    "officialTitle": "New Speculative Fiction Stars 2010-2019",
+    "url": "https://www.goodreads.com/list/show/141063._New_Speculative_Fiction_Stars_2010_2019",
+    "criteria": {}
+  },
+  {
+    "id": "162273",
+    "nickname": "New Speculative Fict",
+    "officialTitle": "New Speculative Fiction Stars 2020-2029",
+    "url": "https://www.goodreads.com/list/show/162273.New_Speculative_Fiction_Stars_2020_2029",
+    "criteria": {}
+  },
+  {
+    "id": "118619",
+    "nickname": "Non Fiction Diversit",
+    "officialTitle": "Non Fiction Diversity Books",
+    "url": "https://www.goodreads.com/list/show/118619.Non_Fiction_Diversity_Books",
+    "criteria": {}
+  },
+  {
+    "id": "44916",
+    "nickname": "Obscure but awesome ",
+    "officialTitle": "Obscure but awesome science fiction and fantasy",
+    "url": "https://www.goodreads.com/list/show/44916.Obscure_but_awesome_science_fiction_and_fantasy",
+    "criteria": {}
+  },
+  {
+    "id": "176650",
+    "nickname": "Phoenix Picture Book",
+    "officialTitle": "Phoenix Picture Book Award",
+    "url": "https://www.goodreads.com/list/show/176650.Phoenix_Picture_Book_Award",
+    "criteria": {}
+  },
+  {
+    "id": "199243",
+    "nickname": "Picture Books of 2023",
+    "officialTitle": "Picture Books of 2023",
+    "url": "https://www.goodreads.com/list/show/199243.Picture_Books_of_2023",
+    "criteria": {
+       "minYear": 2023,
+       "maxYear": 2023
+    }
+  },
+  {
+    "id": "152407",
+    "nickname": "Picture Books of the 2000s",
+    "officialTitle": "Picture Books of the 2000s",
+    "url": "https://www.goodreads.com/list/show/152407.Picture_Books_of_the_2000s_",
+    "criteria": {
+      "minYear": 2000,
+      "maxYear": 2009
+    }
+  },
+  {
+    "id": "156780",
+    "nickname": "Picture Books of the 2010s",
+    "officialTitle": "Picture Books of the 2010s",
+    "url": "https://www.goodreads.com/list/show/156780.Picture_Books_of_the_2010s_",
+    "criteria": {
+      "minYear": 2010,
+      "maxYear": 2019
+    }
+  },
+  {
+    "id": "171983",
+    "nickname": "Picture Books of the 2020s",
+    "officialTitle": "Picture Books of the 2020s",
+    "url": "https://www.goodreads.com/list/show/171983.Picture_Books_of_the_2020s",
+    "criteria": {
+      "minYear": 2020,
+      "maxYear": 2029
+    }
+  },
+  {
+    "id": "46916",
+    "nickname": "Popular Fantasy on G",
+    "officialTitle": "Popular Fantasy on Goodreads with  between 50000 and 99999 ratings",
+    "url": "https://www.goodreads.com/list/show/46916.Popular_Fantasy_on_Goodreads_with_between_50000_and_99999_ratings",
+    "criteria": {
+      "min": 50000,
+      "max": 99999
+    }
+  },
+  {
+    "id": "79318",
+    "nickname": "Popular Fantasy 100 to 999 ratings",
+    "officialTitle": "Popular Fantasy on Goodreads with between 100 and 999 ratings",
+    "url": "https://www.goodreads.com/list/show/79318.Popular_Fantasy_on_Goodreads_with_between_100_and_999_ratings",
+    "criteria": {
+      "min": 100,
+      "max": 999
+    }
+  },
+  {
+    "id": "80066",
+    "nickname": "Popular Fantasy on G",
+    "officialTitle": "Popular Fantasy on Goodreads with between 1000 and 9999 ratings",
+    "url": "https://www.goodreads.com/list/show/80066.Popular_Fantasy_on_Goodreads_with_between_1000_and_9999_ratings",
+    "criteria": {
+      "min": 1000,
+      "max": 9999
+    }
+  },
+  {
+    "id": "76860",
+    "nickname": "Popular Fantasy on Goodreads 10000 to 24999",
+    "officialTitle": "Popular Fantasy on Goodreads with between 10000 and 24999 ratings",
+    "url": "https://www.goodreads.com/list/show/76860.Popular_Fantasy_on_Goodreads_with_between_10000_and_24999_ratings",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "id": "74893",
+    "nickname": "Popular Fantasy on Goodreads 25000 to 49999",
+    "officialTitle": "Popular Fantasy on Goodreads with between 25000 and 49999 ratings",
+    "url": "https://www.goodreads.com/list/show/74893.Popular_Fantasy_on_Goodreads_with_between_25000_and_49999_ratings",
+    "criteria": {
+      "min": 25000,
+      "max": 49999
+    }
+  },
+  {
+    "id": "160157",
+    "nickname": "Popular First Book G",
+    "officialTitle": "Popular First Book Graphic Novels",
+    "url": "https://www.goodreads.com/list/show/160157.Popular_First_Book_Graphic_Novels",
+    "criteria": {}
+  },
+  {
+    "id": "203738",
+    "nickname": "Popular Highly Rated",
+    "officialTitle": "Popular Highly Rated Books of the 2000s",
+    "url": "https://www.goodreads.com/list/show/203738.Popular_Highly_Rated_Books_of_the_2000s",
+    "criteria": {
+      "minYear": 2000,
+      "maxYear": 2009
+    }
+  },
+  {
+    "id": "203808",
+    "nickname": "Popular Highly Rated",
+    "officialTitle": "Popular Highly Rated Books of the 2010s",
+    "url": "https://www.goodreads.com/list/show/203808.Popular_Highly_Rated_Books_of_the_2010s",
+    "criteria": {
+      "minYear": 2010,
+      "maxYear": 2019
+    }
+  },
+  {
+    "id": "114178",
+    "nickname": "Popular Highly Rated Fantasy",
+    "officialTitle": "Popular Highly Rated Fantasy",
+    "url": "https://www.goodreads.com/list/show/114178.Popular_Highly_Rated_Fantasy",
+    "criteria": {}
+  },
+  {
+    "id": "142751",
+    "nickname": "Popular Highly Rated Mystery",
+    "officialTitle": "Popular Highly Rated Mystery",
+    "url": "https://www.goodreads.com/list/show/142751.Popular_Highly_Rated_Mystery",
+    "criteria": {
+      "min": 40000
+    }
+  },
+  {
+    "id": "114163",
+    "nickname": "Popular Highly Rated",
+    "officialTitle": "Popular Highly Rated Science Fiction",
+    "url": "https://www.goodreads.com/list/show/114163.Popular_Highly_Rated_Science_Fiction",
+    "criteria": {}
+  },
+  {
+    "id": "113378",
+    "nickname": "Popular Marvel Comic",
+    "officialTitle": "Popular Marvel Comics Books",
+    "url": "https://www.goodreads.com/list/show/113378.Popular_Marvel_Comics_Books",
+    "criteria": {}
+  },
+  {
+    "id": "142774",
+    "nickname": "Popular Mysteries on 10000 and 24999",
+    "officialTitle": "Popular Mysteries on Goodreads with between 10000 and 24999 ratings",
+    "url": "https://www.goodreads.com/list/show/142774.Popular_Mysteries_on_Goodreads_with_between_10000_and_24999_ratings",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "id": "80850",
+    "nickname": "Popular Mysteries on 25000 and 49999",
+    "officialTitle": "Popular Mysteries on Goodreads with between 25000 and 49999 ratings",
+    "url": "https://www.goodreads.com/list/show/80850.Popular_Mysteries_on_Goodreads_with_between_25000_and_49999_ratings",
+    "criteria": {
+      "min": 25000,
+      "max": 49999
+    }
+  },
+  {
+    "id": "79160",
+    "nickname": "Popular Mysteries on 50000 and 99999",
+    "officialTitle": "Popular Mysteries on Goodreads with between 50000 and 99999 ratings",
+    "url": "https://www.goodreads.com/list/show/79160.Popular_Mysteries_on_Goodreads_with_between_50000_and_99999_ratings",
+    "criteria": {
+      "min": 50000,
+      "max": 99999
+    }
+  },
+  {
+    "id": "156485",
+    "nickname": "Popular Romance on G",
+    "officialTitle": "Popular Romance on Goodreads with between 25000 and 50000 ratings",
+    "url": "https://www.goodreads.com/list/show/156485.Popular_Romance_on_Goodreads_with_between_25000_and_50000_ratings",
+    "criteria": {
+      "min": 25000,
+      "max": 50000
+    }
+  },
+  {
+    "id": "120149",
+    "nickname": "Popular Romance on G",
+    "officialTitle": "Popular Romance on Goodreads with between 50000 and 100000 ratings",
+    "url": "https://www.goodreads.com/list/show/120149.Popular_Romance_on_Goodreads_with_between_50000_and_100000_ratings",
+    "criteria": {
+      "min": 50000,
+      "max": 100000
+    }
+  },
+  {
+    "nickname": "100,000 and more",
+    "officialTitle": "Popular Science Fiction on Goodreads with 100,000 and more ratings",
+    "id": "35776",
+    "url": "https://www.goodreads.com/list/show/35776",
+    "criteria": {
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "10000 to 24999",
+    "officialTitle": "Popular Science Fiction on Goodreads with between 10,000 and 24,999 ratings",
+    "id": "46769",
+    "url": "https://www.goodreads.com/list/show/46769",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "nickname": "100 to 999",
+    "officialTitle": "Popular Science Fiction on Goodreads with between 100 and 999 ratings",
+    "id": "78128",
+    "url": "https://www.goodreads.com/list/show/78128",
+    "criteria": {
+      "min": 100,
+      "max": 999
+    }
+  },
+  {
+    "nickname": "25000 to 49999",
+    "officialTitle": "Popular Science Fiction on Goodreads with between 25,000 and 49,999 ratings",
+    "id": "39287",
+    "url": "https://www.goodreads.com/list/show/39287",
+    "criteria": {
+      "min": 25000,
+      "max": 49999
+    }
+  },
+  {
+    "nickname": "50000 to 99999",
+    "officialTitle": "Popular Science Fiction on Goodreads with between 50,000 and 99,999 ratings",
+    "id": "138257",
+    "url": "https://www.goodreads.com/list/show/138257",
+    "criteria": {
+      "min": 50000,
+      "max": 99999
+    }
+  },
+  {
+    "nickname": "Less than 100",
+    "officialTitle": "Popular Science Fiction on Goodreads with less than 100 ratings",
+    "id": "79670",
+    "url": "https://www.goodreads.com/list/show/79670",
+    "criteria": {
+      "max": 99
+    }
+  },
+  {
+    "id": "160107",
+    "nickname": "Popular Standalone G",
+    "officialTitle": "Popular Standalone Graphic Novels",
+    "url": "https://www.goodreads.com/list/show/160107.Popular_Standalone_Graphic_Novels",
+    "criteria": {}
+  },
+  {
+    "id": "204845",
+    "nickname": "powells sf book grou",
+    "officialTitle": "powells sf book group in exile",
+    "url": "https://www.goodreads.com/list/show/204845.powells_sf_book_group_in_exile",
+    "criteria": {}
+  },
+  {
+    "id": "76468",
+    "nickname": "Prometheus Best Nove",
+    "officialTitle": "Prometheus Best Novel Award Winners",
+    "url": "https://www.goodreads.com/list/show/76468.Prometheus_Best_Novel_Award_Winners",
+    "criteria": {}
+  },
+  {
+    "id": "76508",
+    "nickname": "Prometheus Hall of F",
+    "officialTitle": "Prometheus Hall of Fame Award Winners",
+    "url": "https://www.goodreads.com/list/show/76508.Prometheus_Hall_of_Fame_Award_Winners",
+    "criteria": {}
+  },
+  {
+    "id": "135160",
+    "nickname": "References from Esse",
+    "officialTitle": "References from Essential Scrum",
+    "url": "https://www.goodreads.com/list/show/135160.References_from_Essential_Scrum",
+    "criteria": {}
+  },
+  {
+    "id": "155831",
+    "nickname": "Science Fiction Rele",
+    "officialTitle": "Science Fiction Released in 2007",
+    "url": "https://www.goodreads.com/list/show/155831.Science_Fiction_Released_in_2007",
+    "criteria": {
+      "minYear": 2007,
+      "maxYear": 2007
+    }
+  },
+  {
+    "id": "155511",
+    "nickname": "Science Fiction Rele",
+    "officialTitle": "Science Fiction Released in 2008",
+    "url": "https://www.goodreads.com/list/show/155511.Science_Fiction_Released_in_2008",
+    "criteria": {
+      "minYear": 2008,
+      "maxYear": 2008
+    }
+  },
+  {
+    "id": "155483",
+    "nickname": "Science Fiction Rele",
+    "officialTitle": "Science Fiction Released in 2009",
+    "url": "https://www.goodreads.com/list/show/155483.Science_Fiction_Released_in_2009",
+    "criteria": {
+      "minYear": 2009,
+      "maxYear": 2009
+    }
+  },
+  {
+    "nickname": "2010",
+    "officialTitle": "Science Fiction Released in 2010",
+    "id": "155401",
+    "url": "https://www.goodreads.com/list/show/155401",
+    "criteria": {
+      "minYear": 2010,
+      "maxYear": 2010
+    }
+  },
+  {
+    "nickname": "2011",
+    "officialTitle": "Science Fiction Released in 2011",
+    "id": "155391",
+    "url": "https://www.goodreads.com/list/show/155391",
+    "criteria": {
+      "minYear": 2011,
+      "maxYear": 2011
+    }
+  },
+  {
+    "nickname": "2012",
+    "officialTitle": "Science Fiction Released in 2012",
+    "id": "155378",
+    "url": "https://www.goodreads.com/list/show/155378",
+    "criteria": {
+      "minYear": 2012,
+      "maxYear": 2012
+    }
+  },
+  {
+    "nickname": "2013",
+    "officialTitle": "Science Fiction Released in 2013",
+    "id": "155343",
+    "url": "https://www.goodreads.com/list/show/155343",
+    "criteria": {
+      "minYear": 2013,
+      "maxYear": 2013
+    }
+  },
+  {
+    "nickname": "2014",
+    "officialTitle": "Science Fiction Released in 2014",
+    "id": "155307",
+    "url": "https://www.goodreads.com/list/show/155307",
+    "criteria": {
+      "minYear": 2014,
+      "maxYear": 2014
+    }
+  },
+  {
+    "nickname": "2015",
+    "officialTitle": "Science Fiction Released in 2015",
+    "id": "155296",
+    "url": "https://www.goodreads.com/list/show/155296",
+    "criteria": {
+      "minYear": 2015,
+      "maxYear": 2015
+    }
+  },
+  {
+    "nickname": "2016",
+    "officialTitle": "Science Fiction Released in 2016",
+    "id": "155261",
+    "url": "https://www.goodreads.com/list/show/155261",
+    "criteria": {
+      "minYear": 2016,
+      "maxYear": 2016
+    }
+  },
+  {
+    "nickname": "2017",
+    "officialTitle": "Science Fiction Released in 2017",
+    "id": "155402",
+    "url": "https://www.goodreads.com/list/show/155402",
+    "criteria": {
+      "minYear": 2017,
+      "maxYear": 2017
+    }
+  },
+  {
+    "nickname": "2018",
+    "officialTitle": "Science Fiction Released in 2018",
+    "id": "155440",
+    "url": "https://www.goodreads.com/list/show/155440",
+    "criteria": {
+      "minYear": 2018,
+      "maxYear": 2018
+    }
+  },
+  {
+    "nickname": "2019",
+    "officialTitle": "Science Fiction Released in 2019",
+    "id": "155447",
+    "url": "https://www.goodreads.com/list/show/155447",
+    "criteria": {
+      "minYear": 2019,
+      "maxYear": 2019
+    }
+  },
+  {
+    "nickname": "2020",
+    "officialTitle": "Science Fiction Released in 2020",
+    "id": "155799",
+    "url": "https://www.goodreads.com/list/show/155799",
+    "criteria": {
+      "minYear": 2020,
+      "maxYear": 2020
+    }
+  },
+  {
+    "nickname": "2021",
+    "officialTitle": "Science Fiction Released in 2021",
+    "id": "171985",
+    "url": "https://www.goodreads.com/list/show/171985",
+    "criteria": {
+      "minYear": 2021,
+      "maxYear": 2021
+    }
+  },
+  {
+    "nickname": "2022",
+    "officialTitle": "Science Fiction Released in 2022",
+    "id": "196123",
+    "url": "https://www.goodreads.com/list/show/196123",
+    "criteria": {
+      "minYear": 2022,
+      "maxYear": 2022
+    }
+  },
+  {
+    "nickname": "2023",
+    "officialTitle": "Science Fiction Released in 2023",
+    "id": "196124",
+    "url": "https://www.goodreads.com/list/show/196124",
+    "criteria": {
+      "minYear": 2023,
+      "maxYear": 2023
+    }
+  },
+  {
+    "nickname": "2024",
+    "officialTitle": "Science Fiction Released in 2024",
+    "id": "242933",
+    "url": "https://www.goodreads.com/list/show/242933",
+    "criteria": {
+      "minYear": 2024,
+      "maxYear": 2024
+    }
+  },
+  {
+    "nickname": "2025",
+    "officialTitle": "Science Fiction Released in 2025",
+    "id": "242932",
+    "url": "https://www.goodreads.com/list/show/242932",
+    "criteria": {
+      "minYear": 2025,
+      "maxYear": 2025
+    }
+  },
+  {
+    "nickname": "2010s",
+    "officialTitle": "Science Fiction Released in the 2010s",
+    "id": "75182",
+    "url": "https://www.goodreads.com/list/show/75182",
+    "criteria": {
+      "minYear": 2010,
+      "maxYear": 2019
+    }
+  },
+  {
+    "nickname": "2020s",
+    "officialTitle": "Science Fiction Released in the 2020s",
+    "id": "146613",
+    "url": "https://www.goodreads.com/list/show/146613",
+    "criteria": {
+      "minYear": 2020,
+      "maxYear": 2029
+    }
+  },
+  {
+    "id": "42467",
+    "nickname": "science fiction surv",
+    "officialTitle": "science fiction surveillance",
+    "url": "https://www.goodreads.com/list/show/42467.science_fiction_surveillance",
+    "criteria": {}
+  },
+  {
+    "id": "218891",
+    "nickname": "Seiun Award Winner -",
+    "officialTitle": "Seiun Award Winner - Best Translated Long Work",
+    "url": "https://www.goodreads.com/list/show/218891.Seiun_Award_Winner_Best_Translated_Long_Work",
+    "criteria": {}
+  },
+  {
+    "id": "37964",
+    "nickname": "SF Masterworks by Or",
+    "officialTitle": "SF Masterworks by Orion Publishing Group",
+    "url": "https://www.goodreads.com/list/show/37964.SF_Masterworks_by_Orion_Publishing_Group",
+    "criteria": {}
+  },
+  {
+    "id": "232776",
+    "nickname": "SFWA's Damon Knight ",
+    "officialTitle": "SFWA's Damon Knight Memorial Grand Master Award",
+    "url": "https://www.goodreads.com/list/show/232776.SFWA_s_Damon_Knight_Memorial_Grand_Master_Award",
+    "criteria": {}
+  },
+  {
+    "id": "201526",
+    "nickname": "Sibert Medal Winners",
+    "officialTitle": "Sibert Medal Winners and Honors",
+    "url": "https://www.goodreads.com/list/show/201526.Sibert_Medal_Winners_and_Honors",
+    "criteria": {}
+  },
+  {
+    "id": "167319",
+    "nickname": "Spring Framework Boo",
+    "officialTitle": "Spring Framework Books",
+    "url": "https://www.goodreads.com/list/show/167319.Spring_Framework_Books",
+    "criteria": {}
+  },
+  {
+    "id": "131399",
+    "nickname": "Surprisingly Popular",
+    "officialTitle": "Surprisingly Popular Listopia Books",
+    "url": "https://www.goodreads.com/list/show/131399.Surprisingly_Popular_Listopia_Books",
+    "criteria": {}
+  },
+  {
+    "id": "173487",
+    "nickname": "Sydney Taylor Book Award",
+    "officialTitle": "Sydney Taylor Book Award for Young Adults",
+    "url": "https://www.goodreads.com/list/show/173487.Sydney_Taylor_Book_Award_for_Young_Adults",
+    "criteria": {}
+  },
+  {
+    "id": "232844",
+    "nickname": "The 100 Authors with a book most shelved as comic strips",
+    "officialTitle": "The 100 Authors with a book most shelved as comic strips",
+    "url": "https://www.goodreads.com/list/show/232844.The_100_Authors_with_a_book_most_shelved_as_comic_strips",
+    "criteria": {}
+  },
+  {
+    "id": "232738",
+    "nickname": "The 100 Authors with",
+    "officialTitle": "The 100 Authors with a book most shelved as graphic novels",
+    "url": "https://www.goodreads.com/list/show/232738.The_100_Authors_with_a_book_most_shelved_as_graphic_novels",
+    "criteria": {}
+  },
+  {
+    "id": "233428",
+    "nickname": "The 100 Authors with",
+    "officialTitle": "The 100 Authors with a book most shelved as picture books",
+    "url": "https://www.goodreads.com/list/show/233428.The_100_Authors_with_a_book_most_shelved_as_picture_books",
+    "criteria": {}
+  },
+  {
+    "id": "232726",
+    "nickname": "The 100 Fantasy Auth",
+    "officialTitle": "The 100 Fantasy Authors with a book most shelved as fantasy",
+    "url": "https://www.goodreads.com/list/show/232726.The_100_Fantasy_Authors_with_a_book_most_shelved_as_fantasy",
+    "criteria": {}
+  },
+  {
+    "id": "232706",
+    "nickname": "The 100 Science Fict",
+    "officialTitle": "The 100 Science Fiction Authors with a book most shelved as science fiction",
+    "url": "https://www.goodreads.com/list/show/232706.The_100_Science_Fiction_Authors_with_a_book_most_shelved_as_science_fiction",
+    "criteria": {}
+  },
+  {
+    "id": "136193",
+    "nickname": "The Alt-Right Playbo",
+    "officialTitle": "The Alt-Right Playbook Research List",
+    "url": "https://www.goodreads.com/list/show/136193.The_Alt_Right_Playbook_Research_List",
+    "criteria": {}
+  },
+  {
+    "id": "48024",
+    "nickname": "The Best How To Surv",
+    "officialTitle": "The Best How To Survive Books",
+    "url": "https://www.goodreads.com/list/show/48024.The_Best_How_To_Survive_Books",
+    "criteria": {}
+  },
+  {
+    "id": "183833",
+    "nickname": "The Best of Lois McM",
+    "officialTitle": "The Best of Lois McMaster Bujold",
+    "url": "https://www.goodreads.com/list/show/183833.The_Best_of_Lois_McMaster_Bujold",
+    "criteria": {}
+  },
+  {
+    "id": "116760",
+    "nickname": "The Best of the New ",
+    "officialTitle": "The Best of the New Mutants",
+    "url": "https://www.goodreads.com/list/show/116760.The_Best_of_the_New_Mutants",
+    "criteria": {}
+  },
+  {
+    "id": "130942",
+    "nickname": "The Best of X-23",
+    "officialTitle": "The Best of X-23",
+    "url": "https://www.goodreads.com/list/show/130942.The_Best_of_X_23",
+    "criteria": {}
+  },
+  {
+    "id": "172262",
+    "nickname": "The Most Popular Bib",
+    "officialTitle": "The Most Popular Bibliophilia Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/172262.The_Most_Popular_Bibliophilia_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "35857",
+    "nickname": "The Most Popular Fan",
+    "officialTitle": "The Most Popular Fantasy on Goodreads",
+    "url": "https://www.goodreads.com/list/show/35857.The_Most_Popular_Fantasy_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "92581",
+    "nickname": "The Most Popular Hor",
+    "officialTitle": "The Most Popular Horror on Goodreads",
+    "url": "https://www.goodreads.com/list/show/92581.The_Most_Popular_Horror_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "195574",
+    "nickname": "The Most Popular Mys",
+    "officialTitle": "The Most Popular Mysteries on Goodreads",
+    "url": "https://www.goodreads.com/list/show/195574.The_Most_Popular_Mysteries_on_Goodreads",
+    "criteria": {
+      "min": 100000
+    }
+  },
+  {
+    "id": "157772",
+    "nickname": "The Most Popular Neu",
+    "officialTitle": "The Most Popular Neuroscience Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/157772.The_Most_Popular_Neuroscience_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "157453",
+    "nickname": "The Most Popular New",
+    "officialTitle": "The Most Popular New Adult Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/157453.The_Most_Popular_New_Adult_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "36384",
+    "nickname": "The Most Popular Non",
+    "officialTitle": "The Most Popular Non-Fiction on Goodreads",
+    "url": "https://www.goodreads.com/list/show/36384.The_Most_Popular_Non_Fiction_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "159497",
+    "nickname": "The Most Popular Sof",
+    "officialTitle": "The Most Popular Software Architecture Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/159497.The_Most_Popular_Software_Architecture_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "200988",
+    "nickname": "The Most Popular Tim",
+    "officialTitle": "The Most Popular Time Travel Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/200988.The_Most_Popular_Time_Travel_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "171186",
+    "nickname": "The Most Popular Wei",
+    "officialTitle": "The Most Popular Weird Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/171186.The_Most_Popular_Weird_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "93222",
+    "nickname": "The Most Popular You",
+    "officialTitle": "The Most Popular Young Adult Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/93222.The_Most_Popular_Young_Adult_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "40972",
+    "nickname": "Top Rated Books that don't have a movie",
+    "officialTitle": "Top Rated Books that have not been made into a movie (yet)",
+    "url": "https://www.goodreads.com/list/show/40972.Top_Rated_Books_that_have_not_been_made_into_a_movie_yet_",
+    "criteria": {}
+  },
+  {
+    "id": "47037",
+    "nickname": "Unknown books on more than 60 goodreads list",
+    "officialTitle": "Unknown books on more than 60 Goodreads Lists",
+    "url": "https://www.goodreads.com/list/show/47037.Unknown_books_on_more_than_60_Goodreads_Lists",
+    "criteria": {}
+  },
+  {
+    "id": "140833",
+    "nickname": "William James Book Award",
+    "officialTitle": "William James Book Award",
+    "url": "https://www.goodreads.com/list/show/140833.William_James_Book_Award",
+    "criteria": {}
+  },
+  {
+    "id": "92198",
+    "nickname": "Your Favorite Angry Robot",
+    "officialTitle": "Your Favorite Angry Robot Books",
+    "url": "https://www.goodreads.com/list/show/92198.Your_Favorite_Angry_Robot_Books",
+    "criteria": {}
+  },
+  {
+    "id": "134791",
+    "nickname": "Your Favorite Feminist Press at CUNY",
+    "officialTitle": "Your Favorite Feminist Press at CUNY Books",
+    "url": "https://www.goodreads.com/list/show/134791.Your_Favorite_Feminist_Press_at_CUNY_Books_",
+    "criteria": {}
+  },
+  {
+    "id": "138566",
+    "nickname": "Your Favorite First First Second",
+    "officialTitle": "Your Favorite First Second Books",
+    "url": "https://www.goodreads.com/list/show/138566.Your_Favorite_First_Second_Books",
+    "criteria": {}
+  },
+  {
+    "id": "118700",
+    "nickname": "Your Favorite Night Shade Books",
+    "officialTitle": "Your Favorite Night Shade Books",
+    "url": "https://www.goodreads.com/list/show/118700.Your_Favorite_Night_Shade_Books",
+    "criteria": {}
+  }
+]

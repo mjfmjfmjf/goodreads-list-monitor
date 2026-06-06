@@ -1,0 +1,20 @@
+# Dependency directories
+node_modules/
+
+# Build and temporary files
+*.log
+npm-debug.log*
+.DS_Store
+
+# Large data/cache files
+booksCache.json
+auditReport.txt
+state.json*
+shelf.html
+
+# Configuration (contains private cookies/tokens)
+config.json
+
+# Local scripts/backups
+*.bak
+memory/

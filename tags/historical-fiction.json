@@ -1,0 +1,15 @@
+{
+  "tag": "historical-fiction",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "Best Popular Historical Fiction Books on Goodreads",
+      "id": "156482",
+      "url": "https://www.goodreads.com/list/show/156482",
+      "criteria": {
+        "min": 100000,
+        "minTags": 1000 
+      }
+    }
+  ]
+}

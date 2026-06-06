@@ -1,0 +1,159 @@
+import chalk from 'chalk';
+import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+
+export async function delay(min = 100, max = 2000): Promise<void> {
+  const ms = Math.floor(Math.random() * (max - min + 1) + min);
+  console.log(chalk.gray(`   (Waiting ${(ms / 1000).toFixed(2)}s...)`));
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export async function fetchWithRetry(url: string, config: AxiosRequestConfig, retries = 3): Promise<AxiosResponse> {
+  let lastError: any;
+  
+  for (let i = 0; i < retries; i++) {
+    try {
+      if (i > 0) {
+        const waitTime = Math.pow(2, i) * 2000; // 2s, 4s, 8s backoff
+        console.log(chalk.yellow.bold(`   ⚠️ Retry ${i}/${retries} after ${waitTime/1000}s pause...`));
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+      return await axios.get(url, config);
+    } catch (error: any) {
+      lastError = error;
+      const status = error.response?.status;
+      
+      if (status === 429) {
+        console.log(chalk.red.bold(`   🛑 Rate limited (Status 429). Giving up to avoid further blocking.`));
+        throw error;
+      }
+
+      // Retry on 5xx (Server Errors) or timeouts
+      if ((status >= 500 && status <= 599) || error.code === 'ECONNABORTED') {
+        const statusMsg = status ? `Status ${status}` : error.code;
+        console.log(chalk.red.bold(`   ❌ Request failed (${statusMsg})...`));
+        continue;
+      }
+      
+      // Don't retry on 404 or other 4xx errors
+      throw error;
+    }
+  }
+  
+  throw lastError;
+}
+
+export function getYear(dateString: string): number | null {
+  if (!dateString || dateString === 'Unknown') return null;
+  
+  // 1. Handle our custom YYYY.MM.DD format
+  if (/^\d{1,4}\.\d{2}\.\d{2}$/.test(dateString)) {
+    return parseInt(dateString.split('.')[0], 10);
+  }
+
+  // 2. Handle a plain 1-4 digit year
+  if (/^\d{1,4}$/.test(dateString)) {
+    return parseInt(dateString, 10);
+  }
+
+  // 3. Look for a 4-digit year in a larger string (e.g. "January 1, 2008")
+  const match = dateString.match(/\b(\d{4})\b/);
+  if (match) {
+    const y = parseInt(match[1], 10);
+    if (y <= 2100) return y;
+  }
+
+  return null;
+}
+
+export function formatDate(dateString: string, context?: string): string {
+  if (!dateString || dateString === 'Unknown') return 'Unknown';
+
+  const cleanStr = dateString.replace(/First published |Published /gi, '').trim();
+
+  // 1. If it's just a year, return it
+  if (/^\d{1,4}$/.test(cleanStr)) return cleanStr;
+
+  // 2. Try standard date parsing
+  const date = new Date(cleanStr);
+  if (!isNaN(date.getTime())) {
+    const y = date.getFullYear();
+    const m = (date.getMonth() + 1).toString().padStart(2, '0');
+    const d = date.getDate().toString().padStart(2, '0');
+    
+    const fourDigitMatch = cleanStr.match(/\b(\d{4})\b/);
+    const anyDigitMatch = cleanStr.match(/\b(\d{1,4})\b/);
+    
+    let actualYear = y;
+    if (fourDigitMatch) {
+      actualYear = parseInt(fourDigitMatch[1], 10);
+    } else if (anyDigitMatch && y < 100) {
+      actualYear = parseInt(anyDigitMatch[1], 10);
+      console.log(chalk.yellow(`   ⚠️ Warning: Ambiguous year "${y}" for "${context || dateString}". Guessing "${actualYear}".`));
+    }
+    
+    return `${actualYear}.${m}.${d}`;
+  }
+
+  // 3. SURGICAL FALLBACK: If new Date() failed (e.g. "PaperbackAugust 7, 2003"), 
+  // try to find a Month Day, Year pattern manually
+  const months = '(January|February|March|April|May|June|July|August|September|October|November|December)';
+  const manualMatch = cleanStr.match(new RegExp(`${months}\\s+(\\d{1,2}),?\\s+(\\d{4})`, 'i'));
+  
+  if (manualMatch) {
+    const monthName = manualMatch[1];
+    const day = manualMatch[2].padStart(2, '0');
+    const year = manualMatch[3];
+    
+    const monthIndex = new Date(`${monthName} 1, 2000`).getMonth() + 1;
+    const month = monthIndex.toString().padStart(2, '0');
+    
+    return `${year}.${month}.${day}`;
+  }
+
+  // 4. Final attempt: Just return a 4-digit year if found
+  const yearOnly = getYear(cleanStr);
+  if (yearOnly) {
+    console.log(chalk.yellow(`   ⚠️ Warning: Falling back to year-only "${yearOnly}" for "${context || dateString}" (Raw: "${cleanStr}")`));
+    return yearOnly.toString();
+  }
+
+  return 'Unknown';
+}
+
+
+export function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\s*\(.*\)$/, '')      // Remove anything in parentheses at the end (e.g. (Paperback))
+    .replace(/\s*#\d+/, '')         // Remove volume numbers like #1
+    .replace(/:\s+.*$/, '')         // Remove subtitles after a colon (e.g. "Dune: 50th Anniversary")
+    .replace(/[^a-z0-9\s]/g, '')    // Remove punctuation
+    .replace(/\s+/g, ' ')           // Normalize whitespace
+    .trim();
+}
+
+export function normalizeAuthor(author: string): string {
+  return author
+    .toLowerCase()
+    .replace(/\(.*\)$/, '')         // Remove roles like (Goodreads Author) or (Contributor)
+    .replace(/[^a-z0-9\s]/g, '')    // Remove punctuation
+    .replace(/\s+/g, ' ')           // Normalize whitespace
+    .trim();
+}
+
+export function formatBookLink(title: string, id: string): string {
+  // If title contains CJK (Chinese, Japanese, Korean) characters, 
+  // or if it's a known Asian-origin title like Naruto, 
+  // we use the [book:Title|ID] format which Goodreads handles better.
+  const hasAsianChars = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/.test(title);
+  
+  // We'll also use it for everything in the log/reports for better Goodreads compatibility
+  // as it creates clickable links if pasted into Goodreads.
+  if (hasAsianChars || title.toLowerCase().includes('naruto') || title.toLowerCase().includes('jujutsu') || title.toLowerCase().includes('spy×family')) {
+     return `[book:${title}|${id}]`;
+  }
+  
+  // Default to a quoted title but return the link format if we want to be safe across the board.
+  // Let's use the link format for ALL books in messages to be safe and helpful.
+  return `[book:${title}|${id}]`;
+}

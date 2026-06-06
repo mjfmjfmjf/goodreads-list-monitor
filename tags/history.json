@@ -1,0 +1,185 @@
+{
+  "tag": "history",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "Best Popular History Books on Goodreads",
+      "id": "108393",
+      "url": "https://www.goodreads.com/list/show/108393",
+      "criteria": {
+        "min": 5000,
+        "minTags": 500
+      }
+    },
+    {
+      "nickname": "2026",
+      "officialTitle": "History Published in 2026",
+      "id": "232571",
+      "url": "https://www.goodreads.com/list/show/232571",
+      "criteria": {
+        "minYear": 2026,
+        "maxYear": 2026
+      }
+    },
+    {
+      "nickname": "2025",
+      "officialTitle": "History Published in 2025",
+      "id": "205266",
+      "url": "https://www.goodreads.com/list/show/205266",
+      "criteria": {
+        "minYear": 2025,
+        "maxYear": 2025
+      }
+    },
+    {
+      "nickname": "2024",
+      "officialTitle": "History Published in 2024",
+      "id": "188485",
+      "url": "https://www.goodreads.com/list/show/188485",
+      "criteria": {
+        "minYear": 2024,
+        "maxYear": 2024
+      }
+    },
+    {
+      "nickname": "2023",
+      "officialTitle": "History Published in 2023",
+      "id": "180236",
+      "url": "https://www.goodreads.com/list/show/180236",
+      "criteria": {
+        "minYear": 2023,
+        "maxYear": 2023
+      }
+    },
+    {
+      "nickname": "2022",
+      "officialTitle": "History Published in 2022",
+      "id": "161626",
+      "url": "https://www.goodreads.com/list/show/161626",
+      "criteria": {
+        "minYear": 2022,
+        "maxYear": 2022
+      }
+    },
+    {
+      "nickname": "2021",
+      "officialTitle": "History Published in 2021",
+      "id": "150583",
+      "url": "https://www.goodreads.com/list/show/150583",
+      "criteria": {
+        "minYear": 2021,
+        "maxYear": 2021
+      }
+    },
+    {
+      "nickname": "2020",
+      "officialTitle": "History Published in 2020",
+      "id": "132673",
+      "url": "https://www.goodreads.com/list/show/132673",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2020
+      }
+    },
+    {
+      "nickname": "2019",
+      "officialTitle": "History Published in 2019",
+      "id": "125366",
+      "url": "https://www.goodreads.com/list/show/125366",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2018",
+      "officialTitle": "History Published in 2018",
+      "id": "120552",
+      "url": "https://www.goodreads.com/list/show/120552",
+      "criteria": {
+        "minYear": 2018,
+        "maxYear": 2018
+      }
+    },
+    {
+      "nickname": "2017",
+      "officialTitle": "History Published in 2017",
+      "id": "120834",
+      "url": "https://www.goodreads.com/list/show/120834",
+      "criteria": {
+        "minYear": 2017,
+        "maxYear": 2017
+      }
+    },
+    {
+      "nickname": "2016",
+      "officialTitle": "History Published in 2016",
+      "id": "120833",
+      "url": "https://www.goodreads.com/list/show/120833",
+      "criteria": {
+        "minYear": 2016,
+        "maxYear": 2016
+      }
+    },
+    {
+      "nickname": "2015",
+      "officialTitle": "History Published in 2015",
+      "id": "120832",
+      "url": "https://www.goodreads.com/list/show/120832",
+      "criteria": {
+        "minYear": 2015,
+        "maxYear": 2015
+      }
+    },
+    {
+      "nickname": "2014",
+      "officialTitle": "History Published in 2014",
+      "id": "120832",
+      "url": "https://www.goodreads.com/list/show/120832",
+      "criteria": {
+        "minYear": 2014,
+        "maxYear": 2014
+      }
+    },
+    {
+      "nickname": "2013",
+      "officialTitle": "History Published in 2013",
+      "id": "120921",
+      "url": "https://www.goodreads.com/list/show/120921",
+      "criteria": {
+        "minYear": 2013,
+        "maxYear": 2013
+      }
+    },
+    {
+      "nickname": "2012",
+      "officialTitle": "History Published in 2012",
+      "id": "120924",
+      "url": "https://www.goodreads.com/list/show/120924",
+      "criteria": {
+        "minYear": 2012,
+        "maxYear": 2012
+      }
+    },
+    {
+      "nickname": "2011",
+      "officialTitle": "History Published in 2011",
+      "id": "120923",
+      "url": "https://www.goodreads.com/list/show/120923",
+      "criteria": {
+        "minYear": 2011,
+        "maxYear": 2011
+      }
+    },
+    {
+      "nickname": "2010",
+      "officialTitle": "History Published in 2010",
+      "id": "120925",
+      "url": "https://www.goodreads.com/list/show/120925",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2010
+      }
+    }
+  ]
+}

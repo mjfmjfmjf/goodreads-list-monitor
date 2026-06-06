@@ -1,0 +1,394 @@
+{
+  "tag": "non-fiction",
+  "lists": [
+    {
+      "nickname": "100,000 and more",
+      "officialTitle": "All non fiction with at least 100,000 ratings",
+      "id": "36384",
+      "url": "https://www.goodreads.com/list/show/36384",
+      "criteria": {
+        "min": 100000
+      }
+    },
+    {
+      "nickname": "50,000 to 99,999",
+      "officialTitle": "All non fiction at 50,000 to 99,999 ratings",
+      "id": "43611",
+      "url": "https://www.goodreads.com/list/show/43611",
+      "criteria": {
+        "min": 50000,
+        "max": 99999
+      }
+    },
+    {
+      "nickname": "25,000 to 49,999",
+      "officialTitle": "All non fiction at 25,000 to 49,999 ratings",
+      "id": "76386",
+      "url": "https://www.goodreads.com/list/show/76386",
+      "criteria": {
+        "min": 25000,
+        "max": 49999
+      }
+    },
+    {
+      "nickname": "10,000 to 24,999",
+      "officialTitle": "All non fiction at 10,000 to 24,999 ratings",
+      "id": "82859",
+      "url": "https://www.goodreads.com/list/show/82859",
+      "criteria": {
+        "min": 10000,
+        "max": 24999
+      }
+    },
+    {
+      "nickname": "2020s",
+      "officialTitle": "Nonfiction Published in the 2020s",
+      "id": "132669",
+      "url": "https://www.goodreads.com/list/show/132669",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2029
+      }
+    },
+    {
+      "nickname": "2010s",
+      "officialTitle": "Nonfiction Published in the 2010s",
+      "id": "120171",
+      "url": "https://www.goodreads.com/list/show/120171",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2000s",
+      "officialTitle": "Nonfiction Published in the 2000s",
+      "id": "120170",
+      "url": "https://www.goodreads.com/list/show/120170",
+      "criteria": {
+        "minYear": 2000,
+        "maxYear": 2009
+      }
+    },
+    {
+      "nickname": "1990s",
+      "officialTitle": "Nonfiction Published in the 1990s",
+      "id": "120213",
+      "url": "https://www.goodreads.com/list/show/120213",
+      "criteria": {
+        "minYear": 1990,
+        "maxYear": 1999
+      }
+    },
+    {
+      "nickname": "1980s",
+      "officialTitle": "Nonfiction Published in the 1980s",
+      "id": "120214",
+      "url": "https://www.goodreads.com/list/show/120214",
+      "criteria": {
+        "minYear": 1980,
+        "maxYear": 1989
+      }
+    },
+    {
+      "nickname": "1970s",
+      "officialTitle": "Nonfiction Published in the 1970s",
+      "id": "120215",
+      "url": "https://www.goodreads.com/list/show/120215",
+      "criteria": {
+        "minYear": 1970,
+        "maxYear": 1979
+      }
+    },
+    {
+      "nickname": "1960s",
+      "officialTitle": "Nonfiction Published in the 1960s",
+      "id": "120216",
+      "url": "https://www.goodreads.com/list/show/120216",
+      "criteria": {
+        "minYear": 1960,
+        "maxYear": 1969
+      }
+    },
+    {
+      "nickname": "1950s",
+      "officialTitle": "Nonfiction Published in the 1950s",
+      "id": "120133",
+      "url": "https://www.goodreads.com/list/show/120133",
+      "criteria": {
+        "minYear": 1950,
+        "maxYear": 1959
+      }
+    },
+    {
+      "nickname": "1940s",
+      "officialTitle": "Nonfiction Published in the 1940s",
+      "id": "120135",
+      "url": "https://www.goodreads.com/list/show/120135",
+      "criteria": {
+        "minYear": 1940,
+        "maxYear": 1949
+      }
+    },
+    {
+      "nickname": "1930s",
+      "officialTitle": "Nonfiction Published in the 1930s",
+      "id": "120165",
+      "url": "https://www.goodreads.com/list/show/120165",
+      "criteria": {
+        "minYear": 1930,
+        "maxYear": 1939
+      }
+    },
+    {
+      "nickname": "1920s",
+      "officialTitle": "Nonfiction Published in the 1920s",
+      "id": "120222",
+      "url": "https://www.goodreads.com/list/show/120222",
+      "criteria": {
+        "minYear": 1920,
+        "maxYear": 1929
+      }
+    },
+    {
+      "nickname": "2026",
+      "officialTitle": "Nonfiction Published in 2026",
+      "id": "232675",
+      "url": "https://www.goodreads.com/list/show/232675",
+      "criteria": {
+        "minYear": 2026,
+        "maxYear": 2026
+      }
+    },
+    {
+      "nickname": "2025",
+      "officialTitle": "Nonfiction Published in 2025",
+      "id": "205271",
+      "url": "https://www.goodreads.com/list/show/205271",
+      "criteria": {
+        "minYear": 2025,
+        "maxYear": 2025
+      }
+    },
+    {
+      "nickname": "2024",
+      "officialTitle": "Nonfiction Published in 2024",
+      "id": "188486",
+      "url": "https://www.goodreads.com/list/show/188486",
+      "criteria": {
+        "minYear": 2024,
+        "maxYear": 2024
+      }
+    },
+    {
+      "nickname": "2023",
+      "officialTitle": "Nonfiction Published in 2023",
+      "id": "180239",
+      "url": "https://www.goodreads.com/list/show/180239",
+      "criteria": {
+        "minYear": 2023,
+        "maxYear": 2023
+      }
+    },
+    {
+      "nickname": "2022",
+      "officialTitle": "Nonfiction Published in 2022",
+      "id": "161620",
+      "url": "https://www.goodreads.com/list/show/161620",
+      "criteria": {
+        "minYear": 2022,
+        "maxYear": 2022
+      }
+    },
+    {
+      "nickname": "2021",
+      "officialTitle": "Nonfiction Published in 2021",
+      "id": "150576",
+      "url": "https://www.goodreads.com/list/show/150576",
+      "criteria": {
+        "minYear": 2021,
+        "maxYear": 2021
+      }
+    },
+    {
+      "nickname": "2020",
+      "officialTitle": "Nonfiction Published in 2020",
+      "id": "132668",
+      "url": "https://www.goodreads.com/list/show/132668",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2020
+      }
+    },
+    {
+      "nickname": "2019",
+      "officialTitle": "Nonfiction Published in 2019",
+      "id": "125154",
+      "url": "https://www.goodreads.com/list/show/125154",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2018",
+      "officialTitle": "Nonfiction Published in 2018",
+      "id": "120402",
+      "url": "https://www.goodreads.com/list/show/120402",
+      "criteria": {
+        "minYear": 2018,
+        "maxYear": 2018
+      }
+    },
+    {
+      "nickname": "2017",
+      "officialTitle": "Nonfiction Published in 2017",
+      "id": "119684",
+      "url": "https://www.goodreads.com/list/show/119684",
+      "criteria": {
+        "minYear": 2017,
+        "maxYear": 2017
+      }
+    },
+    {
+      "nickname": "2016",
+      "officialTitle": "Nonfiction Published in 2016",
+      "id": "120417",
+      "url": "https://www.goodreads.com/list/show/120417",
+      "criteria": {
+        "minYear": 2016,
+        "maxYear": 2016
+      }
+    },
+    {
+      "nickname": "2015",
+      "officialTitle": "Nonfiction Published in 2015",
+      "id": "119758",
+      "url": "https://www.goodreads.com/list/show/119758",
+      "criteria": {
+        "minYear": 2015,
+        "maxYear": 2015
+      }
+    },
+    {
+      "nickname": "2014",
+      "officialTitle": "Nonfiction Published in 2014",
+      "id": "119765",
+      "url": "https://www.goodreads.com/list/show/119765",
+      "criteria": {
+        "minYear": 2014,
+        "maxYear": 2014
+      }
+    },
+    {
+      "nickname": "2013",
+      "officialTitle": "Nonfiction Published in 2013",
+      "id": "119917",
+      "url": "https://www.goodreads.com/list/show/119917",
+      "criteria": {
+        "minYear": 2013,
+        "maxYear": 2013
+      }
+    },
+    {
+      "nickname": "2012",
+      "officialTitle": "Nonfiction Published in 2012",
+      "id": "119918",
+      "url": "https://www.goodreads.com/list/show/119918",
+      "criteria": {
+        "minYear": 2012,
+        "maxYear": 2012
+      }
+    },
+    {
+      "nickname": "2011",
+      "officialTitle": "Nonfiction Published in 2011",
+      "id": "119919",
+      "url": "https://www.goodreads.com/list/show/119919",
+      "criteria": {
+        "minYear": 2011,
+        "maxYear": 2011
+      }
+    },
+    {
+      "nickname": "2010",
+      "officialTitle": "Nonfiction Published in 2010",
+      "id": "119976",
+      "url": "https://www.goodreads.com/list/show/119976",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2010
+      }
+    },
+    {
+      "nickname": "2009",
+      "officialTitle": "Nonfiction Published in 2009",
+      "id": "119975",
+      "url": "https://www.goodreads.com/list/show/119975",
+      "criteria": {
+        "minYear": 2009,
+        "maxYear": 2009
+      }
+    },
+    {
+      "nickname": "2008",
+      "officialTitle": "Nonfiction Published in 2008",
+      "id": "119974",
+      "url": "https://www.goodreads.com/list/show/119974",
+      "criteria": {
+        "minYear": 2008,
+        "maxYear": 2008
+      }
+    },
+    {
+      "nickname": "2007",
+      "officialTitle": "Nonfiction Published in 2007",
+      "id": "119973",
+      "url": "https://www.goodreads.com/list/show/119973",
+      "criteria": {
+        "minYear": 2007,
+        "maxYear": 2007
+      }
+    },
+    {
+      "nickname": "2006",
+      "officialTitle": "Nonfiction Published in 2006",
+      "id": "119972",
+      "url": "https://www.goodreads.com/list/show/119972",
+      "criteria": {
+        "minYear": 2006,
+        "maxYear": 2006
+      }
+    },
+    {
+      "nickname": "2005",
+      "officialTitle": "Nonfiction Published in 2005",
+      "id": "119971",
+      "url": "https://www.goodreads.com/list/show/119971",
+      "criteria": {
+        "minYear": 2005,
+        "maxYear": 2005
+      }
+    },
+    {
+      "nickname": "2004",
+      "officialTitle": "Nonfiction Published in 2004",
+      "id": "119970",
+      "url": "https://www.goodreads.com/list/show/119970",
+      "criteria": {
+        "minYear": 2004,
+        "maxYear": 2004
+      }
+    },
+    {
+      "nickname": "2003",
+      "officialTitle": "Nonfiction Published in 2003",
+      "id": "119969",
+      "url": "https://www.goodreads.com/list/show/119969",
+      "criteria": {
+        "minYear": 2003,
+        "maxYear": 2003
+      }
+    }
+  ]
+}
