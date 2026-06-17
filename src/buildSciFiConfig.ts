@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import * as cheerio from 'cheerio';
-import { fetchWithRetry } from './utils.js';
+import { fetchWithRetry, delay } from './utils.js';
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -84,7 +84,7 @@ async function buildSifFiConfig() {
         criteria
       });
       // Small delay to be polite
-      await new Promise(r => setTimeout(res => r(res), 500));
+      await delay(500, 500);
     }
   }
 

@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
 import { scrapeListBooks, scrapeShelfBooks, scrapeBookDetails } from './scraper.js';
-import { loadState, loadBookCache, saveBookCache } from './storage.js';
+import { loadState, loadBookCache, saveBookCache, syncBooksToCache } from './storage.js';
 import { TagConfig, ListEntry } from './tagConfig.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
 
@@ -49,6 +49,7 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   // 1. GLOBAL SHELF SCAN
   console.log(chalk.cyan.bold(`🔎 Step 1: Scanning global shelf "${tagName}" (Top 25 pages)...`));
   const rawShelfBooks = await scrapeShelfBooks(tagName, minTags, 25);
+  await syncBooksToCache(rawShelfBooks, bookCache);
   
   // Smart Deduplication: Treat different editions as the same book
   const shelfBooks: typeof rawShelfBooks = [];
@@ -59,45 +60,33 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   }
   console.log(chalk.green.bold(`   ✅ Shelf scan complete. Found ${shelfBooks.length} unique books above threshold.\n`));
 
-  // 2. METADATA SYNC
-  console.log(chalk.cyan.bold(`🔄 Step 2: Syncing metadata for ${shelfBooks.length} discovered books...`));
+  // 2. METADATA SYNC (Fill in missing details for books that are still Unknown)
+  console.log(chalk.cyan.bold(`🔄 Step 2: Ensuring metadata for ${shelfBooks.length} discovered books...`));
   let syncCount = 0;
   for (let i = 0; i < shelfBooks.length; i++) {
     const sb = shelfBooks[i];
     const shelfPos = i + 1;
     
-    // We only need to fetch if the year is truly unknown (not even found on the shelf page)
-    if (sb.published === 'Unknown' && (!bookCache[sb.id] || bookCache[sb.id].published === 'Unknown')) {
+    // Check if we still need to fetch details (if shelf page didn't have the year)
+    const cached = bookCache[sb.id];
+    if (cached?.published === 'Unknown') {
       process.stdout.write(chalk.gray(`   [${shelfPos}/${shelfBooks.length}] Fetching details for: "${sb.title.substring(0, 30)}..." \r`));
-      const details = await scrapeBookDetails(sb.id);
+      const details = await scrapeBookDetails(sb.id, sb.title, sb.author);
       
-      bookCache[sb.id] = {
-        id: sb.id,
-        title: sb.title,
-        author: sb.author,
-        ratings: sb.ratings,
-        published: details.published || 'Unknown',
-        lastUpdated: new Date().toISOString(),
-        tags: bookCache[sb.id]?.tags || {}
-      };
-      syncCount++;
-      if (syncCount % 10 === 0) await saveBookCache(bookCache);
-      await delay(500, 1500);
-    } else if (!bookCache[sb.id]) {
-      // Even if we have the year from the shelf, save basic info to cache if new
-      bookCache[sb.id] = {
-        id: sb.id,
-        title: sb.title,
-        author: sb.author,
-        ratings: sb.ratings,
-        published: sb.published,
-        lastUpdated: new Date().toISOString(),
-        tags: {}
-      };
+      if (details.published && details.published !== 'Unknown') {
+        cached.published = details.published;
+        cached.lastUpdated = new Date().toISOString();
+        if (details.title && details.title !== 'Unknown') cached.title = details.title;
+        if (details.author && details.author !== 'Unknown') cached.author = details.author;
+        
+        syncCount++;
+        if (syncCount % 10 === 0) await saveBookCache(bookCache);
+        await delay(500, 1500);
+      }
     }
   }
   await saveBookCache(bookCache);
-  console.log(chalk.green.bold(`\n   ✅ Metadata sync complete. Fetched ${syncCount} new book details.\n`));
+  console.log(chalk.green.bold(`\n   ✅ Metadata sync complete. Fetched ${syncCount} missing book details.\n`));
 
   const finalResults: DiscoveryResult[] = [];
 
@@ -154,9 +143,10 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
         if (cached && cached.published !== 'Unknown') {
           pubInfo = `, Pub: ${formatDate(cached.published)}`;
         }
+        const avgStr = sb.avgRating ? `, Avg: ${sb.avgRating}` : '';
 
         const bookLink = formatBookLink(sb.title, sb.id);
-        const msg = `[MISSING] ${bookLink} by ${sb.author} (Shelf Pos: ${shelfPos}, Tags: ${sb.tagCount}, Ratings: ${sb.ratings}${pubInfo})`;
+        const msg = `[MISSING] ${bookLink} by ${sb.author} (Shelf Pos: ${shelfPos}, Tags: ${sb.tagCount}, Ratings: ${sb.ratings}${avgStr}${pubInfo})`;
         console.log(chalk.green.bold(`   ➕ ${msg}`));
         await appendToAuditReport(listEntry.officialTitle, msg);
         toAdd.push(bookLink);

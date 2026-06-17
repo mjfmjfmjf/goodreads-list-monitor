@@ -17,34 +17,16 @@ export async function runBulkAudit(): Promise<void> {
   for (let i = 0; i < lists.length; i++) {
     const list = lists[i];
     const { min, max, minYear, maxYear } = list.criteria;
-    
-    const hasRatings = min !== undefined || max !== undefined;
-    const hasYear = minYear !== undefined || maxYear !== undefined;
 
     console.log(chalk.yellow.bold(`\n[${i + 1}/${lists.length}] List: "${list.officialTitle}" (ID: ${list.id})`));
 
-    if (!hasRatings && !hasYear) {
-      console.log(chalk.gray(`   ⏩ Skipping: No criteria defined for this list.`));
-      continue;
-    }
+    const auditOptions: AuditOptions = {};
+    if (min !== undefined) auditOptions.min = min.toString();
+    if (max !== undefined) auditOptions.max = max.toString();
+    if (minYear !== undefined) auditOptions.minYear = minYear.toString();
+    if (maxYear !== undefined) auditOptions.maxYear = maxYear.toString();
 
-    // 1. PERFORM YEAR AUDIT (If applicable)
-    if (hasYear) {
-      console.log(chalk.cyan.bold(`   📅 Running Year Audit...`));
-      await runAudit(list.id, { 
-        minYear: minYear?.toString(), 
-        maxYear: maxYear?.toString() 
-      });
-    }
-
-    // 2. PERFORM RATINGS AUDIT (If applicable)
-    if (hasRatings) {
-      console.log(chalk.cyan.bold(`   ⭐ Running Ratings Audit...`));
-      await runAudit(list.id, { 
-        min: min?.toString(), 
-        max: max?.toString() 
-      });
-    }
+    await runAudit(list.id, auditOptions);
   }
 
   console.log(chalk.cyan.bold('\n🏁 Bulk Audit process complete.'));

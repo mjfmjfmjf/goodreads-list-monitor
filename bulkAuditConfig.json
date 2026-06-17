@@ -653,17 +653,21 @@
   },
   {
     "id": "94619",
-    "nickname": "Best Popular Compute",
+    "nickname": "Best Popular Computer Science",
     "officialTitle": "Best Popular Computer Science Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/94619.Best_Popular_Computer_Science_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": { 
+       "min": 1000
+    }
   },
   {
     "id": "131817",
-    "nickname": "Best Popular Economi",
+    "nickname": "Best Popular Economics",
     "officialTitle": "Best Popular Economics Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/131817.Best_Popular_Economics_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "132768",
@@ -680,7 +684,7 @@
     "officialTitle": "Best Popular Genetics Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/128814.Best_Popular_Genetics_Books_on_Goodreads",
     "criteria": {
-       "min:" 500
+       "min": 500
     }
   },
   {
@@ -785,28 +789,36 @@
     "nickname": "Best Popular Music Books",
     "officialTitle": "Best Popular Music Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/109421.Best_Popular_Music_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "144834",
     "nickname": "Best Popular Nature ",
     "officialTitle": "Best Popular Nature Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/144834._Best_Popular_Nature_Books_on_Goodreads_",
-    "criteria": {}
+    "criteria": {
+       "min": 800
+    }
   },
   {
     "id": "97141",
-    "nickname": "Best Popular Nonfict",
+    "nickname": "Best Popular Politics",
     "officialTitle": "Best Popular Nonfiction Politics Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/97141.Best_Popular_Nonfiction_Politics_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "151553",
-    "nickname": "Best Popular Pagan B",
+    "nickname": "Best Popular Pagan",
     "officialTitle": "Best Popular Pagan Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/151553.Best_Popular_Pagan_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 500
+    }
   },
   {
     "id": "145885",
@@ -817,80 +829,102 @@
   },
   {
     "id": "107355",
-    "nickname": "Best Popular Philoso",
+    "nickname": "Best Popular Philosophy",
     "officialTitle": "Best Popular Philosophy Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/107355.Best_Popular_Philosophy_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "107582",
-    "nickname": "Best Popular Picture",
+    "nickname": "Best Popular Picture Books",
     "officialTitle": "Best Popular Picture Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/107582.Best_Popular_Picture_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 5000
+    }
   },
   {
     "id": "107268",
     "nickname": "Best Popular Poetry ",
     "officialTitle": "Best Popular Poetry Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/107268.Best_Popular_Poetry_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1500
+    }
   },
   {
     "id": "139751",
-    "nickname": "Best Popular Product",
+    "nickname": "Best Popular Productivity",
     "officialTitle": "Best Popular Productivity Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/139751.Best_Popular_Productivity_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "142549",
     "nickname": "Best Popular Racism ",
     "officialTitle": "Best Popular Racism Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/142549.Best_Popular_Racism_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 2000
+    }
   },
   {
     "id": "107404",
     "nickname": "Best Popular Romance",
     "officialTitle": "Best Popular Romance Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/107404.Best_Popular_Romance_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 100000
+    }
   },
   {
     "id": "143259",
     "nickname": "Best Popular Science",
     "officialTitle": "Best Popular Science Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/143259.Best_Popular_Science_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 5000
+    }
   },
   {
     "id": "107662",
-    "nickname": "Best Popular Short S",
+    "nickname": "Best Popular Short Stories",
     "officialTitle": "Best Popular Short Stories Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/107662.Best_Popular_Short_Stories_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 5000
+    }
   },
   {
     "id": "131865",
-    "nickname": "Best Popular Space O",
+    "nickname": "Best Popular Space Opera",
     "officialTitle": "Best Popular Space Opera Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/131865.Best_Popular_Space_Opera_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "131286",
-    "nickname": "Best Popular Steampu",
+    "nickname": "Best Popular Steampunk",
     "officialTitle": "Best Popular Steampunk Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/131286.Best_Popular_Steampunk_Books_on_Goodreads_",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "118961",
     "nickname": "Best Popular Travel ",
     "officialTitle": "Best Popular Travel Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/118961.Best_Popular_Travel_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "nickname": "BestSf20thCent",
@@ -1314,12 +1348,12 @@
   },
   {
     "id": "116513",
-    "nickname": "Computer Science Boo",
+    "nickname": "Computer Science 2010s and 2020s",
     "officialTitle": "Computer Science Books of the 2010s and 2020s",
     "url": "https://www.goodreads.com/list/show/116513.Computer_Science_Books_of_the_2010s_and_2020s",
     "criteria": {
       "minYear": 2010,
-      "maxYear": 2019
+      "maxYear": 2029
     }
   },
   {
@@ -1895,7 +1929,9 @@
     "nickname": "Popular Highly Rated Fantasy",
     "officialTitle": "Popular Highly Rated Fantasy",
     "url": "https://www.goodreads.com/list/show/114178.Popular_Highly_Rated_Fantasy",
-    "criteria": {}
+    "criteria": {
+       "min": 50000 
+    }
   },
   {
     "id": "142751",
@@ -1908,10 +1944,12 @@
   },
   {
     "id": "114163",
-    "nickname": "Popular Highly Rated",
+    "nickname": "Popular Highly Rated SF",
     "officialTitle": "Popular Highly Rated Science Fiction",
     "url": "https://www.goodreads.com/list/show/114163.Popular_Highly_Rated_Science_Fiction",
-    "criteria": {}
+    "criteria": {
+       "min": 25000
+    }
   },
   {
     "id": "113378",
@@ -1952,7 +1990,7 @@
   },
   {
     "id": "156485",
-    "nickname": "Popular Romance on G",
+    "nickname": "Popular Romance 25k-50k",
     "officialTitle": "Popular Romance on Goodreads with between 25000 and 50000 ratings",
     "url": "https://www.goodreads.com/list/show/156485.Popular_Romance_on_Goodreads_with_between_25000_and_50000_ratings",
     "criteria": {
@@ -1962,7 +2000,7 @@
   },
   {
     "id": "120149",
-    "nickname": "Popular Romance on G",
+    "nickname": "Popular Romance 50k-100k",
     "officialTitle": "Popular Romance on Goodreads with between 50000 and 100000 ratings",
     "url": "https://www.goodreads.com/list/show/120149.Popular_Romance_on_Goodreads_with_between_50000_and_100000_ratings",
     "criteria": {
@@ -1971,7 +2009,7 @@
     }
   },
   {
-    "nickname": "100,000 and more",
+    "nickname": "SF 100,000 and more",
     "officialTitle": "Popular Science Fiction on Goodreads with 100,000 and more ratings",
     "id": "35776",
     "url": "https://www.goodreads.com/list/show/35776",
@@ -2065,7 +2103,7 @@
   },
   {
     "id": "155831",
-    "nickname": "Science Fiction Rele",
+    "nickname": "Science Fiction 2007",
     "officialTitle": "Science Fiction Released in 2007",
     "url": "https://www.goodreads.com/list/show/155831.Science_Fiction_Released_in_2007",
     "criteria": {
@@ -2075,7 +2113,7 @@
   },
   {
     "id": "155511",
-    "nickname": "Science Fiction Rele",
+    "nickname": "Science Fiction 2008",
     "officialTitle": "Science Fiction Released in 2008",
     "url": "https://www.goodreads.com/list/show/155511.Science_Fiction_Released_in_2008",
     "criteria": {
@@ -2085,7 +2123,7 @@
   },
   {
     "id": "155483",
-    "nickname": "Science Fiction Rele",
+    "nickname": "Science Fiction 2009",
     "officialTitle": "Science Fiction Released in 2009",
     "url": "https://www.goodreads.com/list/show/155483.Science_Fiction_Released_in_2009",
     "criteria": {
@@ -2404,7 +2442,9 @@
     "nickname": "The Most Popular Bibliophilia",
     "officialTitle": "The Most Popular Bibliophilia Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/172262.The_Most_Popular_Bibliophilia_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 100
+    }
   },
   {
     "id": "35857",
@@ -2438,7 +2478,9 @@
     "nickname": "The Most Popular Neuroscience",
     "officialTitle": "The Most Popular Neuroscience Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/157772.The_Most_Popular_Neuroscience_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 400
+    }
   },
   {
     "id": "157453",
@@ -2469,17 +2511,21 @@
   },
   {
     "id": "200988",
-    "nickname": "The Most Popular Tim",
+    "nickname": "The Most Popular Time Travel",
     "officialTitle": "The Most Popular Time Travel Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/200988.The_Most_Popular_Time_Travel_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "171186",
-    "nickname": "The Most Popular Wei",
+    "nickname": "The Most Popular Weird",
     "officialTitle": "The Most Popular Weird Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/171186.The_Most_Popular_Weird_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 1000
+    }
   },
   {
     "id": "93222",

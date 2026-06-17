@@ -2,22 +2,38 @@ import chalk from 'chalk';
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 
 export async function delay(min = 100, max = 2000): Promise<void> {
-  const ms = Math.floor(Math.random() * (max - min + 1) + min);
+  const adjMin = min * 1.5;
+  const adjMax = max * 1.5;
+  const ms = Math.floor(Math.random() * (adjMax - adjMin + 1) + adjMin) + 100;
   console.log(chalk.gray(`   (Waiting ${(ms / 1000).toFixed(2)}s...)`));
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function fetchWithRetry(url: string, config: AxiosRequestConfig, retries = 3): Promise<AxiosResponse> {
+export async function fetchWithRetry(url: string, config: AxiosRequestConfig, retries = 5): Promise<AxiosResponse> {
   let lastError: any;
   
   for (let i = 0; i < retries; i++) {
     try {
       if (i > 0) {
-        const waitTime = Math.pow(2, i) * 2000; // 2s, 4s, 8s backoff
-        console.log(chalk.yellow.bold(`   ⚠️ Retry ${i}/${retries} after ${waitTime/1000}s pause...`));
+        const waitTime = Math.pow(2, i) * 3000; // 3s, 6s, 12s backoff
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
-      return await axios.get(url, config);
+
+      // Add a small 100ms safety sleep right before the call
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const response = await axios.get(url, config);
+      
+      // Treat 202 as a retryable error
+      if (response.status === 202) {
+        throw { 
+          response: response, 
+          message: 'Received 202 (Accepted) interstitial',
+          isRetryable: true 
+        };
+      }
+      
+      return response;
     } catch (error: any) {
       lastError = error;
       const status = error.response?.status;
@@ -27,10 +43,10 @@ export async function fetchWithRetry(url: string, config: AxiosRequestConfig, re
         throw error;
       }
 
-      // Retry on 5xx (Server Errors) or timeouts
-      if ((status >= 500 && status <= 599) || error.code === 'ECONNABORTED') {
-        const statusMsg = status ? `Status ${status}` : error.code;
-        console.log(chalk.red.bold(`   ❌ Request failed (${statusMsg})...`));
+      // Retry on 5xx (Server Errors), 202 interstitials, or timeouts
+      const isRetryable = (status >= 500 && status <= 599) || error.code === 'ECONNABORTED' || error.isRetryable;
+      
+      if (isRetryable) {
         continue;
       }
       

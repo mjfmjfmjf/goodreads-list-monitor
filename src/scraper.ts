@@ -2,8 +2,10 @@ import * as cheerio from 'cheerio';
 import chalk from 'chalk';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import fs from 'fs-extra';
+import path from 'path';
 import { delay, fetchWithRetry, formatDate } from './utils.js';
-import { loadConfig } from './storage.js';
+import { loadConfig, loadAuthorCache, syncAuthorsToCache } from './storage.js';
 
 let structuralWarningIssued = false;
 
@@ -42,18 +44,22 @@ export interface BookMetadata {
   id: string;
   title: string;
   author: string;
+  authorId?: string;
+  authorSlug?: string; // e.g. "1077326.J_K_Rowling"
   position: number;
   ratings: string;
+  avgRating?: string;
   published: string;
   tagCount?: number;
   page?: number;
   requiresAuth?: boolean;
 }
 
-const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 const TIMEOUT = 30000; // 30 seconds
 
 export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]> {
+  const configData = await loadConfig();
   let allLists: ListMetadata[] = [];
   let page = 1;
   let hasNext = true;
@@ -63,8 +69,11 @@ export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]
     const url = `https://www.goodreads.com/list/created/${userId}?page=${page}`;
     
     try {
+      const headers: any = { 'User-Agent': USER_AGENT };
+      if (configData.cookie) headers['Cookie'] = configData.cookie;
+
       const response = await fetchWithRetry(url, {
-        headers: { 'User-Agent': USER_AGENT },
+        headers,
         timeout: TIMEOUT
       });
 
@@ -148,7 +157,7 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25):
 
         const $el = $(element);
         const $title = $el.find('.bookTitle');
-        const title = $title.text().trim();
+        const title = $title.find('span[itemprop="name"]').text().trim() || $title.text().trim();
         const href = $title.attr('href') || '';
         const match = href.match(/\/book\/show\/(\d+)/);
         const id = match ? match[1] : '';
@@ -156,14 +165,23 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25):
         if (id) {
           if (i === 0) firstIdOnThisPage = id;
 
-          const author = $el.find('.authorName').text().trim() || 'Unknown Author';
+          const $authorA = $el.find('.authorName');
+          const author = $authorA.text().trim() || 'Unknown Author';
+          const authorHref = $authorA.attr('href') || '';
+          const authorMatch = authorHref.match(/\/author\/show\/([^?#\s/]+)/);
+          const authorSlug = authorMatch ? authorMatch[1] : undefined;
+          const authorId = authorSlug ? authorSlug.split('.')[0] : undefined;
+
           const metaText = $el.find('.greyText.smallText').text().trim();
           
           const ratingsMatch = metaText.match(/([\d,]+) rating/);
           const ratings = ratingsMatch ? ratingsMatch[1] : '0';
 
-          const yearMatch = metaText.match(/published (\d{4})/);
-          const published = yearMatch ? yearMatch[1] : 'Unknown';
+          const avgRatingMatch = metaText.match(/(\d\.\d{2}) avg rating/);
+          const avgRating = avgRatingMatch ? avgRatingMatch[1] : undefined;
+
+          const yearMatch = metaText.match(/(?:published|publication).*?(\d{4})/i) || metaText.match(/\b(?:18|19|20)\d{2}\b/);
+          const published = yearMatch ? (yearMatch[1] || yearMatch[0]) : 'Unknown';
 
           const fullText = $el.text().replace(/\s+/g, ' ');
           const tagMatch = fullText.match(/shelved ([\d,]+) times/i);
@@ -179,7 +197,7 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25):
             return;
           }
 
-          pageBooks.push({ id, title, author, position: 0, ratings, published, tagCount: tagCount ?? 0 });
+          pageBooks.push({ id, title, author, authorId, authorSlug, position: 0, ratings, avgRating, published, tagCount: tagCount ?? 0 });
         }
       });
 
@@ -213,58 +231,105 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25):
     }
   }
 
+  // Automatically sync authors to cache
+  try {
+    const authorCache = await loadAuthorCache();
+    await syncAuthorsToCache(uniqueBooks, authorCache);
+  } catch (error) {
+    // Ignore cache sync errors in scraper
+  }
+
   return uniqueBooks;
 }
 
 export async function scrapeListBooks(listId: string, maxPages = Infinity): Promise<BookMetadata[]> {
+  const configData = await loadConfig();
   let allBooks: BookMetadata[] = [];
   let page = 1;
   let hasNext = true;
+  let lastPageFirstId = '';
 
   while (hasNext) {
     const url = `https://www.goodreads.com/list/show/${listId}?page=${page}`;
     
     try {
+      const headers: any = { 'User-Agent': USER_AGENT };
+      if (configData.cookie) headers['Cookie'] = configData.cookie;
+
       const response = await fetchWithRetry(url, {
-        headers: { 'User-Agent': USER_AGENT },
+        headers,
         timeout: TIMEOUT
       });
 
       const $ = cheerio.load(response.data);
       const pageBooks: BookMetadata[] = [];
 
-      $('.bookTitle').each((_, element) => {
+      // Scope to .tableList to avoid "related books" at the bottom of the page
+      $('.tableList .bookTitle').each((_, element) => {
         const $a = $(element);
-        const title = $a.text().trim();
+        const title = $a.find('span[itemprop="name"]').text().trim() || $a.text().trim();
         const href = $a.attr('href') || '';
         const match = href.match(/\/book\/show\/(\d+)/);
         const id = match ? match[1] : '';
 
         if (id) {
           const parentTd = $a.closest('td');
-          const author = parentTd.find('.authorName').text().trim() || 'Unknown Author';
+          const $authorA = parentTd.find('.authorName');
+          const author = $authorA.text().trim() || 'Unknown Author';
+          const authorHref = $authorA.attr('href') || '';
+          const authorMatch = authorHref.match(/\/author\/show\/([^?#\s/]+)/);
+          const authorSlug = authorMatch ? authorMatch[1] : undefined;
+          const authorId = authorSlug ? authorSlug.split('.')[0] : undefined;
+          
           const positionText = $a.closest('tr').find('td.number').text().trim();
           const position = parseInt(positionText, 10) || 0;
           
-          const minirating = parentTd.find('.minirating').text().trim();
-          const ratingsMatch = minirating.match(/([\d,]+) rating/);
-          const ratings = ratingsMatch ? ratingsMatch[1] : '0';
+          const staticRatings = parentTd.find('.greyText.smallText').text().match(/([\d,]+) rating/);
+          let ratings = staticRatings ? staticRatings[1] : '0';
+          
+          let avgRating: string | undefined;
+          const avgRatingMatch = parentTd.find('.greyText.smallText').text().match(/(\d\.\d{2}) avg rating/);
+          if (avgRatingMatch) avgRating = avgRatingMatch[1];
+          
+          if (ratings === '0') {
+            const minirating = parentTd.find('.minirating').text().trim();
+            const ratingsMatch = minirating.match(/([\d,]+) rating/);
+            if (ratingsMatch) ratings = ratingsMatch[1];
+
+            if (!avgRating) {
+              const avgMatch = minirating.match(/(\d\.\d{2}) avg rating/);
+              if (avgMatch) avgRating = avgMatch[1];
+            }
+          }
 
           // Extract year from Listopia metadata
           const metaText = parentTd.find('.greyText.smallText').text().trim();
-          const yearMatch = metaText.match(/published (\d{4})/);
-          const published = yearMatch ? yearMatch[1] : 'Unknown';
+          const yearMatch = metaText.match(/(?:published|publication).*?(\d{4})/i) || metaText.match(/\b(?:18|19|20)\d{2}\b/);
+          const published = yearMatch ? (yearMatch[1] || yearMatch[0]) : 'Unknown';
 
           const finalTitle = title || `Unknown Title [ID: ${id}]`;
 
-          pageBooks.push({ id, title: finalTitle, author, position, ratings, published, page });
+          pageBooks.push({ id, title: finalTitle, author, authorId, authorSlug, position, ratings, avgRating, published, page });
         }
       });
+
+      if (pageBooks.length === 0) {
+        hasNext = false;
+        break;
+      }
+
+      const firstIdOnThisPage = pageBooks[0].id;
+      if (page > 1 && firstIdOnThisPage === lastPageFirstId) {
+        console.log(chalk.red.bold(`   ⚠️ Warning: Goodreads is returning Page 1 content for Page ${page}.`));
+        hasNext = false;
+        break;
+      }
+      lastPageFirstId = firstIdOnThisPage;
 
       allBooks = allBooks.concat(pageBooks);
 
       const nextBtn = $('.next_page');
-      if (nextBtn.length > 0 && !nextBtn.hasClass('disabled') && pageBooks.length > 0 && (maxPages === Infinity || page < maxPages)) {
+      if (nextBtn.length > 0 && !nextBtn.hasClass('disabled') && (maxPages === Infinity || page < maxPages)) {
         page++;
         await delay();
       } else {
@@ -276,14 +341,36 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
     }
   }
 
-  return allBooks;
+  // Deduplicate by ID
+  const uniqueBooks: BookMetadata[] = [];
+  const seenIds = new Set<string>();
+  for (const book of allBooks) {
+    if (!seenIds.has(book.id)) {
+      uniqueBooks.push(book);
+      seenIds.add(book.id);
+    }
+  }
+
+  // Automatically sync authors to cache
+  try {
+    const authorCache = await loadAuthorCache();
+    await syncAuthorsToCache(uniqueBooks, authorCache);
+  } catch (error) {
+    // Ignore cache sync errors in scraper
+  }
+
+  return uniqueBooks;
 }
 
 export async function scrapeListDescription(listId: string): Promise<string> {
+  const configData = await loadConfig();
   const url = `https://www.goodreads.com/list/show/${listId}`;
   try {
+    const headers: any = { 'User-Agent': USER_AGENT };
+    if (configData.cookie) headers['Cookie'] = configData.cookie;
+
     const response = await fetchWithRetry(url, {
-      headers: { 'User-Agent': USER_AGENT },
+      headers,
       timeout: TIMEOUT
     });
     const $ = cheerio.load(response.data);
@@ -294,10 +381,14 @@ export async function scrapeListDescription(listId: string): Promise<string> {
 }
 
 export async function scrapeTagCount(bookId: string, tag: string): Promise<number> {
+  const configData = await loadConfig();
   const url = `https://www.goodreads.com/work/shelves/${bookId}`;
   try {
+    const headers: any = { 'User-Agent': USER_AGENT };
+    if (configData.cookie) headers['Cookie'] = configData.cookie;
+
     const response = await fetchWithRetry(url, {
-      headers: { 'User-Agent': USER_AGENT },
+      headers,
       timeout: TIMEOUT
     });
     const $ = cheerio.load(response.data);
@@ -342,7 +433,8 @@ async function extractBookFromCheerio(id: string, $: cheerio.CheerioAPI): Promis
         
         let ratings = '0';
         let rawRatings = 0;
-        
+        let avgRating: string | undefined;
+
         // Resolve stats object directly or from work
         let statsObj = null;
         if (bookData.stats?.__ref) {
@@ -350,7 +442,7 @@ async function extractBookFromCheerio(id: string, $: cheerio.CheerioAPI): Promis
         } else if (bookData.stats) {
           statsObj = bookData.stats;
         }
-        
+
         if (!statsObj && bookData.work?.__ref) {
           const workData = apolloState[bookData.work.__ref];
           if (workData) {
@@ -361,11 +453,13 @@ async function extractBookFromCheerio(id: string, $: cheerio.CheerioAPI): Promis
             }
           }
         }
-        
+
         if (statsObj && statsObj.ratingsCount !== undefined) {
           rawRatings = statsObj.ratingsCount;
-        } else {
-          await handleStructuralWarning(`Could not find ratings count in JSON blob for book ${id}.`);
+          if (statsObj.averageRating !== undefined) {
+            avgRating = statsObj.averageRating.toFixed(2);
+          }
+        } else {          await handleStructuralWarning(`Could not find ratings count in JSON blob for book ${id}.`);
         }
         
         if (rawRatings > 0) {
@@ -398,7 +492,7 @@ async function extractBookFromCheerio(id: string, $: cheerio.CheerioAPI): Promis
         } 
 
         // If we found everything including a valid date, return it
-        if (title && published !== 'Unknown') return { id, title, author, ratings, published };
+        if (title && published !== 'Unknown') return { id, title, author, ratings, avgRating, published };
         
         // If date is still unknown but we have a JSON title, keep note of it and proceed to DOM fallback
         if (title) {
@@ -413,16 +507,19 @@ async function extractBookFromCheerio(id: string, $: cheerio.CheerioAPI): Promis
   }
 
   // 2. Fallback to selectors (more surgical now)
-  const titleEl = $('h1[data-testid="bookTitle"]');
-  const domTitle = titleEl.text().trim() || `Unknown Title [ID: ${id}]`;
+  const titleEl = $('h1[data-testid="bookTitle"], h1.bookTitle, h1#bookTitle');
+  const domTitle = titleEl.first().text().trim() || undefined;
   
-  const authorEl = $('.ContributorLink').first();
-  const domAuthor = authorEl.text().trim() || 'Unknown Author';
+  const authorEl = $('.ContributorLink, .authorName').first();
+  const domAuthor = authorEl.text().trim() || undefined;
   
-  const ratingsEl = $('[data-testid="ratingsCount"]');
+  const ratingsEl = $('[data-testid="ratingsCount"], .ratingCount');
   const ratingsCount = ratingsEl.text().trim();
   const ratingsMatch = ratingsCount.match(/([\d,]+)/);
-  const domRatings = ratingsMatch ? ratingsMatch[1] : '0';
+  const domRatings = ratingsMatch ? ratingsMatch[1] : undefined;
+
+  const avgRatingEl = $('[data-testid="averageRating"], .RatingStatistics__rating');
+  const domAvgRating = avgRatingEl.first().text().trim() || undefined;
 
   // Find the block that actually contains the word "published"
   let publishedRaw = '';
@@ -458,50 +555,239 @@ async function extractBookFromCheerio(id: string, $: cheerio.CheerioAPI): Promis
     title: domTitle, 
     author: domAuthor, 
     ratings: domRatings, 
+    avgRating: domAvgRating,
     published: domPublished 
   };
 }
 
-export async function scrapeBookDetails(bookId: string): Promise<Partial<BookMetadata>> {
-  const url = `https://www.goodreads.com/book/show/${bookId}`;
+export async function scrapeBookBySearch(id: string, title: string, author: string): Promise<Partial<BookMetadata>> {
+  const query = encodeURIComponent(`${title} ${author}`);
+  const url = `https://www.goodreads.com/search?q=${query}`;
   const config = await loadConfig();
 
-  async function fetchAndParse(useCookie: boolean): Promise<Partial<BookMetadata>> {
+  try {
     const headers: any = { 'User-Agent': USER_AGENT };
+    if (config.cookie) headers['Cookie'] = config.cookie;
+
+    const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
+    const $ = cheerio.load(response.data);
+
+    let foundDetails: Partial<BookMetadata> = { id };
+
+    $('.bookTable tr').each((_, el) => {
+      const $el = $(el);
+      const $title = $el.find('.bookTitle');
+      const href = $title.attr('href') || '';
+      const match = href.match(/\/book\/show\/(\d+)/);
+      const entryId = match ? match[1] : '';
+
+      if (entryId === id) {
+        const entryTitle = $title.text().trim();
+        const entryAuthor = $el.find('.authorName').text().trim();
+        const metaText = $el.find('.greyText.smallText').first().text().trim();
+
+        const ratingsMatch = metaText.match(/([\d,]+) rating/);
+        const ratings = ratingsMatch ? ratingsMatch[1] : '0';
+
+        const avgRatingMatch = metaText.match(/(\d\.\d{2}) avg rating/);
+        const avgRating = avgRatingMatch ? avgRatingMatch[1] : undefined;
+
+        const yearMatch = metaText.match(/(?:published|publication).*?(\d{4})/i) || metaText.match(/\b(?:18|19|20)\d{2}\b/);
+        const published = yearMatch ? (yearMatch[1] || yearMatch[0]) : 'Unknown';
+
+        foundDetails = { id, title: entryTitle, author: entryAuthor, ratings, avgRating, published };        return false; // break
+      }
+    });
+
+    return foundDetails;
+  } catch (error) {
+    return { id };
+  }
+}
+
+export async function scrapeBookByAuthorPage(id: string, authorSlug: string): Promise<Partial<BookMetadata>> {
+  const url = `https://www.goodreads.com/author/list/${authorSlug}`;
+  const config = await loadConfig();
+
+  try {
+    const headers: any = { 'User-Agent': USER_AGENT };
+    if (config.cookie) headers['Cookie'] = config.cookie;
+
+    const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
+    const $ = cheerio.load(response.data);
+
+    let foundDetails: Partial<BookMetadata> = { id };
+
+    // The author/list page uses .tableList or simply tr.book
+    $('.tableList tr, tr[itemscope][itemtype="http://schema.org/Book"]').each((_, el) => {
+      const $el = $(el);
+      const $title = $el.find('.bookTitle');
+      const href = $title.attr('href') || '';
+      const match = href.match(/\/book\/show\/(\d+)/);
+      const entryId = match ? match[1] : '';
+
+      if (entryId === id) {
+        const entryTitle = $title.find('span[itemprop="name"]').text().trim() || $title.text().trim();
+        const entryAuthor = $el.find('.authorName').text().trim();
+        const metaText = $el.find('.greyText.smallText').first().text().trim();
+
+        const ratingsMatch = metaText.match(/([\d,]+) rating/);
+        const ratings = ratingsMatch ? ratingsMatch[1] : '0';
+
+        const avgRatingMatch = metaText.match(/(\d\.\d{2}) avg rating/);
+        const avgRating = avgRatingMatch ? avgRatingMatch[1] : undefined;
+
+        const yearMatch = metaText.match(/(?:published|publication).*?(\d{4})/i) || metaText.match(/\b(?:18|19|20)\d{2}\b/);
+        const published = yearMatch ? (yearMatch[1] || yearMatch[0]) : 'Unknown';
+
+        foundDetails = { id, title: entryTitle, author: entryAuthor, ratings, avgRating, published };        return false; // break
+      }
+    });
+
+    return foundDetails;
+  } catch (error) {
+    return { id };
+  }
+}
+
+async function updateSuccessMetric(method: 'id' | 'search' | 'author', success: boolean) {
+  const metricPath = path.join(process.cwd(), 'lastSuccessGetBookByNumber.json');
+  try {
+    const metric = await fs.readJson(metricPath);
+    if (success) {
+      metric.lastSuccess = new Date().toISOString();
+      metric.successCount++;
+      metric.lastMethod = method;
+    } else {
+      metric.failureCount++;
+    }
+    await fs.writeJson(metricPath, metric, { spaces: 2 });
+  } catch (e) {
+    // Ignore metric update errors
+  }
+}
+
+export async function scrapeBookDetails(bookId: string, titleHint?: string, authorHint?: string, authorSlugHint?: string): Promise<Partial<BookMetadata> & { isFailed?: boolean }> {
+  const url = `https://www.goodreads.com/book/show/${bookId}`;
+  const config = await loadConfig();
+  const authorCache = await loadAuthorCache();
+
+  async function fetchAndParse(useCookie: boolean): Promise<Partial<BookMetadata>> {
+    const headers: any = { 
+      'User-Agent': USER_AGENT,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache',
+      'Referer': 'https://www.goodreads.com/',
+      'Sec-Ch-Ua': '"Google Chrome";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+      'Sec-Ch-Ua-Mobile': '?0',
+      'Sec-Ch-Ua-Platform': '"macOS"',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-User': '?1',
+      'Upgrade-Insecure-Requests': '1'
+    };
     if (useCookie && config.cookie) headers['Cookie'] = config.cookie;
 
     const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
-    
+
+    if (response.status !== 200) {
+      throw { status: response.status, data: response.data };
+    }
+
     // Check if the body contains the "page not found" error despite a 200 status
     if (typeof response.data === 'string' && response.data.includes('couldn’t find the page you were looking for')) {
       throw { isNotFoundErrorPage: true, status: 404 };
     }
-    
+
     const $ = cheerio.load(response.data);
     return await extractBookFromCheerio(bookId, $);
   }
 
-  try {
-    // 1. Try without credentials first
-    return await fetchAndParse(false);
-  } catch (error: any) {
-    const isRestricted = error.isNotFoundErrorPage || error.response?.status === 404;
-    
-    // 2. If it looks like a restricted page and we have a cookie, try with auth
-    if (isRestricted && config.cookie) {
-      console.log(chalk.yellow(`   🔒 Book ${bookId} restricted or 404. Waiting for authenticated retry...`));
-      // Authenticated requests wait twice as long
-      await delay(2000, 4000); 
+  // Determine effective author slug
+  let effectiveSlug = authorSlugHint;
+  if (!effectiveSlug && authorHint) {
+    effectiveSlug = authorCache[authorHint]?.slug;
+  }
 
+  // 1. Try Author Page first if we have a slug - very reliable summary view
+  if (effectiveSlug) {
+    const start = Date.now();
+    try {
+      console.log(chalk.gray(`   👤 [Method: Author List] Attempting for book ${bookId} (Author: ${effectiveSlug})...`));
+      const authorDetails = await scrapeBookByAuthorPage(bookId, effectiveSlug);
+      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      if (authorDetails.title && authorDetails.published !== 'Unknown') {
+        console.log(chalk.gray(`      ✅ Success via Author List (${duration}s)`));
+        await updateSuccessMetric('author', true);
+        return authorDetails;
+      }
+      console.log(chalk.gray(`      ❌ Failed via Author List (${duration}s)`));
+    } catch (e) {
+      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      console.log(chalk.gray(`      ❌ Error via Author List (${duration}s): ${(e as any).message}`));
+    }
+  }
+ 
+/*
+  // 2026-06-14 comment out mjf
+ 
+  // 2. Try Search Fallback next
+  if (titleHint && authorHint) {
+    const start = Date.now();
+    try {
+      console.log(chalk.gray(`   🔍 [Method: Search] Attempting for book ${bookId} ("${titleHint.substring(0, 20)}")...`));
+      const searchDetails = await scrapeBookBySearch(bookId, titleHint, authorHint);
+      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      if (searchDetails.title && searchDetails.published !== 'Unknown') {
+        console.log(chalk.gray(`      ✅ Success via Search (${duration}s)`));
+        await updateSuccessMetric('search', true);
+        return searchDetails;
+      }
+      console.log(chalk.gray(`      ❌ Failed via Search (${duration}s)`));
+    } catch (e) {
+      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      console.log(chalk.gray(`      ❌ Error via Search (${duration}s): ${(e as any).message}`));
+    }
+  }
+
+  // 3. Try direct fetch
+  const idStart = Date.now();
+  try {
+    console.log(chalk.gray(`   🆔 [Method: Direct ID] Attempting for book ${bookId} (Unauthenticated)...`));
+    const details = await fetchAndParse(false);
+    const duration = ((Date.now() - idStart) / 1000).toFixed(2);
+    console.log(chalk.gray(`      ✅ Success via Direct ID Unauth (${duration}s)`));
+    await updateSuccessMetric('id', true);
+    return details;
+  } catch (error: any) {
+    const status = error.status || error.response?.status;
+    const isRestricted = error.isNotFoundErrorPage || status === 404 || status === 202;
+    const duration = ((Date.now() - idStart) / 1000).toFixed(2);
+
+    if (isRestricted && config.cookie) {
+      console.log(chalk.yellow(`      🔒 Restricted (Status ${status}) after ${duration}s. Retrying with authentication...`));
+      const authStart = Date.now();
+      await delay(1000, 3000);
       try {
         const details = await fetchAndParse(true);
+        const authDuration = ((Date.now() - authStart) / 1000).toFixed(2);
+        console.log(chalk.gray(`      ✅ Success via Direct ID Auth (${authDuration}s)`));
         details.requiresAuth = true;
+        await updateSuccessMetric('id', true);
         return details;
       } catch (authError) {
-        // If it still fails, it's a real 404 or something else
+        const authDuration = ((Date.now() - authStart) / 1000).toFixed(2);
+        console.log(chalk.gray(`      ❌ Failed via Direct ID Auth (${authDuration}s)`));
       }
+    } else {
+      console.log(chalk.gray(`      ❌ Failed via Direct ID Unauth (${duration}s, Status: ${status || 'Err'})`));
     }
-
-    return { id: bookId, title: `Unknown Title [ID: ${bookId}]`, author: 'Unknown Author', ratings: '0', published: 'Unknown' };
   }
+*/
+
+  await updateSuccessMetric('id', false);
+  return { id: bookId, isFailed: true };
 }

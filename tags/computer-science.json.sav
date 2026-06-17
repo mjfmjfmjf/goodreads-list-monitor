@@ -1,0 +1,36 @@
+{
+  "tag": "computer-science",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "Computer Science > 1000 and 10",
+      "id": "108393",
+      "url": "https://www.goodreads.com/list/show/94619",
+      "criteria": {
+        "min": 1000,
+        "minTags": 10
+      }
+    },
+    {
+      "nickname": "Less Popular",
+      "officialTitle": "Computer Science > 100 and 10",
+      "id": "144755",
+      "url": "https://www.goodreads.com/list/show/144755",
+      "criteria": {
+        "min": 100,
+        "minTags": 10
+      }
+    },
+    {
+      "nickname": "2010s and 2020s",
+      "officialTitle": "2010s and 2020s",
+      "id": "205266",
+      "url": "https://www.goodreads.com/list/show/116513",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2029,
+        "min": 5
+      }
+    }
+  ]
+}

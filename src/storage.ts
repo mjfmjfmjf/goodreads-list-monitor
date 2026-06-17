@@ -14,11 +14,15 @@ export interface CachedBook {
   id: string;
   title: string;
   author: string;
+  authorId?: string;
   ratings: string;
+  avgRating?: string;
   published: string;
   lastUpdated: string;
   tags?: { [tagName: string]: number };
   requiresAuth?: boolean;
+  isBad?: boolean;
+  failCount?: number;
 }
 
 export interface State {
@@ -36,10 +40,48 @@ export interface Config {
   cookie?: string;
 }
 
+export interface AuthorCache {
+  [authorName: string]: {
+    id: string;
+    slug: string; // The "1077326.J_K_Rowling" part
+    lastSeen: string;
+  };
+}
+
 const STATE_FILE = path.join(process.cwd(), 'state.json');
 const BACKUP_FILE = path.join(process.cwd(), 'state.json.bak');
 const BOOKS_CACHE_FILE = path.join(process.cwd(), 'booksCache.json');
+const AUTHORS_CACHE_FILE = path.join(process.cwd(), 'authorsCache.json');
 const CONFIG_FILE = path.join(process.cwd(), 'config.json');
+
+export async function loadAuthorCache(): Promise<AuthorCache> {
+  if (await fs.pathExists(AUTHORS_CACHE_FILE)) {
+    return await fs.readJson(AUTHORS_CACHE_FILE);
+  }
+  return {};
+}
+
+export async function saveAuthorCache(cache: AuthorCache): Promise<void> {
+  await fs.writeJson(AUTHORS_CACHE_FILE, cache, { spaces: 2 });
+}
+
+export async function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {
+  let updated = false;
+  for (const book of books) {
+    if (book.author && book.author !== 'Unknown Author' && book.authorSlug) {
+      const existing = authorCache[book.author];
+      if (!existing || existing.slug !== book.authorSlug) {
+        authorCache[book.author] = {
+          id: book.authorId || book.authorSlug.split('.')[0],
+          slug: book.authorSlug,
+          lastSeen: new Date().toISOString()
+        };
+        updated = true;
+      }
+    }
+  }
+  if (updated) await saveAuthorCache(authorCache);
+}
 
 export async function loadState(): Promise<State> {
   if (await fs.pathExists(STATE_FILE)) {
@@ -67,6 +109,46 @@ export async function loadBookCache(): Promise<BookCache> {
 
 export async function saveBookCache(cache: BookCache): Promise<void> {
   await fs.writeJson(BOOKS_CACHE_FILE, cache, { spaces: 2 });
+}
+
+export async function syncBooksToCache(books: any[], bookCache: BookCache) {
+  let updated = false;
+  for (const book of books) {
+    const existing = bookCache[book.id];
+    const isNew = !existing;
+    
+    // Helper to parse ratings string into a number for comparison
+    const parseRatings = (r: string | undefined) => parseInt((r || '0').replace(/,/g, ''), 10);
+    const existingRatingsNum = parseRatings(existing?.ratings);
+    const newRatingsNum = parseRatings(book.ratings);
+
+    const hasBetterTitle = existing?.title === 'Unknown' && book.title !== 'Unknown';
+    const hasBetterAuthor = existing?.author === 'Unknown' && book.author !== 'Unknown';
+    const hasBetterAuthorId = !existing?.authorId && book.authorId;
+    const hasBetterDate = (existing?.published === 'Unknown' || !existing?.published) && (book.published && book.published !== 'Unknown');
+    const hasBetterRatings = newRatingsNum > existingRatingsNum;
+    const hasBetterAvgRating = !existing?.avgRating && book.avgRating;
+
+    if (isNew || hasBetterTitle || hasBetterAuthor || hasBetterAuthorId || hasBetterDate || hasBetterRatings || hasBetterAvgRating) {
+      bookCache[book.id] = {
+        id: book.id,
+        title: book.title !== 'Unknown' ? book.title : (existing?.title || 'Unknown'),
+        author: book.author !== 'Unknown' ? book.author : (existing?.author || 'Unknown'),
+        authorId: book.authorId || existing?.authorId,
+        ratings: hasBetterRatings ? book.ratings : (existing?.ratings || '0'),
+        avgRating: book.avgRating || existing?.avgRating,
+        published: (book.published && book.published !== 'Unknown') ? book.published : (existing?.published || 'Unknown'),
+        lastUpdated: new Date().toISOString(),
+        tags: existing?.tags || (book.tagCount !== undefined ? {} : undefined)
+      };
+      
+      if (book.tagCount !== undefined) {
+        if (!bookCache[book.id].tags) bookCache[book.id].tags = {};
+      }
+      updated = true;
+    }
+  }
+  if (updated) await saveBookCache(bookCache);
 }
 
 export async function loadConfig(): Promise<Config> {

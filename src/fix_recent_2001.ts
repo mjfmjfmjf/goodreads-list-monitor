@@ -31,7 +31,7 @@ async function fixSuspects() {
     checkedCount++;
 
     try {
-      const details = await scrapeBookDetails(id);
+      const details = await scrapeBookDetails(id, book.title, book.author);
       const newPub = details.published || 'Unknown';
 
       if (newPub !== book.published) {

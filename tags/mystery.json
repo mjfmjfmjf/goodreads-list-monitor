@@ -1,0 +1,144 @@
+{
+  "tag": "mystery",
+  "lists": [
+    {
+      "nickname": "Best Mysteries of the 21st Century",
+      "officialTitle": "Best Mysteries of the 21st Century",
+      "id": "142746",
+      "url": "https://www.goodreads.com/list/show/142746",
+      "criteria": {
+        "minYear": 2000,
+        "maxYear": 2099
+      }
+    },
+    {
+      "nickname": "Best Mysteries of the 20th Century",
+      "officialTitle": "Best Mysteries of the 20th Century",
+      "id": "142806",
+      "url": "https://www.goodreads.com/list/show/142806",
+      "criteria": {
+        "minYear": 1900,
+        "maxYear": 1999
+      }
+    },
+    {
+      "nickname": "Popular Highly Rated Mystery",
+      "officialTitle": "Popular Highly Rated Mystery",
+      "id": "142751",
+      "url": "https://www.goodreads.com/list/show/142751",
+      "criteria": {
+        "min": 40000,
+        "minTags": 500
+      }
+    },
+    {
+      "nickname": "1960",
+      "officialTitle": "Best Mysteries from the 1960s",
+      "id": "142702",
+      "url": "https://www.goodreads.com/list/show/142702",
+      "criteria": {
+        "minYear": 1960,
+        "maxYear": 1969
+      }
+    },
+    {
+      "nickname": "1970",
+      "officialTitle": "Best Mysteries from the 1970s",
+      "id": "26791",
+      "url": "https://www.goodreads.com/list/show/26791",
+      "criteria": {
+        "minYear": 1970,
+        "maxYear": 1979
+      }
+    },
+    {
+      "nickname": "1980",
+      "officialTitle": "Best Mysteries from the 1980s",
+      "id": "26786",
+      "url": "https://www.goodreads.com/list/show/26786",
+      "criteria": {
+        "minYear": 1980,
+        "maxYear": 1989
+      }
+    },
+    {
+      "nickname": "1990",
+      "officialTitle": "Best Mysteries from the 1990s",
+      "id": "26742",
+      "url": "https://www.goodreads.com/list/show/26742",
+      "criteria": {
+        "minYear": 1990,
+        "maxYear": 1999
+      }
+    },
+    {
+      "nickname": "2000",
+      "officialTitle": "Best Mysteries from the 2000s",
+      "id": "79359",
+      "url": "https://www.goodreads.com/list/show/79359",
+      "criteria": {
+        "minYear": 2000,
+        "maxYear": 2009
+      }
+    },
+    {
+      "nickname": "2010",
+      "officialTitle": "Best Mysteries from the 2010s",
+      "id": "79879",
+      "url": "https://www.goodreads.com/list/show/79879",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2020",
+      "officialTitle": "Best Mysteries from the 2020s",
+      "id": "179830",
+      "url": "https://www.goodreads.com/list/show/179830",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2029
+      }
+    },
+    {
+      "nickname": "100,000 or more",
+      "officialTitle": "The Most Popular Mysteries on Goodreads",
+      "id": "195574",
+      "url": "https://www.goodreads.com/list/show/195574",
+      "criteria": {
+        "min": 100000
+      }
+    },
+    {
+      "nickname": "50,000 to 99,999",
+      "officialTitle": "Popular Mysteries on Goodreads with between 50000 and 99999 ratings",
+      "id": "79160",
+      "url": "https://www.goodreads.com/list/show/79160",
+      "criteria": {
+        "min": 50000,
+        "max": 99999
+      }
+    },
+    {
+      "nickname": "25,000 to 49,999",
+      "officialTitle": "Popular Mysteries on Goodreads with between 25000 and 49999 ratings",
+      "id": "80850",
+      "url": "https://www.goodreads.com/list/show/80850",
+      "criteria": {
+        "min": 25000,
+        "max": 49999
+      }
+    },
+    {
+      "nickname": "10,000 to 24,999",
+      "officialTitle": "Popular Mysteries on Goodreads with between 10000 and 24999 ratings",
+      "id": "142774",
+      "url": "https://www.goodreads.com/list/show/142774",
+      "criteria": {
+        "min": 10000,
+        "max": 24999
+      }
+    }
+  ]
+}

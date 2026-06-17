@@ -44,10 +44,12 @@ program
   .command('check-queue')
   .description('Automatically find all books in the cache with "Unknown" or suspicious years and attempt to fix them')
   .option('--force', 'Re-check every book in the cache, even if they have a valid year')
+  .option('--force-bad', 'Include and retry books previously marked as "bad" (repeated failures)')
   .option('--since <YYYYMMDDHHMM>', 'Re-check books updated after this local time')
   .option('--until <YYYYMMDDHHMM>', 'Re-check books updated before this local time')
   .action(async (options) => {
     try {
+      // Commander converts kebab-case --force-bad to camelCase forceBad
       await runCheckQueue(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run check-queue:'), (error as any).message);
@@ -78,7 +80,8 @@ program
   .command('ingest')
   .description('Perform a full ingest of all book titles for all lists')
   .argument('[userId]', 'Goodreads User ID')
-  .action(async (userIdArg) => {
+  .option('--force', 'Force re-ingestion of all lists even if already ingested')
+  .action(async (userIdArg, options) => {
     const state = await loadState();
     const userId = userIdArg || state.userId;
 
@@ -88,7 +91,7 @@ program
     }
 
     try {
-      await performIngest(userId);
+      await performIngest(userId, options.force);
     } catch (error) {
       console.error(chalk.red.bold('Failed to ingest:'), (error as any).message);
     }
@@ -125,6 +128,7 @@ program
 program
   .command('tag-audit <tag> <listId>')
   .description('Cross-reference a Goodreads shelf with a list to find missing or low-tag books')
+  .option('--max <number>', 'Maximum number of ratings required for a book to be eligible', '0')
   .option('--min <number>', 'Minimum number of ratings required for a book to be eligible', '0')
   .option('--minTags <number>', 'Minimum number of times a book must be shelved with this tag', '0')
   .option('--minYear <year>', 'Minimum publishing year allowed')

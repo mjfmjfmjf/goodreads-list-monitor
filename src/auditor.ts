@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
 import { scrapeListBooks, scrapeBookDetails, scrapeShelfBooks } from './scraper.js';
-import { loadState, saveState, loadBookCache, saveBookCache } from './storage.js';
+import { loadState, saveState, loadBookCache, saveBookCache, syncBooksToCache } from './storage.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
 
 const AUDIT_REPORT = path.join(process.cwd(), 'auditReport.txt');
@@ -36,22 +36,25 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
   const listTitle = state.lists[listId]?.title || `List ${listId}`;
   
   const minRatings = parseInt(options.min?.replace(/,/g, '') || '0', 10);
+  const maxRatings = options.max ? parseInt(options.max.replace(/,/g, ''), 10) : Infinity;
   const minTags = parseInt(options.minTags?.replace(/,/g, '') || '0', 10);
   const minYear = options.minYear ? parseInt(options.minYear, 10) : 0;
   const maxYear = options.maxYear ? parseInt(options.maxYear, 10) : Infinity;
 
   console.log(chalk.cyan.bold(`\n🏷️ Starting Tag Audit for tag: "${tag}" against list: "${listTitle}"`));
-  console.log(chalk.gray(`   Criteria: Min Ratings: ${minRatings}, Min Tags: ${minTags}\n`));
+  console.log(chalk.gray(`   Criteria: Min Ratings: ${minRatings}, Max Ratings: ${maxRatings}, Min Tags: ${minTags}\n`));
 
   try {
     // 1. Discovery Phase: Read the Tag/Shelf pages first
     console.log(chalk.cyan.bold(`🔎 Step 1: Discovering eligible books from shelf "${tag}"...`));
     const shelfBooks = await scrapeShelfBooks(tag, minTags, 25);
+    await syncBooksToCache(shelfBooks, bookCache);
     
     // Filter shelf books by ratings and years (if provided)
     const eligibleShelfBooks = shelfBooks.filter(book => {
       const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
       if (bookRatings < minRatings) return false;
+      if (bookRatings > maxRatings) return false;
       
       if (minYear > 0 || maxYear < Infinity) {
         const cached = bookCache[book.id];
@@ -79,7 +82,8 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
       const alreadyOnList = listBooks.some(lb => isSameBook(shelfBook, lb));
       
       if (!alreadyOnList) {
-        const msg = `[MISSING] "${shelfBook.title}" by ${shelfBook.author} [ID: ${shelfBook.id}] (Tags: ${shelfBook.tagCount}, Ratings: ${shelfBook.ratings})`;
+        const avgStr = shelfBook.avgRating ? `, Avg: ${shelfBook.avgRating}` : '';
+        const msg = `[MISSING] "${shelfBook.title}" by ${shelfBook.author} [ID: ${shelfBook.id}] (Tags: ${shelfBook.tagCount}, Ratings: ${shelfBook.ratings}${avgStr})`;
         console.log(chalk.green.bold(`   ➕ ${msg}`));
         await appendToAuditReport(listTitle, msg);
         toAdd.push(`[book:${shelfBook.title}|${shelfBook.id}]`);
@@ -100,7 +104,8 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
         if (tooFewRatings) reason = `TOO FEW RATINGS (${listBook.ratings} < ${minRatings})`;
         else reason = 'Below tag threshold or not in top 25 shelf pages';
 
-        const msg = `[REMOVE] "${listBook.title}" by ${listBook.author} [ID: ${listBook.id}] (Reason: ${reason})`;
+        const avgStr = listBook.avgRating ? `, Avg: ${listBook.avgRating}` : '';
+        const msg = `[REMOVE] "${listBook.title}" by ${listBook.author} [ID: ${listBook.id}] (Reason: ${reason}${avgStr})`;
         console.log(chalk.red.bold(`   ❌ ${msg}`));
         await appendToAuditReport(listTitle, msg);
         toRemove.push(`[book:${listBook.title}|${listBook.id}]`);
@@ -136,10 +141,18 @@ function updateCache(book: any, tag: string, bookCache: any) {
       title: book.title,
       author: book.author,
       ratings: book.ratings,
-      published: 'Unknown',
+      published: book.published || 'Unknown',
       lastUpdated: new Date().toISOString(),
       tags: {}
     };
+  } else {
+    // Sync other metadata if it was missing
+    if (bookCache[book.id].published === 'Unknown' && book.published && book.published !== 'Unknown') {
+      bookCache[book.id].published = book.published;
+    }
+    if (bookCache[book.id].title === 'Unknown' && book.title !== 'Unknown') {
+      bookCache[book.id].title = book.title;
+    }
   }
   if (!bookCache[book.id].tags) bookCache[book.id].tags = {};
   bookCache[book.id].tags[tag] = book.tagCount;
@@ -150,182 +163,148 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
   const bookCache = await loadBookCache();
   const listTitle = state.lists[listId]?.title || `List ${listId}`;
   
-  const isYearMode = options.minYear !== undefined || options.maxYear !== undefined;
+  const minRatings = options.min ? parseInt(options.min.replace(/,/g, ''), 10) : 0;
+  const maxRatings = options.max ? parseInt(options.max.replace(/,/g, ''), 10) : Infinity;
+  const minYear = options.minYear ? parseInt(options.minYear, 10) : 0;
+  const maxYear = options.maxYear ? parseInt(options.maxYear, 10) : Infinity;
+
+  const isYearAudit = minYear > 0 || maxYear < Infinity;
+  const isRatingsAudit = minRatings > 0 || maxRatings < Infinity;
 
   console.log(chalk.cyan.bold(`\n🔍 Starting Audit for: "${listTitle}"`));
-  if (isYearMode) {
-    const minYear = options.minYear ? parseInt(options.minYear, 10) : 0;
-    const maxYear = options.maxYear ? parseInt(options.maxYear, 10) : Infinity;
-    console.log(chalk.gray(`   Mode: Publishing Year Audit (${minYear} to ${maxYear === Infinity ? 'Any' : maxYear})\n`));
-    await runYearAudit(listId, listTitle, minYear, maxYear, bookCache);
-  } else {
-    const minRatings = options.min ? parseInt(options.min.replace(/,/g, ''), 10) : 0;
-    const maxRatings = options.max ? parseInt(options.max.replace(/,/g, ''), 10) : Infinity;
-    console.log(chalk.gray(`   Mode: Ratings Audit (${minRatings} to ${maxRatings === Infinity ? 'Any' : maxRatings})\n`));
-    await runRatingsAudit(listId, listTitle, minRatings, maxRatings, bookCache);
-  }
-}
+  if (isYearAudit) console.log(chalk.gray(`   - Year Criteria: ${minYear} to ${maxYear === Infinity ? 'Any' : maxYear}`));
+  if (isRatingsAudit) console.log(chalk.gray(`   - Ratings Criteria: ${minRatings} to ${maxRatings === Infinity ? 'Any' : maxRatings}`));
+  if (!isYearAudit && !isRatingsAudit) console.log(chalk.gray(`   - Mode: Harvesting metadata only`));
 
-async function runRatingsAudit(listId: string, listTitle: string, min: number, max: number, bookCache: any): Promise<void> {
   try {
     const listBooks = await scrapeListBooks(listId);
-    let outliersFound = 0;
-    const graduatedBooks: string[] = [];
-    const tooFewBooks: string[] = [];
-
-    for (const book of listBooks) {
-      const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
-      
-      const tooFew = min > 0 && bookRatings < min;
-      const tooMany = max < Infinity && bookRatings > max;
-
-      if (tooFew || tooMany) {
-        const reason = tooFew ? 'TOO FEW RATINGS' : 'TOO MANY RATINGS';
-        
-        // Check cache for publication date
-        const cached = bookCache[book.id];
-        const pubInfo = (cached && cached.published !== 'Unknown') ? `, Pub: ${formatDate(cached.published)}` : '';
-        const url = `https://www.goodreads.com/book/show/${book.id}`;
-
-        const bookLink = formatBookLink(book.title, book.id);
-        const msg = `[${reason}] ${bookLink} by ${book.author} (Ratings: ${book.ratings}${pubInfo}, Pos: ${book.position})`;
-        
-        console.log(chalk.red.bold(`   ❌ OUTLIER: ${msg}`));
-        console.log(chalk.gray(`      URL: ${url}`));
-        
-        await appendToAuditReport(listTitle, msg);
-        outliersFound++;
-
-        if (tooMany) graduatedBooks.push(bookLink);
-        if (tooFew) tooFewBooks.push(bookLink);
-      }
-    }
-
-    if (graduatedBooks.length > 0) {
-      const graduatedMsg = `\n🎓 ${graduatedBooks.join(' and ')} graduated`;
-      console.log(chalk.magenta.bold(graduatedMsg));
-      await appendToAuditReport(listTitle, `GRADUATED MESSAGE: ${graduatedMsg}`);
-    }
+    await syncBooksToCache(listBooks, bookCache);
     
-    if (tooFewBooks.length > 0) {
-      const tooFewMsg = `\n❌ Books will be removed for being below ${min} ratings: ${tooFewBooks.join(' and ')}`;
-      console.log(chalk.red.bold(tooFewMsg));
-      await appendToAuditReport(listTitle, tooFewMsg);
-    }
-
-    reportAuditSummary(outliersFound, listBooks.length);
-  } catch (error) {
-    console.error(chalk.red.bold(`\n❌ Ratings audit failed:`), (error as any).message);
-  }
-}
-
-async function runYearAudit(listId: string, listTitle: string, min: number, max: number, bookCache: any): Promise<void> {
-  try {
-    const listBooks = await scrapeListBooks(listId);
     let outliersFound = 0;
-    const tooEarlyBooks: string[] = [];
-    const tooLateBooks: string[] = [];
+    const tooFewRatings: string[] = [];
+    const tooManyRatings: string[] = [];
+    const tooEarlyYears: string[] = [];
+    const tooLateYears: string[] = [];
 
-    // Pre-index cache by normalized title for faster lookups of other editions
+    // Pre-index cache by normalized title for year lookups
     const titleCache: Record<string, string> = {};
-    for (const b of Object.values(bookCache) as any[]) {
-      if (b.published !== 'Unknown') {
-        titleCache[`${normalizeTitle(b.title)}|${normalizeAuthor(b.author)}`] = b.published;
+    if (isYearAudit) {
+      for (const b of Object.values(bookCache) as any[]) {
+        if (b.published !== 'Unknown') {
+          titleCache[`${normalizeTitle(b.title)}|${normalizeAuthor(b.author)}`] = b.published;
+        }
       }
     }
 
     for (let i = 0; i < listBooks.length; i++) {
       const book = listBooks[i];
-      let bookData = bookCache[book.id];
-      const titleAuthorKey = `${normalizeTitle(book.title)}|${normalizeAuthor(book.author)}`;
-
-      // 1. If missing from cache or needs refresh
-      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-      const needsFetch = !bookData || (bookData.published === 'Unknown' && (!bookData.lastUpdated || bookData.lastUpdated < oneDayAgo));
-
-      if (needsFetch) {
-        const titleAuthorKey = `${normalizeTitle(book.title)}|${normalizeAuthor(book.author)}`;
-        const yearFromList = book.published !== 'Unknown' ? book.published : null;
-        const yearFromOtherEdition = titleCache[titleAuthorKey];
-        const resolvedYear = yearFromList || yearFromOtherEdition;
-
-        if (resolvedYear) {
-          bookCache[book.id] = {
-            id: book.id,
-            title: book.title,
-            author: book.author,
-            ratings: book.ratings,
-            published: resolvedYear,
-            lastUpdated: new Date().toISOString(),
-            tags: bookData?.tags || {}
-          };
-          bookData = bookCache[book.id];
-        } else {
-          console.log(chalk.gray(`   [${i + 1}/${listBooks.length}] Fetching missing year info for: "${book.title.substring(0, 30)}..."`));
-          const details = await scrapeBookDetails(book.id);
-          
-          bookCache[book.id] = {
-            id: book.id,
-            title: book.title,
-            author: book.author,
-            ratings: book.ratings,
-            published: details.published || 'Unknown',
-            lastUpdated: new Date().toISOString(),
-            tags: bookData?.tags || {},
-            requiresAuth: details.requiresAuth || false
-          };
-          bookData = bookCache[book.id];
-          if (i % 10 === 0) await saveBookCache(bookCache);
-          await delay(500, 1500);
+      const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
+      
+      // 1. RATINGS CHECK
+      if (isRatingsAudit) {
+        const tooFew = minRatings > 0 && bookRatings < minRatings;
+        const tooMany = maxRatings < Infinity && bookRatings > maxRatings;
+        if (tooFew || tooMany) {
+          const reason = tooFew ? 'TOO FEW RATINGS' : 'TOO MANY RATINGS';
+          const bookLink = formatBookLink(book.title, book.id);
+          const authorStr = book.author ? ` by ${book.author}` : '';
+          const avgStr = book.avgRating ? `, Avg: ${book.avgRating}` : '';
+          console.log(chalk.red.bold(`   ❌ OUTLIER: [${reason}] ${bookLink}${authorStr} (Ratings: ${book.ratings}${avgStr}, Pos: ${book.position})`));
+          await appendToAuditReport(listTitle, `[${reason}] ${book.title}${authorStr} [ID: ${book.id}] (${book.ratings} ratings${avgStr})`);
+          outliersFound++;
+          if (tooFew) tooFewRatings.push(bookLink);
+          if (tooMany) tooManyRatings.push(bookLink);
         }
       }
 
-      const bookYear = getYear(bookData.published);
-      const isUnknown = bookData.published === 'Unknown';
-      const tooEarly = !isUnknown && min > 0 && bookYear !== null && bookYear < min;
-      const tooLate = !isUnknown && max < Infinity && bookYear !== null && bookYear > max;
-
-      if (isUnknown || tooEarly || tooLate) {
-        const reason = isUnknown ? 'UNKNOWN YEAR' : (tooEarly ? 'TOO EARLY' : 'TOO LATE');
-        const pageInfo = book.page ? `, Page: ${book.page}` : '';
-        const authInfo = bookData.requiresAuth ? ' [AUTH REQ]' : '';
-        const url = `https://www.goodreads.com/book/show/${book.id}`;
-        
-        const bookLink = formatBookLink(book.title, book.id);
-        const msg = `[${reason}]${authInfo} ${bookLink} by ${book.author} (Published: ${bookData.published}, Ratings: ${book.ratings}, Pos: ${book.position}${pageInfo})`;
-        
-        if (isUnknown) {
-          console.log(chalk.red.bold(`   🏗️ BROKEN BOOK: ${msg}`));
-        } else {
-          console.log(chalk.red.bold(`   ❌ OUTLIER: ${msg}`));
+      // 2. YEAR CHECK
+      if (isYearAudit) {
+        let bookData = bookCache[book.id];
+        // If year unknown but we have it from list or other edition
+        if (bookData?.published === 'Unknown' || !bookData) {
+            const yearFromList = book.published !== 'Unknown' ? book.published : null;
+            const titleAuthorKey = `${normalizeTitle(book.title)}|${normalizeAuthor(book.author)}`;
+            const yearFromOtherEdition = titleCache[titleAuthorKey];
+            const resolvedYear = yearFromList || yearFromOtherEdition;
+            
+            if (resolvedYear) {
+                if (!bookData) {
+                    bookCache[book.id] = {
+                        id: book.id,
+                        title: book.title,
+                        author: book.author,
+                        ratings: book.ratings,
+                        published: resolvedYear,
+                        lastUpdated: new Date().toISOString()
+                    };
+                } else {
+                    bookData.published = resolvedYear;
+                }
+                bookData = bookCache[book.id];
+            }
         }
-        console.log(chalk.gray(`      URL: ${url}`));
-        
-        await appendToAuditReport(listTitle, msg);
-        outliersFound++;
 
-        if (isUnknown || tooEarly) tooEarlyBooks.push(bookLink);
-        if (tooLate) tooLateBooks.push(bookLink);
+        // Only fetch details if we STILL don't have the year and we are in year audit mode
+        if (!bookData || bookData.published === 'Unknown') {
+             console.log(chalk.gray(`   [${i + 1}/${listBooks.length}] Fetching missing year for: "${book.title.substring(0, 30)}..."`));
+             const details = await scrapeBookDetails(book.id, book.title, book.author);
+             bookCache[book.id] = {
+                id: book.id,
+                title: book.title,
+                author: book.author,
+                ratings: book.ratings,
+                published: details.published || 'Unknown',
+                lastUpdated: new Date().toISOString(),
+                requiresAuth: details.requiresAuth
+             };
+             bookData = bookCache[book.id];
+             if (i % 10 === 0) await saveBookCache(bookCache);
+             await delay(500, 1500);
+        }
+
+        const bookYear = getYear(bookData.published);
+        const isUnknown = bookData.published === 'Unknown';
+        const tooEarly = !isUnknown && minYear > 0 && bookYear !== null && bookYear < minYear;
+        const tooLate = !isUnknown && maxYear < Infinity && bookYear !== null && bookYear > maxYear;
+
+        if (isUnknown || tooEarly || tooLate) {
+          const reason = isUnknown ? 'UNKNOWN YEAR' : (tooEarly ? 'TOO EARLY' : 'TOO LATE');
+          const bookLink = formatBookLink(book.title, book.id);
+          const authorStr = book.author ? ` by ${book.author}` : '';
+          const avgStr = bookData.avgRating ? `, Avg: ${bookData.avgRating}` : '';
+          console.log(chalk.red.bold(`   ❌ OUTLIER: [${reason}] ${bookLink}${authorStr} (Published: ${bookData.published}${avgStr}, Pos: ${book.position})`));
+          await appendToAuditReport(listTitle, `[${reason}] ${book.title}${authorStr} [ID: ${book.id}] (Published: ${bookData.published}${avgStr})`);
+          outliersFound++;
+          if (tooEarly || isUnknown) tooEarlyYears.push(bookLink);
+          if (tooLate) tooLateYears.push(bookLink);
+        }
       }
     }
 
     await saveBookCache(bookCache);
 
-    if (tooEarlyBooks.length > 0) {
-      const msg = `\n❌ Books will be removed for being before ${min}: ${tooEarlyBooks.join(' and ')}`;
-      console.log(chalk.red.bold(msg));
-      await appendToAuditReport(listTitle, msg);
-    }
-    if (tooLateBooks.length > 0) {
-      const msg = `\n❌ Books will be removed for being after ${max}: ${tooLateBooks.join(' and ')}`;
-      console.log(chalk.red.bold(msg));
-      await appendToAuditReport(listTitle, msg);
-    }
+    // Final consolidated report
+    if (tooManyRatings.length > 0) console.log(chalk.magenta.bold(`\n🎓 ${tooManyRatings.join(' and ')} graduated (Too many ratings)`));
+    if (tooFewRatings.length > 0) console.log(chalk.red.bold(`\n❌ Below ratings threshold: ${tooFewRatings.join(' and ')}`));
+    if (tooEarlyYears.length > 0) console.log(chalk.red.bold(`\n❌ Too early: ${tooEarlyYears.join(' and ')}`));
+    if (tooLateYears.length > 0) console.log(chalk.red.bold(`\n❌ Too late: ${tooLateYears.join(' and ')}`));
 
     reportAuditSummary(outliersFound, listBooks.length);
   } catch (error) {
-    console.error(chalk.red.bold(`\n❌ Year audit failed:`), (error as any).message);
+    console.error(chalk.red.bold(`\n❌ Audit failed:`), (error as any).message);
   }
+}
+
+async function harvestListOnly(listId: string, bookCache: any): Promise<void> {
+  // Logic now merged into runAudit
+}
+
+async function runRatingsAudit(listId: string, listTitle: string, min: number, max: number, bookCache: any): Promise<void> {
+  // Logic now merged into runAudit
+}
+
+async function runYearAudit(listId: string, listTitle: string, min: number, max: number, bookCache: any): Promise<void> {
+  // Logic now merged into runAudit
 }
 
 function reportAuditSummary(outliers: number, total: number) {
