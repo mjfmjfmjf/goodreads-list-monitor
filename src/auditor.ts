@@ -14,6 +14,8 @@ export interface AuditOptions {
   maxYear?: string;
   tag?: string;
   minTags?: string;
+  minAvg?: string;
+  maxAvg?: string;
 }
 
 /**
@@ -40,9 +42,13 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
   const minTags = parseInt(options.minTags?.replace(/,/g, '') || '0', 10);
   const minYear = options.minYear ? parseInt(options.minYear, 10) : 0;
   const maxYear = options.maxYear ? parseInt(options.maxYear, 10) : Infinity;
+  const minAvg = options.minAvg ? parseFloat(options.minAvg) : 0;
+  const maxAvg = options.maxAvg ? parseFloat(options.maxAvg) : Infinity;
 
   console.log(chalk.cyan.bold(`\n🏷️ Starting Tag Audit for tag: "${tag}" against list: "${listTitle}"`));
-  console.log(chalk.gray(`   Criteria: Min Ratings: ${minRatings}, Max Ratings: ${maxRatings}, Min Tags: ${minTags}\n`));
+  let criteriaMsg = `   Criteria: Min Ratings: ${minRatings}, Max Ratings: ${maxRatings}, Min Tags: ${minTags}`;
+  if (minAvg > 0 || maxAvg < Infinity) criteriaMsg += `, Avg: ${minAvg}-${maxAvg}`;
+  console.log(chalk.gray(`${criteriaMsg}\n`));
 
   try {
     // 1. Discovery Phase: Read the Tag/Shelf pages first
@@ -50,12 +56,15 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
     const shelfBooks = await scrapeShelfBooks(tag, minTags, 25);
     await syncBooksToCache(shelfBooks, bookCache);
     
-    // Filter shelf books by ratings and years (if provided)
+    // Filter shelf books by ratings, years, and average rating
     const eligibleShelfBooks = shelfBooks.filter(book => {
       const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
       if (bookRatings < minRatings) return false;
       if (bookRatings > maxRatings) return false;
       
+      const bookAvg = book.avgRating ? parseFloat(book.avgRating) : 0;
+      if ((minAvg > 0 && bookAvg < minAvg) || (maxAvg < Infinity && bookAvg > maxAvg)) return false;
+
       if (minYear > 0 || maxYear < Infinity) {
         const cached = bookCache[book.id];
         const bookYear = cached ? getYear(cached.published) : null;
@@ -95,13 +104,16 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
     for (const listBook of listBooks) {
       const foundOnShelf = shelfBooks.find(sb => isSameBook(listBook, sb));
       const bookRatings = parseInt(listBook.ratings.replace(/,/g, ''), 10) || 0;
+      const bookAvg = listBook.avgRating ? parseFloat(listBook.avgRating) : 0;
       
       const tooFewRatings = minRatings > 0 && bookRatings < minRatings;
+      const outsideAvg = (minAvg > 0 && bookAvg < minAvg) || (maxAvg < Infinity && bookAvg > maxAvg);
       const notOnShelf = !foundOnShelf;
 
-      if (notOnShelf || tooFewRatings) {
+      if (notOnShelf || tooFewRatings || outsideAvg) {
         let reason = '';
         if (tooFewRatings) reason = `TOO FEW RATINGS (${listBook.ratings} < ${minRatings})`;
+        else if (outsideAvg) reason = `OUTSIDE AVG RATING (${listBook.avgRating || '0'} not in ${minAvg}-${maxAvg})`;
         else reason = 'Below tag threshold or not in top 25 shelf pages';
 
         const avgStr = listBook.avgRating ? `, Avg: ${listBook.avgRating}` : '';
@@ -167,14 +179,18 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
   const maxRatings = options.max ? parseInt(options.max.replace(/,/g, ''), 10) : Infinity;
   const minYear = options.minYear ? parseInt(options.minYear, 10) : 0;
   const maxYear = options.maxYear ? parseInt(options.maxYear, 10) : Infinity;
+  const minAvg = options.minAvg ? parseFloat(options.minAvg) : 0;
+  const maxAvg = options.maxAvg ? parseFloat(options.maxAvg) : Infinity;
 
   const isYearAudit = minYear > 0 || maxYear < Infinity;
   const isRatingsAudit = minRatings > 0 || maxRatings < Infinity;
+  const isAvgAudit = minAvg > 0 || maxAvg < Infinity;
 
   console.log(chalk.cyan.bold(`\n🔍 Starting Audit for: "${listTitle}"`));
   if (isYearAudit) console.log(chalk.gray(`   - Year Criteria: ${minYear} to ${maxYear === Infinity ? 'Any' : maxYear}`));
   if (isRatingsAudit) console.log(chalk.gray(`   - Ratings Criteria: ${minRatings} to ${maxRatings === Infinity ? 'Any' : maxRatings}`));
-  if (!isYearAudit && !isRatingsAudit) console.log(chalk.gray(`   - Mode: Harvesting metadata only`));
+  if (isAvgAudit) console.log(chalk.gray(`   - Avg Rating Criteria: ${minAvg} to ${maxAvg === Infinity ? 'Any' : maxAvg}`));
+  if (!isYearAudit && !isRatingsAudit && !isAvgAudit) console.log(chalk.gray(`   - Mode: Harvesting metadata only`));
 
   try {
     const listBooks = await scrapeListBooks(listId);
@@ -185,6 +201,8 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
     const tooManyRatings: string[] = [];
     const tooEarlyYears: string[] = [];
     const tooLateYears: string[] = [];
+    const tooLowAvg: string[] = [];
+    const tooHighAvg: string[] = [];
 
     // Pre-index cache by normalized title for year lookups
     const titleCache: Record<string, string> = {};
@@ -279,6 +297,23 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
           if (tooLate) tooLateYears.push(bookLink);
         }
       }
+
+      // 3. AVG RATING CHECK
+      if (isAvgAudit) {
+        const avg = book.avgRating ? parseFloat(book.avgRating) : 0;
+        const tooLow = minAvg > 0 && avg < minAvg;
+        const tooHigh = maxAvg < Infinity && avg > maxAvg;
+        if (tooLow || tooHigh) {
+          const reason = tooLow ? 'LOW AVG RATING' : 'HIGH AVG RATING';
+          const bookLink = formatBookLink(book.title, book.id);
+          const authorStr = book.author ? ` by ${book.author}` : '';
+          console.log(chalk.red.bold(`   ❌ OUTLIER: [${reason}] ${bookLink}${authorStr} (Avg: ${book.avgRating || 'None'}, Pos: ${book.position})`));
+          await appendToAuditReport(listTitle, `[${reason}] ${book.title}${authorStr} [ID: ${book.id}] (Avg: ${book.avgRating || 'None'})`);
+          outliersFound++;
+          if (tooLow) tooLowAvg.push(bookLink);
+          if (tooHigh) tooHighAvg.push(bookLink);
+        }
+      }
     }
 
     await saveBookCache(bookCache);
@@ -288,6 +323,8 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
     if (tooFewRatings.length > 0) console.log(chalk.red.bold(`\n❌ Below ratings threshold: ${tooFewRatings.join(' and ')}`));
     if (tooEarlyYears.length > 0) console.log(chalk.red.bold(`\n❌ Too early: ${tooEarlyYears.join(' and ')}`));
     if (tooLateYears.length > 0) console.log(chalk.red.bold(`\n❌ Too late: ${tooLateYears.join(' and ')}`));
+    if (tooLowAvg.length > 0) console.log(chalk.red.bold(`\n❌ Below avg rating threshold: ${tooLowAvg.join(' and ')}`));
+    if (tooHighAvg.length > 0) console.log(chalk.red.bold(`\n❌ Above avg rating threshold: ${tooHighAvg.join(' and ')}`));
 
     reportAuditSummary(outliersFound, listBooks.length);
   } catch (error) {

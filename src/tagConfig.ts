@@ -13,6 +13,8 @@ export interface AuditCriteria {
   minYear?: number;
   maxYear?: number;
   minTags?: number;
+  minAvg?: number;
+  maxAvg?: number;
 }
 
 export interface ListEntry {
@@ -93,25 +95,55 @@ function parseCriteria(text: string): AuditCriteria | null {
   const criteria: AuditCriteria = {};
   let found = false;
 
-  // 1. Ratings Parsing
-  if (cleanText.includes('and more')) {
-    const match = cleanText.match(/(\d+)/);
-    if (match) { criteria.min = parseInt(match[1], 10); found = true; }
-  } else if (cleanText.includes('less than')) {
-    const match = cleanText.match(/(\d+)/);
-    if (match) { criteria.max = parseInt(match[1], 10); found = true; }
-  } else if (cleanText.includes('to') && !cleanText.includes('s')) { // "50 to 99" but not "2000 to 2009"
-    const parts = cleanText.split('to');
-    const min = parseInt(parts[0].trim(), 10);
-    const max = parseInt(parts[1].trim(), 10);
-    if (!isNaN(min) && !isNaN(max)) {
-      criteria.min = min;
-      criteria.max = max;
+  // 1. Average Rating Parsing
+  if (cleanText.includes('average rating')) {
+    found = true;
+    const aboveMatch = cleanText.match(/average rating of ([\d.]+)\s+(and above|or above)/) || cleanText.match(/average rating ([\d.]+)\s+(and above|or above)/);
+    const belowMatch = cleanText.match(/average rating of ([\d.]+)\s+and below/) || cleanText.match(/average rating ([\d.]+)\s+and below/) || cleanText.match(/average rating below ([\d.]+)/);
+    
+    if (aboveMatch) {
+      criteria.minAvg = parseFloat(aboveMatch[1]);
+    } else if (belowMatch) {
+      criteria.maxAvg = parseFloat(belowMatch[1]);
+    }
+  }
+
+  // 2. Ratings Count Parsing (e.g., "at least 10000 ratings", "100 to 999 ratings", "with 10 to 99 ratings")
+  if (cleanText.includes('ratings') || cleanText.includes('rated')) {
+    const atLeastMatch = cleanText.match(/at least (\d+)\s+ratings/) || cleanText.match(/at least (\d+)\s+rated/);
+    const rangeMatch = cleanText.match(/(\d+)\s+to\s+(\d+)\s+ratings/) || cleanText.match(/with\s+(\d+)\s+to\s+(\d+)\s+ratings/);
+    
+    if (atLeastMatch) {
+      criteria.min = parseInt(atLeastMatch[1], 10);
+      found = true;
+    } else if (rangeMatch) {
+      criteria.min = parseInt(rangeMatch[1], 10);
+      criteria.max = parseInt(rangeMatch[2], 10);
       found = true;
     }
   }
 
-  // 2. Year/Decade Parsing
+  // Old standard ratings fallback logic
+  if (criteria.min === undefined && criteria.max === undefined) {
+    if (cleanText.includes('and more')) {
+      const match = cleanText.match(/(\d+)/);
+      if (match) { criteria.min = parseInt(match[1], 10); found = true; }
+    } else if (cleanText.includes('less than')) {
+      const match = cleanText.match(/(\d+)/);
+      if (match) { criteria.max = parseInt(match[1], 10); found = true; }
+    } else if (cleanText.includes('to') && !cleanText.includes('s') && !cleanText.includes('rating')) {
+      const parts = cleanText.split('to');
+      const min = parseInt(parts[0].trim(), 10);
+      const max = parseInt(parts[1].trim(), 10);
+      if (!isNaN(min) && !isNaN(max)) {
+        criteria.min = min;
+        criteria.max = max;
+        found = true;
+      }
+    }
+  }
+
+  // 3. Year/Decade Parsing
   const decadeMatch = cleanText.match(/(\d{4})s/);
   if (decadeMatch) {
     const startYear = parseInt(decadeMatch[1], 10);
@@ -119,13 +151,18 @@ function parseCriteria(text: string): AuditCriteria | null {
     criteria.maxYear = startYear + 9;
     found = true;
   } else {
+    const beforeMatch = cleanText.match(/published before (\d{4})/);
     const yearMatch = cleanText.match(/^(\d{4})$/);
-    if (yearMatch) {
+    
+    if (beforeMatch) {
+      criteria.maxYear = parseInt(beforeMatch[1], 10) - 1;
+      found = true;
+    } else if (yearMatch) {
       const year = parseInt(yearMatch[1], 10);
       criteria.minYear = year;
       criteria.maxYear = year;
       found = true;
-    } else if (cleanText.match(/^\d{4} to \d{4}$/)) { // "2000 to 2009"
+    } else if (cleanText.match(/^\d{4} to \d{4}$/)) {
         const parts = cleanText.split('to');
         criteria.minYear = parseInt(parts[0].trim(), 10);
         criteria.maxYear = parseInt(parts[1].trim(), 10);

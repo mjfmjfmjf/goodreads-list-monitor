@@ -104,17 +104,20 @@ program
   .option('--max <number>', 'Maximum number of ratings allowed (e.g., 50000)')
   .option('--minYear <year>', 'Minimum publishing year allowed (e.g., 2010)')
   .option('--maxYear <year>', 'Maximum publishing year allowed (e.g., 2024)')
+  .option('--minAvg <number>', 'Minimum average rating (e.g., 4.0)')
+  .option('--maxAvg <number>', 'Maximum average rating (e.g., 5.0)')
   .action(async (listId, options) => {
     const hasRatings = options.min !== undefined || options.max !== undefined;
     const hasYear = options.minYear !== undefined || options.maxYear !== undefined;
+    const hasAvg = options.minAvg !== undefined || options.maxAvg !== undefined;
 
     if (hasRatings && hasYear) {
       console.error(chalk.red.bold('Error: You can audit by ratings OR publishing year, but not both at the same time.'));
       process.exit(1);
     }
 
-    if (!hasRatings && !hasYear) {
-      console.error(chalk.red.bold('Error: You must provide at least one criteria (e.g., --min or --minYear).'));
+    if (!hasRatings && !hasYear && !hasAvg) {
+      console.error(chalk.red.bold('Error: You must provide at least one criteria (e.g., --min, --minYear, or --minAvg).'));
       process.exit(1);
     }
 
@@ -133,6 +136,8 @@ program
   .option('--minTags <number>', 'Minimum number of times a book must be shelved with this tag', '0')
   .option('--minYear <year>', 'Minimum publishing year allowed')
   .option('--maxYear <year>', 'Maximum publishing year allowed')
+  .option('--minAvg <number>', 'Minimum average rating')
+  .option('--maxAvg <number>', 'Maximum average rating')
   .action(async (tag, listId, options) => {
     try {
       await runTagAudit(tag, listId, options);
@@ -156,6 +161,8 @@ program
   .command('tag-discovery <tagName>')
   .description('Run a batch of audits for all lists defined in a tag config')
   .option('--minTags <number>', 'Minimum tag count (applied to all audits in the batch)', '0')
+  .option('--minAvg <number>', 'Global minimum average rating')
+  .option('--maxAvg <number>', 'Global maximum average rating')
   .action(async (tagName, options) => {
     try {
       await runTagDiscovery(tagName, options);
@@ -177,10 +184,11 @@ program
 
 program
   .command('bulk-audit')
-  .description('Run a sequential audit for every list defined in bulkAuditConfig.json')
-  .action(async () => {
+  .description('Run a sequential audit for every list defined in a bulk config file')
+  .argument('[configFile]', 'Optional path to a custom bulk audit config file (defaults to bulkAuditConfig.json)')
+  .action(async (configFile) => {
     try {
-      await runBulkAudit();
+      await runBulkAudit(configFile);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run bulk audit:'), (error as any).message);
     }

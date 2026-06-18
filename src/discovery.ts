@@ -33,7 +33,7 @@ async function appendToAuditReport(listTitle: string, message: string): Promise<
   await fs.appendFile(AUDIT_REPORT, entry);
 }
 
-export async function runTagDiscovery(tagName: string, globalOptions: { minTags?: string }): Promise<void> {
+export async function runTagDiscovery(tagName: string, globalOptions: { minTags?: string, minAvg?: string, maxAvg?: string }): Promise<void> {
   const configPath = path.join(process.cwd(), 'tags', `${tagName}.json`);
   if (!(await fs.pathExists(configPath))) {
     throw new Error(`Config file for tag "${tagName}" not found. Run tag-config first.`);
@@ -42,9 +42,13 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   const config: TagConfig = await fs.readJson(configPath);
   const bookCache = await loadBookCache();
   const minTags = parseInt(globalOptions.minTags?.replace(/,/g, '') || '0', 10);
+  const globalMinAvg = globalOptions.minAvg ? parseFloat(globalOptions.minAvg) : 0;
+  const globalMaxAvg = globalOptions.maxAvg ? parseFloat(globalOptions.maxAvg) : Infinity;
 
   console.log(chalk.cyan.bold(`\n🔦 Starting Discovery for tag: "${tagName}"`));
-  console.log(chalk.gray(`   Target: ${config.lists.length} lists, Min Tags: ${minTags}\n`));
+  let targetMsg = `   Target: ${config.lists.length} lists, Min Tags: ${minTags}`;
+  if (globalMinAvg > 0 || globalMaxAvg < Infinity) targetMsg += `, Global Avg: ${globalMinAvg}-${globalMaxAvg}`;
+  console.log(chalk.gray(`${targetMsg}\n`));
 
   // 1. GLOBAL SHELF SCAN
   console.log(chalk.cyan.bold(`🔎 Step 1: Scanning global shelf "${tagName}" (Top 25 pages)...`));
@@ -103,14 +107,19 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
     const minYear = criteria.minYear || 0;
     const maxYear = criteria.maxYear || Infinity;
     const listMinTags = criteria.minTags || 0;
+    const minAvg = Math.max(criteria.minAvg || 0, globalMinAvg);
+    const maxAvg = Math.min(criteria.maxAvg || Infinity, globalMaxAvg);
 
     // Filter shelf books for this list's criteria FIRST
     const candidates = shelfBooks.map((sb, idx) => ({ book: sb, pos: idx + 1 })).filter(({ book }) => {
       const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
       
-      // Ratings check (or tag check if it's the to-read shelf, though we unified that back to ratings)
-      // Actually keeping the logic unified but allowing per-list tag threshold
+      // Ratings check
       if (bookRatings < minVal || (maxVal < Infinity && bookRatings > maxVal)) return false;
+
+      // Avg Rating check
+      const bookAvg = book.avgRating ? parseFloat(book.avgRating) : 0;
+      if (bookAvg < minAvg || (maxAvg < Infinity && bookAvg > maxAvg)) return false;
 
       // Per-list Tag Count check
       if (listMinTags > 0 && (book.tagCount || 0) < listMinTags) return false;
