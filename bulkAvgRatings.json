@@ -1,7 +1,7 @@
 [
   {
     "nickname": "Top 100 Highest Rated Books with at least 10000 Ratings (fiction or memoir, one per series)",
-    "officialTitle": "Score",
+    "officialTitle": "Top 100 Highest Rated Books with at least 10000 Ratings (fiction or memoir, one per series)",
     "id": "153860",
     "url": "https://www.goodreads.com/list/show/153860",
     "criteria": {
@@ -10,7 +10,7 @@
   },
   {
     "nickname": "Average Rating of 4.6 and above with at least 3000 ratings",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 4.6 and above with at least 3000 ratings",
     "id": "205516",
     "url": "https://www.goodreads.com/list/show/205516",
     "criteria": {
@@ -20,7 +20,7 @@
   },
   {
     "nickname": "Average Rating of 4.5 and above with at least 3000 ratings",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 4.5 and above with at least 3000 ratings",
     "id": "165317",
     "url": "https://www.goodreads.com/list/show/165317",
     "criteria": {
@@ -30,7 +30,7 @@
   },
   {
     "nickname": "Average Rating of 4.5 and above with at least 100 ratings",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 4.5 and above with at least 100 ratings",
     "id": "10198",
     "url": "https://www.goodreads.com/list/show/10198",
     "criteria": {
@@ -40,7 +40,7 @@
   },
   {
     "nickname": "Average Rating of 4.3 and above with at least 1000 ratings",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 4.3 and above with at least 1000 ratings",
     "id": "74717",
     "url": "https://www.goodreads.com/list/show/74717",
     "criteria": {
@@ -50,7 +50,7 @@
   },
   {
     "nickname": "Average Rating of 4.2 and above with at least 1000 ratings",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 4.2 and above with at least 1000 ratings",
     "id": "24320",
     "url": "https://www.goodreads.com/list/show/24320",
     "criteria": {
@@ -60,7 +60,7 @@
   },
   {
     "nickname": "Average Rating of 4.0 and above with at least 30000 ratings",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 4.0 and above with at least 30000 ratings",
     "id": "165313",
     "url": "https://www.goodreads.com/list/show/165313",
     "criteria": {
@@ -70,7 +70,7 @@
   },
   {
     "nickname": "Average Rating of 4.0 and above with at least 1000 ratings",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 4.0 and above with at least 1000 ratings",
     "id": "75146",
     "url": "https://www.goodreads.com/list/show/75146",
     "criteria": {
@@ -80,7 +80,7 @@
   },
   {
     "nickname": "Average Rating of 4.0 and above, 100 to 999 ratings, and published before 2001",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 4.0 and above, 100 to 999 ratings, and published before 2001",
     "id": "177670",
     "url": "https://www.goodreads.com/list/show/177670",
     "criteria": {
@@ -92,7 +92,7 @@
   },
   {
     "nickname": "Average Rating of 3.99 and below",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 3.99 and below",
     "id": "13035",
     "url": "https://www.goodreads.com/list/show/13035",
     "criteria": {
@@ -101,7 +101,7 @@
   },
   {
     "nickname": "Average Rating below 3.6",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating below 3.6",
     "id": "24328",
     "url": "https://www.goodreads.com/list/show/24328",
     "criteria": {
@@ -110,7 +110,7 @@
   },
   {
     "nickname": "Average Rating of 3.0 and below with at least 100 ratings",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 3.0 and below with at least 100 ratings",
     "id": "23974",
     "url": "https://www.goodreads.com/list/show/23974",
     "criteria": {
@@ -120,7 +120,7 @@
   },
   {
     "nickname": "Average Rating of 4.5 and above and with 10 to 99 ratings",
-    "officialTitle": "Score",
+    "officialTitle": "Average Rating of 4.5 and above and with 10 to 99 ratings",
     "id": "165146",
     "url": "https://www.goodreads.com/list/show/165146",
     "criteria": {

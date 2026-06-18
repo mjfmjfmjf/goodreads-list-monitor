@@ -127,7 +127,7 @@ export async function syncBooksToCache(books: any[], bookCache: BookCache) {
     const hasBetterAuthorId = !existing?.authorId && book.authorId;
     const hasBetterDate = (existing?.published === 'Unknown' || !existing?.published) && (book.published && book.published !== 'Unknown');
     const hasBetterRatings = newRatingsNum > existingRatingsNum;
-    const hasBetterAvgRating = !existing?.avgRating && book.avgRating;
+    const hasBetterAvgRating = book.avgRating && book.avgRating !== existing?.avgRating;
 
     if (isNew || hasBetterTitle || hasBetterAuthor || hasBetterAuthorId || hasBetterDate || hasBetterRatings || hasBetterAvgRating) {
       bookCache[book.id] = {

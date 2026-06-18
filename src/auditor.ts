@@ -153,17 +153,21 @@ function updateCache(book: any, tag: string, bookCache: any) {
       title: book.title,
       author: book.author,
       ratings: book.ratings,
+      avgRating: book.avgRating,
       published: book.published || 'Unknown',
       lastUpdated: new Date().toISOString(),
       tags: {}
     };
   } else {
-    // Sync other metadata if it was missing
+    // Sync other metadata if it was missing or updated
     if (bookCache[book.id].published === 'Unknown' && book.published && book.published !== 'Unknown') {
       bookCache[book.id].published = book.published;
     }
     if (bookCache[book.id].title === 'Unknown' && book.title !== 'Unknown') {
       bookCache[book.id].title = book.title;
+    }
+    if (book.avgRating && bookCache[book.id].avgRating !== book.avgRating) {
+      bookCache[book.id].avgRating = book.avgRating;
     }
   }
   if (!bookCache[book.id].tags) bookCache[book.id].tags = {};

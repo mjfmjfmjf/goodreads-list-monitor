@@ -4,36 +4,29 @@ A production-grade CLI tool to monitor, audit, and discover books on Goodreads L
 
 ## Core Features
 - **Smart Monitoring**: Detect additions and removals across hundreds of lists in seconds.
-- **Rich Metadata**: Automatically tracks book positions, rating counts, and publication years.
-- **Automated Audits**: Identify books that violate rating or year criteria.
+- **Rich Metadata**: Automatically tracks book positions, rating counts, average ratings, and publication years.
+- **Automated Audits**: Identify books that violate rating, average rating, or year criteria.
 - **Tag Discovery**: Cross-reference entire Goodreads shelves with your lists to find missing popular books.
-- **Persistent Caching**: Saves book details locally in `booksCache.json` to minimize network calls and respect rate limits.
+- **Persistent Caching**: Saves book details locally in `booksCache.json` to minimize network calls and respect rate limits, now including average ratings.
 
 ## Prerequisites
 - Node.js v18.20.8 or later
 
 ## Setup
-1. **Set your User ID**:
+1. **Clone the repository.**
+2. **Install dependencies**: `npm install`
+3. **Set your User ID**:
    ```bash
    npm run set-user [YOUR_USER_ID]
    ```
-2. **Configure Authentication** (Optional but recommended for large audits):
+4. **Configure Authentication** (Optional but recommended for large audits):
    Create a `config.json` file in the root directory:
    ```json
    {
      "cookie": "your_browser_session_cookie"
    }
    ```
-
-## Setup
-
-1. **Clone the repository.**
-2. **Install dependencies**: `npm install`
-3. **Configure**: 
-   - Copy `config.example.json` to `config.json`.
-   - Update `config.json` with your Goodreads session cookie (found in your browser's dev tools while logged into Goodreads).
-4. **Initialize User**: Update `start.sh` with your Goodreads User ID and run `./start.sh`.
-
+   
 ## Usage
 
 ### 1. Daily Monitoring
@@ -49,11 +42,17 @@ npm run ingest
 ```
 
 ### 3. List Auditing
-Audit a specific list for books that don't meet criteria. You can audit by **Ratings** OR **Publishing Year**.
+Audit a specific list for books that don't meet criteria. You can audit by **Ratings**, **Average Ratings**, OR **Publishing Year**.
+Multiple criteria can be combined.
 
 **By Ratings:**
 ```bash
 npm run audit [listId] -- --min 1000 --max 50000
+```
+
+**By Average Ratings:**
+```bash
+npm run audit [listId] -- --minAvg 4.0 --maxAvg 4.5
 ```
 
 **By Publishing Year:**
@@ -61,12 +60,17 @@ npm run audit [listId] -- --min 1000 --max 50000
 npm run audit [listId] -- --minYear 2010 --maxYear 2024
 ```
 
+**Combined Criteria Example:**
+```bash
+npm run audit [listId] -- --minAvg 4.0 --min 1000
+```
+
 ### 4. Tag Discovery & Auditing
 Find missing popular books from a shelf and cross-reference them with your lists.
 
 **Single List Tag Audit:**
 ```bash
-npm run tag-audit [tag] [listId] -- --min [minRatings] --minTags [minTags]
+npm run tag-audit [tag] [listId] -- --min [minRatings] --minTags [minTags] --minAvg [minAvgRating]
 ```
 
 **Batch Discovery Run:**
@@ -77,12 +81,34 @@ Automate audits for an entire family of lists (e.g., Science Fiction):
    ```
 2. **Run Discovery**:
    ```bash
-   npm run tag-discovery [tagName] -- --minTags 50
+   npm run tag-discovery [tagName] -- --minTags 50 --minAvg 4.0
    ```
+
+### 5. Bulk Auditing
+Run sequential audits using a configuration file that defines multiple lists and their criteria.
+
+**Generate Default Bulk Config**:
+```bash
+npm run gen-bulk-config
+```
+This command generates `bulkAuditConfig.json` based on your existing lists and tag configs.
+
+**Run Bulk Audit (Default Config)**:
+```bash
+npm run bulk-audit
+```
+
+**Run Bulk Audit (Custom Config File)**:
+```bash
+npm run bulk-audit -- bulkAvgRatings.json
+```
+(Replace `bulkAvgRatings.json` with your custom configuration file.)
 
 ## Files
 - `state.json`: Stores your monitored lists and their book counts.
-- `booksCache.json`: Global cache of book metadata (titles, years, ratings, tags).
+- `booksCache.json`: Global cache of book metadata (titles, years, ratings, average ratings, tags).
 - `changeLog.txt`: Permanent record of all additions and removals detected during monitoring.
 - `auditReport.txt`: Record of all audit outliers and discovery findings.
+- `bulkAuditConfig.json`: Default configuration for bulk audits.
 - `tags/`: Directory containing tag-specific discovery configurations.
+
