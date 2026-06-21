@@ -4,11 +4,13 @@ import { checkUpdates, performIngest } from './monitor.js';
 import { runAudit, runTagAudit } from './auditor.js';
 import { generateTagConfig } from './tagConfig.js';
 import { runTagDiscovery } from './discovery.js';
+import { runQueueDiscovery } from './queueDiscovery.js';
 import { generateBulkConfig } from './bulkConfig.js';
 import { runBulkAudit } from './bulkAudit.js';
 import { scrapeAndCacheBook } from './singleBook.js';
 import { runCheckQueue } from './checkQueue.js';
 import { runSummaryByYear } from './summary.js';
+import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
 import { loadState, saveState } from './storage.js';
 
 const program = new Command();
@@ -26,6 +28,36 @@ program
       await runSummaryByYear();
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate summary:'), (error as any).message);
+    }
+  });
+
+program
+  .command('summary-top')
+  .description('Show a numbered list of top-rated books from the cache, sorted by average rating')
+  .option('--minAvg <number>', 'Minimum average rating (e.g. 4.3)', '0')
+  .option('--maxAvg <number>', 'Maximum average rating (e.g. 4.8)')
+  .option('--minRatings <number>', 'Minimum number of ratings (e.g. 10000)', '0')
+  .option('--limit <number>', 'Limit output to top N books')
+  .action(async (options) => {
+    try {
+      await runSummaryTop(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate top-rated summary:'), (error as any).message);
+    }
+  });
+
+program
+  .command('summary-bottom')
+  .description('Show a numbered list of lowest-rated books from the cache, sorted by average rating')
+  .option('--minAvg <number>', 'Minimum average rating (e.g. 3.0)', '0')
+  .option('--maxAvg <number>', 'Maximum average rating (e.g. 3.8)')
+  .option('--minRatings <number>', 'Minimum number of ratings (e.g. 10000)', '0')
+  .option('--limit <number>', 'Limit output to bottom N books')
+  .action(async (options) => {
+    try {
+      await runSummaryBottom(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate lowest-rated summary:'), (error as any).message);
     }
   });
 
@@ -168,6 +200,21 @@ program
       await runTagDiscovery(tagName, options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run tag discovery:'), (error as any).message);
+    }
+  });
+
+program
+  .command('queue-discovery')
+  .description('Discover missing books for lists in a bulk config using cached queued books')
+  .argument('[configFile]', 'Optional path to a custom bulk config file (defaults to bulkAuditConfig.json)')
+  .option('--sortBy <type>', 'Sort candidates by: year, ratings, or avg', 'ratings')
+  .option('--minAvg <number>', 'Global minimum average rating')
+  .option('--maxAvg <number>', 'Global maximum average rating')
+  .action(async (configFile, options) => {
+    try {
+      await runQueueDiscovery(configFile, options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run queue discovery:'), (error as any).message);
     }
   });
 

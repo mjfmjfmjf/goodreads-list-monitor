@@ -106,7 +106,10 @@ async function buildConfig() {
     
     try {
       console.log(chalk.gray(`   Processing: ${nickname} (ID: ${listId})...`));
-      const officialTitle = await fetchOfficialTitle(listId);
+      let officialTitle = await fetchOfficialTitle(listId);
+      if (officialTitle === 'Score' || !officialTitle) {
+        officialTitle = nickname;
+      }
       const criteria = parseCriteria(nickname);
 
       listEntries.push({
