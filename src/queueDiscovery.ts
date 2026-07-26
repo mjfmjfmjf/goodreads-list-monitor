@@ -51,7 +51,7 @@ function sortBooks(books: CachedBook[], sortBy: 'year' | 'ratings' | 'avg'): Cac
 
 export async function runQueueDiscovery(
   customConfigFile?: string,
-  globalOptions: { sortBy?: string; minAvg?: string; maxAvg?: string } = {}
+  globalOptions: { sortBy?: string; minAvg?: string; maxAvg?: string; listId?: string } = {}
 ): Promise<void> {
   const configFile = customConfigFile ? path.resolve(process.cwd(), customConfigFile) : DEFAULT_BULK_CONFIG_FILE;
 
@@ -59,7 +59,13 @@ export async function runQueueDiscovery(
     throw new Error(`Bulk config file not found at: ${configFile}. Run gen-bulk-config first.`);
   }
 
-  const lists: ListEntry[] = await fs.readJson(configFile);
+  let lists: ListEntry[] = await fs.readJson(configFile);
+  if (globalOptions.listId) {
+    lists = lists.filter(l => l.id === globalOptions.listId);
+    if (lists.length === 0) {
+      throw new Error(`List ID "${globalOptions.listId}" not found in config file: ${path.basename(configFile)}`);
+    }
+  }
   const bookCache = await loadBookCache();
   const allCachedBooks = Object.values(bookCache);
 
@@ -101,8 +107,12 @@ export async function runQueueDiscovery(
       if (bookRatings < minVal || bookRatings > maxVal) return false;
 
       // Avg Rating check
-      const bookAvg = book.avgRating ? parseFloat(book.avgRating) : 0;
-      if (bookAvg < minAvg || bookAvg > maxAvg) return false;
+      if (!book.avgRating) {
+        if (minAvg > 0 || maxAvg < Infinity) return false;
+      } else {
+        const bookAvg = parseFloat(book.avgRating);
+        if (bookAvg < minAvg || bookAvg > maxAvg) return false;
+      }
 
       // Year check
       const bookYear = getYear(book.published);

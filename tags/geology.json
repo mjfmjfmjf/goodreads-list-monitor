@@ -1,0 +1,25 @@
+{
+  "tag": "geology",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "geology > 500 ratings and 10 shelves",
+      "id": "143932",
+      "url": "https://www.goodreads.com/list/show/143932",
+      "criteria": {
+        "min": 500,
+        "minTags": 10
+      }
+    },
+    {
+      "nickname": "Best geology",
+      "officialTitle": "Best geology",
+      "id": "11003",
+      "url": "https://www.goodreads.com/list/show/11003",
+      "criteria": {
+        "min": 100,
+        "minTags": 10
+      }
+    }
+  ]
+}

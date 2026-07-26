@@ -99,12 +99,15 @@ function parseCriteria(text: string): AuditCriteria | null {
   if (cleanText.includes('average rating')) {
     found = true;
     const aboveMatch = cleanText.match(/average rating of ([\d.]+)\s+(and above|or above)/) || cleanText.match(/average rating ([\d.]+)\s+(and above|or above)/);
-    const belowMatch = cleanText.match(/average rating of ([\d.]+)\s+and below/) || cleanText.match(/average rating ([\d.]+)\s+and below/) || cleanText.match(/average rating below ([\d.]+)/);
+    const belowInclusiveMatch = cleanText.match(/average rating of ([\d.]+)\s+and below/) || cleanText.match(/average rating ([\d.]+)\s+and below/);
+    const belowExclusiveMatch = cleanText.match(/average rating below ([\d.]+)/);
     
     if (aboveMatch) {
       criteria.minAvg = parseFloat(aboveMatch[1]);
-    } else if (belowMatch) {
-      criteria.maxAvg = parseFloat(belowMatch[1]);
+    } else if (belowInclusiveMatch) {
+      criteria.maxAvg = parseFloat(belowInclusiveMatch[1]);
+    } else if (belowExclusiveMatch) {
+      criteria.maxAvg = parseFloat((parseFloat(belowExclusiveMatch[1]) - 0.01).toFixed(2));
     }
   }
 

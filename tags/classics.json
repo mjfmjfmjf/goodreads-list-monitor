@@ -1,0 +1,15 @@
+{
+  "tag": "classics",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "classics > 100,000 ratings and 2000 shelves",
+      "id": "107459",
+      "url": "https://www.goodreads.com/list/show/107459",
+      "criteria": {
+        "min": 100000,
+        "minTags": 2000
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "tag": "space-opera",
+  "lists": [
+    {
+      "nickname": "space opera 1000 ratings and 100 tags",
+      "officialTitle": "space opera 1000 ratings and 100 tags",
+      "id": "131865",
+      "url": "https://www.goodreads.com/list/show/131865",
+      "criteria": {
+        "min": 1000,
+        "minTags": 100
+      }
+    },
+    {
+      "nickname": "space opera 21st 1000 ratings and 10 tags",
+      "officialTitle": "space opera 21st 1000 ratings and 10 tags",
+      "id": "131865",
+      "url": "https://www.goodreads.com/list/show/131865",
+      "criteria": {
+        "min": 1000,
+        "minTags": 100,
+        "minYear": 2000,
+        "maxYear": 2099
+      }
+    },
+    {
+      "nickname": "excellent space opera 100 ratings and 50 tags",
+      "officialTitle": "excellent space opera 100 ratings and 50 tags",
+      "id": "1127",
+      "url": "https://www.goodreads.com/list/show/1127",
+      "criteria": {
+        "min": 100,
+        "minTags": 50
+      }
+    }
+  ]
+}

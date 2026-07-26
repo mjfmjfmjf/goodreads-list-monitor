@@ -1,0 +1,157 @@
+{
+  "tag": "romance",
+  "lists": [
+    {
+      "nickname": "popular highly rated romance",
+      "officialTitle": "popular highly rated romance",
+      "id": "418699",
+      "url": "https://www.goodreads.com/list/show/418699",
+      "criteria": {
+        "minAvg": 4.2,
+        "minTags": 1500,
+        "min": 100000
+      }
+    },
+    {
+      "nickname": "romance 1980 to 1989",
+      "officialTitle": "romance 1980 to 1989",
+      "id": "48071",
+      "url": "https://www.goodreads.com/list/show/48071",
+      "criteria": {
+        "minTags": 10,
+        "minYear": 1980,
+        "maxYear": 1989
+      }
+    },
+    {
+      "nickname": "romance 1990 to 1995",
+      "officialTitle": "romance 1990 to 1995",
+      "id": "48076",
+      "url": "https://www.goodreads.com/list/show/48076",
+      "criteria": {
+        "minTags": 10,
+        "minYear": 1990,
+        "maxYear": 1995
+      }
+    },
+    {
+      "nickname": "romance 1996 to 1999",
+      "officialTitle": "romance 1996 to 1999",
+      "id": "48241",
+      "url": "https://www.goodreads.com/list/show/48241",
+      "criteria": {
+        "minTags": 10,
+        "minYear": 1996,
+        "maxYear": 1999
+      }
+    },
+    {
+      "nickname": "romance 2000 to 2005",
+      "officialTitle": "romance 2000 to 2005",
+      "id": "48247",
+      "url": "https://www.goodreads.com/list/show/48247",
+      "criteria": {
+        "minTags": 10,
+        "minYear": 2000,
+        "maxYear": 2005
+      }
+    },
+    {
+      "nickname": "romance 2006 to 2010",
+      "officialTitle": "romance 2006 to 2010",
+      "id": "48433",
+      "url": "https://www.goodreads.com/list/show/48433",
+      "criteria": {
+        "minTags": 10,
+        "minYear": 2006,
+        "maxYear": 2010
+      }
+    },
+    {
+      "nickname": "romance 2010 to 2019",
+      "officialTitle": "romance 2010 to 2019",
+      "id": "181683",
+      "url": "https://www.goodreads.com/list/show/181683",
+      "criteria": {
+        "minTags": 10,
+        "minYear": 2010,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "romance 2020 to 2029",
+      "officialTitle": "romance 2020 to 2029",
+      "id": "181684",
+      "url": "https://www.goodreads.com/list/show/181684",
+      "criteria": {
+        "minTags": 10,
+        "minYear": 2020,
+        "maxYear": 2029
+      }
+    },
+    {
+      "nickname": "romance >199,999 and 1500 shelves",
+      "officialTitle": "romance > 199,999 and 1500 shelves",
+      "id": "107404",
+      "url": "https://www.goodreads.com/list/show/107404",
+      "criteria": {
+        "min": 199000,
+        "minTags": 1500
+      }
+    },
+    {
+      "nickname": "romance 100,000 to 199,999 and 1500 shelves",
+      "officialTitle": "romance 100,000 to 199,999 and 1500 shelves",
+      "id": "418571",
+      "url": "https://www.goodreads.com/list/show/418571",
+      "criteria": {
+        "min": 100000,
+        "max": 199999,
+        "minTags": 1500
+      }
+    },
+    {
+      "nickname": "romance 50,000 to 99,999 and 100 shelves",
+      "officialTitle": "romance 50,000 to 99,999 and 100 shelves",
+      "id": "120149",
+      "url": "https://www.goodreads.com/list/show/120149",
+      "criteria": {
+        "min": 50000,
+        "max": 99999,
+        "minTags": 100
+      }
+    },
+    {
+      "nickname": "romance 25,000 to 49,999 and 100 shelves",
+      "officialTitle": "romance 25,000 to 49,999 and 100 shelves",
+      "id": "156485",
+      "url": "https://www.goodreads.com/list/show/156485",
+      "criteria": {
+        "min": 25000,
+        "max": 49999,
+        "minTags": 100
+      }
+    },
+    {
+      "nickname": "romance 10,000 to 24,999 and 100 shelves",
+      "officialTitle": "romance 10,000 to 24,999 and 100 shelves",
+      "id": "181486",
+      "url": "https://www.goodreads.com/list/show/181486",
+      "criteria": {
+        "min": 10000,
+        "max": 24999,
+        "minTags": 100
+      }
+    },
+    {
+      "nickname": "romance <10,000 and 10 shelves",
+      "officialTitle": "romance <10,000 and 10 shelves",
+      "id": "119654",
+      "url": "https://www.goodreads.com/list/show/119654",
+      "criteria": {
+        "max": 9999,
+        "minTags": 10
+      }
+    }
+  ]
+}

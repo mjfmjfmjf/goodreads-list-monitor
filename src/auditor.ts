@@ -62,8 +62,13 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
       if (bookRatings < minRatings) return false;
       if (bookRatings > maxRatings) return false;
       
-      const bookAvg = book.avgRating ? parseFloat(book.avgRating) : 0;
-      if ((minAvg > 0 && bookAvg < minAvg) || (maxAvg < Infinity && bookAvg > maxAvg)) return false;
+      // Avg Rating check
+      if (!book.avgRating) {
+        if (minAvg > 0 || maxAvg < Infinity) return false;
+      } else {
+        const bookAvg = parseFloat(book.avgRating);
+        if (bookAvg < minAvg || bookAvg > maxAvg) return false;
+      }
 
       if (minYear > 0 || maxYear < Infinity) {
         const cached = bookCache[book.id];
@@ -304,18 +309,27 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
 
       // 3. AVG RATING CHECK
       if (isAvgAudit) {
-        const avg = book.avgRating ? parseFloat(book.avgRating) : 0;
-        const tooLow = minAvg > 0 && avg < minAvg;
-        const tooHigh = maxAvg < Infinity && avg > maxAvg;
-        if (tooLow || tooHigh) {
-          const reason = tooLow ? 'LOW AVG RATING' : 'HIGH AVG RATING';
+        if (!book.avgRating) {
           const bookLink = formatBookLink(book.title, book.id);
           const authorStr = book.author ? ` by ${book.author}` : '';
-          console.log(chalk.red.bold(`   ❌ OUTLIER: [${reason}] ${bookLink}${authorStr} (Avg: ${book.avgRating || 'None'}, Pos: ${book.position})`));
-          await appendToAuditReport(listTitle, `[${reason}] ${book.title}${authorStr} [ID: ${book.id}] (Avg: ${book.avgRating || 'None'})`);
+          console.log(chalk.red.bold(`   ❌ OUTLIER: [MISSING AVG RATING] ${bookLink}${authorStr} (Pos: ${book.position})`));
+          await appendToAuditReport(listTitle, `[MISSING AVG RATING] ${book.title}${authorStr} [ID: ${book.id}]`);
           outliersFound++;
-          if (tooLow) tooLowAvg.push(bookLink);
-          if (tooHigh) tooHighAvg.push(bookLink);
+          tooLowAvg.push(bookLink);
+        } else {
+          const avg = parseFloat(book.avgRating);
+          const tooLow = minAvg > 0 && avg < minAvg;
+          const tooHigh = maxAvg < Infinity && avg > maxAvg;
+          if (tooLow || tooHigh) {
+            const reason = tooLow ? 'LOW AVG RATING' : 'HIGH AVG RATING';
+            const bookLink = formatBookLink(book.title, book.id);
+            const authorStr = book.author ? ` by ${book.author}` : '';
+            console.log(chalk.red.bold(`   ❌ OUTLIER: [${reason}] ${bookLink}${authorStr} (Avg: ${book.avgRating || 'None'}, Pos: ${book.position})`));
+            await appendToAuditReport(listTitle, `[${reason}] ${book.title}${authorStr} [ID: ${book.id}] (Avg: ${book.avgRating || 'None'})`);
+            outliersFound++;
+            if (tooLow) tooLowAvg.push(bookLink);
+            if (tooHigh) tooHighAvg.push(bookLink);
+          }
         }
       }
     }

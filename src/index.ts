@@ -11,7 +11,7 @@ import { scrapeAndCacheBook } from './singleBook.js';
 import { runCheckQueue } from './checkQueue.js';
 import { runSummaryByYear } from './summary.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
-import { loadState, saveState } from './storage.js';
+import { loadState, saveState, loadConfig } from './storage.js';
 
 const program = new Command();
 
@@ -210,6 +210,7 @@ program
   .option('--sortBy <type>', 'Sort candidates by: year, ratings, or avg', 'ratings')
   .option('--minAvg <number>', 'Global minimum average rating')
   .option('--maxAvg <number>', 'Global maximum average rating')
+  .option('--listId <id>', 'Only run discovery for this list ID')
   .action(async (configFile, options) => {
     try {
       await runQueueDiscovery(configFile, options);
@@ -252,10 +253,60 @@ program
     console.log(chalk.green.bold(`Default User ID set to ${userId}`));
   });
 
+async function checkTokenExpiration() {
+  try {
+    const config = await loadConfig();
+    if (!config.cookie) {
+      return;
+    }
+
+    const match = config.cookie.match(/jwt_token=([^;]+)/);
+    if (!match) {
+      if (config.cookie.includes('at-main') || config.cookie.includes('session-token')) {
+        console.log(chalk.green('🔑 Goodreads session cookies found (No JWT present to verify expiration date).\n'));
+      } else {
+        console.log(chalk.yellow('⚠️  Warning: No active session cookies or jwt_token found in your config.json cookie.\n'));
+      }
+      return;
+    }
+
+    let jwtToken = match[1].trim();
+    if (jwtToken.startsWith('"') && jwtToken.endsWith('"')) {
+      jwtToken = jwtToken.slice(1, -1);
+    }
+
+    const parts = jwtToken.split('.');
+    if (parts.length !== 3) {
+      console.log(chalk.yellow('⚠️  Warning: The jwt_token in your config.json cookie is not a valid JWT.'));
+      return;
+    }
+
+    const payloadJson = Buffer.from(parts[1], 'base64').toString('utf8');
+    const payload = JSON.parse(payloadJson);
+    if (payload && typeof payload.exp === 'number') {
+      const expTimestamp = payload.exp * 1000;
+      const expirationDate = new Date(expTimestamp);
+      const currentDate = new Date();
+
+      if (currentDate.getTime() > expTimestamp) {
+        console.log(chalk.red.bold(`❌ WARNING: Your Goodreads authentication token EXPIRED on ${expirationDate.toLocaleString()}.`));
+        console.log(chalk.red(`   Please update the "cookie" field in config.json with a fresh session cookie.\n`));
+      } else {
+        const timeDiff = expTimestamp - currentDate.getTime();
+        const daysRemaining = (timeDiff / (1000 * 60 * 60 * 24)).toFixed(1);
+        console.log(chalk.green(`🔑 Token is active (Expires: ${expirationDate.toLocaleString()} - ${daysRemaining} days remaining).\n`));
+      }
+    }
+  } catch (error) {
+    console.log(chalk.yellow(`⚠️  Warning: Failed to parse authentication token: ${(error as any).message}`));
+  }
+}
+
 async function main() {
   const startTime = Date.now();
   
   try {
+    await checkTokenExpiration();
     // Default to 'check' if no command is provided
     if (!process.argv.slice(2).length) {
       await program.parseAsync([...process.argv, 'check']);

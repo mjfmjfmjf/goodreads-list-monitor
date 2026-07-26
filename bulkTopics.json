@@ -1,0 +1,1019 @@
+[
+  {
+    "id": "78971",
+    "nickname": "Space Opera 21st Century 1000 ratings and 10 tags",
+    "officialTitle": "All space opera w1000 ratings and 10 tags",
+    "url": "https://www.goodreads.com/list/show/78971",
+    "criteria": {
+       "min": 1000,
+       "minTags": 10,
+       "minYear": 2000,
+       "maxYear": 2099
+    }
+  },
+  {
+    "id": "47731",
+    "nickname": "Hard SF 21st Century 1000 ratings and 5 tags",
+    "officialTitle": "hard sf 21st century 1000 ratings and 5 tags",
+    "url": "https://www.goodreads.com/list/show/47731",
+    "criteria": {
+       "min": 1000,
+       "minTags": 5,
+       "minYear": 2000,
+       "maxYear": 2099
+    }
+  },
+  {
+    "id": "73088",
+    "nickname": "All Graphic Novels w50,000 ratings and 500 tags",
+    "officialTitle": "All Graphic Novels w50000 ratings and 500 tags",
+    "url": "https://www.goodreads.com/list/show/73088",
+    "criteria": {
+       "min": 50000,
+       "minTags": 500
+    }
+  },
+  {
+    "id": "418497",
+    "nickname": "All Graphic Novels w25,000 to 49,999 ratings and 500 tags",
+    "officialTitle": "All Graphic Novels w25,000 to 49,999 ratings and 500 tags",
+    "url": "https://www.goodreads.com/list/show/418497",
+    "criteria": {
+       "min": 25000,
+       "max": 49999,
+       "minTags": 500
+    }
+  },
+  {
+    "id": "154990",
+    "nickname": "All Graphic Novels w1000 to 1999",
+    "officialTitle": "All Graphic Novels with 1,000 to 1,999 ratings",
+    "url": "https://www.goodreads.com/list/show/154990.All_Graphic_Novels_with_1_000_to_1_999_ratings",
+    "criteria": {
+      "min": 1000,
+      "max": 1999
+    }
+  },
+  {
+    "id": "73202",
+    "nickname": "All Graphic Novels w10000 to 24999",
+    "officialTitle": "All Graphic Novels with 10,000 and 24,999 ratings",
+    "url": "https://www.goodreads.com/list/show/73202.All_Graphic_Novels_with_10_000_and_24_999_ratings",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "id": "155022",
+    "nickname": "All Graphic Novels w 2000 to 2999",
+    "officialTitle": "All Graphic Novels with 2,000 to 2,999 ratings",
+    "url": "https://www.goodreads.com/list/show/155022.All_Graphic_Novels_with_2_000_to_2_999_ratings",
+    "criteria": {
+      "min": 2000,
+      "max": 2999
+    }
+  },
+  {
+    "id": "155141",
+    "nickname": "All Graphic Novels w",
+    "officialTitle": "All Graphic Novels with 3,000 to 4,999 ratings",
+    "url": "https://www.goodreads.com/list/show/155141.All_Graphic_Novels_with_3_000_to_4_999_ratings",
+    "criteria": {
+      "min": 3000,
+      "max": 4999
+    }
+  },
+  {
+    "id": "91245",
+    "nickname": "All Graphic Novels w",
+    "officialTitle": "All Graphic Novels with 5,000 to 9,999 ratings",
+    "url": "https://www.goodreads.com/list/show/91245.All_Graphic_Novels_with_5_000_to_9_999_ratings",
+    "criteria": {
+      "min": 5000,
+      "max": 9999
+    }
+  },
+  {
+    "id": "82859",
+    "nickname": "All Non-Fiction on G",
+    "officialTitle": "All Non-Fiction on Goodreads with 10,000 to 24,999 ratings",
+    "url": "https://www.goodreads.com/list/show/82859.All_Non_Fiction_on_Goodreads_with_10_000_to_24_999_ratings",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "id": "76386",
+    "nickname": "All Non-Fiction on G",
+    "officialTitle": "All Non-Fiction on Goodreads with 25,000 to 49,999 ratings",
+    "url": "https://www.goodreads.com/list/show/76386.All_Non_Fiction_on_Goodreads_with_25_000_to_49_999_ratings",
+    "criteria": {
+      "min": 25000,
+      "max": 49999
+    }
+  },
+  {
+    "id": "43611",
+    "nickname": "All Non-Fiction on G",
+    "officialTitle": "All Non-Fiction on Goodreads with 50,000 to 99,999 ratings",
+    "url": "https://www.goodreads.com/list/show/43611.All_Non_Fiction_on_Goodreads_with_50_000_to_99_999_ratings",
+    "criteria": {
+      "min": 50000,
+      "max": 99999
+    }
+  },
+  {
+    "id": "76987",
+    "nickname": "Best Fantasy on Good <100",
+    "officialTitle": "Best Fantasy on Goodreads with less than 100 ratings",
+    "url": "https://www.goodreads.com/list/show/76987.Best_Fantasy_on_Goodreads_with_less_than_100_ratings",
+    "criteria": {
+      "max": 100
+    }
+  },
+  {
+    "id": "115805",
+    "nickname": "Best Forgotten Fanta",
+    "officialTitle": "Best Forgotten Fantasy of the 20th Century",
+    "url": "https://www.goodreads.com/list/show/115805.Best_Forgotten_Fantasy_of_the_20th_Century",
+    "criteria": {
+      "max": 999,
+      "minYear": 1900,
+      "maxYear": 1999
+    }
+  },
+  {
+    "id": "114349",
+    "nickname": "Best Forgotten Scien",
+    "officialTitle": "Best Forgotten Science Fiction of the 20th Century",
+    "url": "https://www.goodreads.com/list/show/114349.Best_Forgotten_Science_Fiction_of_the_20th_Century",
+    "criteria": {
+       "max": 999,
+       "minYear": 1900,
+       "maxYear": 1999
+    }
+  },
+  {
+    "id": "144755",
+    "nickname": "Best Less Popular Co",
+    "officialTitle": "Best Less Popular Computer Science Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/144755.Best_Less_Popular_Computer_Science_Books_on_Goodreads",
+    "criteria": {}
+  },
+  {
+    "id": "144626",
+    "nickname": "Best Less Popular Ge",
+    "officialTitle": "Best Less Popular Geology Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/144626.Best_Less_Popular_Geology_Books_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "94613",
+    "nickname": "Best Nonfiction Biology",
+    "officialTitle": "Best Nonfiction Biology books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/94613.Best_Nonfiction_Biology_books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "94629",
+    "nickname": "Best Nonfiction Psychology",
+    "officialTitle": "Best Nonfiction Psychology Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/94629.Best_Nonfiction_Psychology_Books_on_Goodreads",
+    "criteria": {
+       "min": 10000
+    }
+  },
+  {
+    "id": "94625",
+    "nickname": "Best Popular Anthropology",
+    "officialTitle": "Best Popular Anthropology Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/94625.Best_Popular_Anthropology_Books_on_Goodreads",
+    "criteria": {
+      "min": 1000
+    }
+  },
+  {
+    "id": "95752",
+    "nickname": "Best Popular Astronomy",
+    "officialTitle": "Best Popular Astronomy Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/95752.Best_Popular_Astronomy_Books_on_Goodreads",
+    "criteria": {
+      "min": 1000
+     }
+  },
+  {
+    "id": "142405",
+    "nickname": "Best Popular Autobiography",
+    "officialTitle": "Best Popular Autobiography Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142405.Best_Popular_Autobiography_Books_on_Goodreads",
+    "criteria": {
+      "min": 50000 
+    }
+  },
+  {
+    "id": "142100",
+    "nickname": "Best Popular Botany ",
+    "officialTitle": "Best Popular Botany Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142100.Best_Popular_Botany_Books_on_Goodreads",
+    "criteria": {
+       "min": 100
+    }
+  },
+  {
+    "id": "107459",
+    "nickname": "Best Popular Classics",
+    "officialTitle": "Best Popular Classics Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107459.Best_Popular_Classics_Books_on_Goodreads",
+    "criteria": {
+       "min": 100000
+    }
+  },
+  {
+    "id": "142329",
+    "nickname": "Best Popular Climate",
+    "officialTitle": "Best Popular Climate Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142329.Best_Popular_Climate_Books_on_Goodreads",
+    "criteria": {
+       "min": 100
+    }
+  },
+  {
+    "id": "94619",
+    "nickname": "Best Popular Computer Science",
+    "officialTitle": "Best Popular Computer Science Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/94619.Best_Popular_Computer_Science_Books_on_Goodreads",
+    "criteria": { 
+       "min": 1000
+    }
+  },
+  {
+    "id": "131817",
+    "nickname": "Best Popular Economics",
+    "officialTitle": "Best Popular Economics Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/131817.Best_Popular_Economics_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "132768",
+    "nickname": "Best Popular Epic Fantasy",
+    "officialTitle": "Best Popular Epic Fantasy Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/132768.Best_Popular_Epic_Fantasy_Books_on_Goodreads",
+    "criteria": {
+       "min": 25000
+    }
+  },
+  {
+    "id": "128814",
+    "nickname": "Best Popular Genetics",
+    "officialTitle": "Best Popular Genetics Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/128814.Best_Popular_Genetics_Books_on_Goodreads",
+    "criteria": {
+       "min": 500
+    }
+  },
+  {
+    "id": "139840",
+    "nickname": "Best Popular Geography",
+    "officialTitle": "Best Popular Geography Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/139840.Best_Popular_Geography_Books_on_Goodreads",
+    "criteria": {
+       "min": 500
+    }
+  },
+  {
+    "id": "143932",
+    "nickname": "Best Popular Geology",
+    "officialTitle": "Best Popular Geology Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/143932.Best_Popular_Geology_Books_on_Goodreads_",
+    "criteria": {
+       "min": 500
+    }
+  },
+  {
+    "id": "156482",
+    "nickname": "Best Popular Historical Fiction",
+    "officialTitle": "Best Popular Historical Fiction Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/156482.Best_Popular_Historical_Fiction_Books_on_Goodreads",
+    "criteria": {
+       "min": 100000
+    }
+  },
+  {
+    "id": "108393",
+    "nickname": "Best Popular History",
+    "officialTitle": "Best Popular History Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/108393.Best_Popular_History_Books_on_Goodreads",
+    "criteria": {
+       "min": 10000
+    }
+  },
+  {
+    "id": "141863",
+    "nickname": "Best Popular Judaism",
+    "officialTitle": "Best Popular Judaism Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/141863.Best_Popular_Judaism_Books_on_Goodreads",
+    "criteria": {
+       "min": 200
+    }
+  },
+  {
+    "id": "128894",
+    "nickname": "Best Popular Language",
+    "officialTitle": "Best Popular Language Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/128894.Best_Popular_Language_Books_on_Goodreads",
+    "criteria": {
+       "min": 500
+    }
+  },
+  {
+    "id": "149946",
+    "nickname": "Best Popular Light N",
+    "officialTitle": "Best Popular Light Novels on Goodreads",
+    "url": "https://www.goodreads.com/list/show/149946._Best_Popular_Light_Novels_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "108216",
+    "nickname": "Best Popular Manga",
+    "officialTitle": "Best Popular Manga Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/108216.Best_Popular_Manga_Books_on_Goodreads",
+    "criteria": {
+       "min": 5000
+    }
+  },
+  {
+    "id": "152647",
+    "nickname": "Best Popular Medicine",
+    "officialTitle": "Best Popular Medicine Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/152647.Best_Popular_Medicine_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "142359",
+    "nickname": "Best Popular Middle School",
+    "officialTitle": "Best Popular Middle School Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142359._Best_Popular_Middle_School_Books_on_Goodreads",
+    "criteria": {
+       "min": 500
+    }
+  },
+  {
+    "id": "129050",
+    "nickname": "Best Popular Military Science Fiction",
+    "officialTitle": "Best Popular Military Science Fiction Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/129050.Best_Popular_Military_Science_Fiction_Books_on_Goodreads_",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "109421",
+    "nickname": "Best Popular Music Books",
+    "officialTitle": "Best Popular Music Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/109421.Best_Popular_Music_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "144834",
+    "nickname": "Best Popular Nature ",
+    "officialTitle": "Best Popular Nature Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/144834._Best_Popular_Nature_Books_on_Goodreads_",
+    "criteria": {
+       "min": 800
+    }
+  },
+  {
+    "id": "97141",
+    "nickname": "Best Popular Politics",
+    "officialTitle": "Best Popular Nonfiction Politics Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/97141.Best_Popular_Nonfiction_Politics_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "151553",
+    "nickname": "Best Popular Pagan",
+    "officialTitle": "Best Popular Pagan Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/151553.Best_Popular_Pagan_Books_on_Goodreads",
+    "criteria": {
+       "min": 500
+    }
+  },
+  {
+    "id": "145885",
+    "nickname": "Best Popular Pandemi",
+    "officialTitle": "Best Popular Pandemic Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/145885._Best_Popular_Pandemic_Books_on_Goodreads_",
+    "criteria": {}
+  },
+  {
+    "id": "107355",
+    "nickname": "Best Popular Philosophy",
+    "officialTitle": "Best Popular Philosophy Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107355.Best_Popular_Philosophy_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "107582",
+    "nickname": "Best Popular Picture Books",
+    "officialTitle": "Best Popular Picture Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107582.Best_Popular_Picture_Books_on_Goodreads",
+    "criteria": {
+       "min": 5000
+    }
+  },
+  {
+    "id": "107268",
+    "nickname": "Best Popular Poetry ",
+    "officialTitle": "Best Popular Poetry Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107268.Best_Popular_Poetry_Books_on_Goodreads",
+    "criteria": {
+       "min": 1500
+    }
+  },
+  {
+    "id": "139751",
+    "nickname": "Best Popular Productivity",
+    "officialTitle": "Best Popular Productivity Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/139751.Best_Popular_Productivity_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "142549",
+    "nickname": "Best Popular Racism ",
+    "officialTitle": "Best Popular Racism Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/142549.Best_Popular_Racism_Books_on_Goodreads",
+    "criteria": {
+       "min": 2000
+    }
+  },
+  {
+    "id": "143259",
+    "nickname": "Best Popular Science",
+    "officialTitle": "Best Popular Science Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/143259.Best_Popular_Science_Books_on_Goodreads",
+    "criteria": {
+       "min": 5000
+    }
+  },
+  {
+    "id": "107662",
+    "nickname": "Best Popular Short Stories",
+    "officialTitle": "Best Popular Short Stories Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107662.Best_Popular_Short_Stories_Books_on_Goodreads",
+    "criteria": {
+       "min": 5000
+    }
+  },
+  {
+    "id": "131865",
+    "nickname": "Best Popular Space Opera",
+    "officialTitle": "Best Popular Space Opera Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/131865.Best_Popular_Space_Opera_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "131286",
+    "nickname": "Best Popular Steampunk",
+    "officialTitle": "Best Popular Steampunk Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/131286.Best_Popular_Steampunk_Books_on_Goodreads_",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "118961",
+    "nickname": "Best Popular Travel ",
+    "officialTitle": "Best Popular Travel Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/118961.Best_Popular_Travel_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "nickname": "BestSf20thCent",
+    "officialTitle": "Best Science Fiction of the 20th Century",
+    "id": "114319",
+    "url": "https://www.goodreads.com/list/show/114319",
+    "criteria": {
+      "minYear": 1900,
+      "maxYear": 1999,
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "BestSf21stCent",
+    "officialTitle": "Best Science Fiction of the 21st Century",
+    "id": "4893",
+    "url": "https://www.goodreads.com/list/show/4893",
+    "criteria": {
+      "minYear": 2000,
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "1000 to 9999",
+    "officialTitle": "Best Science Fiction on Goodreads with between 1000 and 9999 ratings",
+    "id": "77875",
+    "url": "https://www.goodreads.com/list/show/77875",
+    "criteria": {
+      "min": 1000,
+      "max": 9999
+    }
+  },
+  {
+    "nickname": "10,000 to 15,000",
+    "officialTitle": "Books with 10,000 to 14,999 to-read shelf counts",
+    "id": "141019",
+    "url": "https://www.goodreads.com/list/show/141019",
+    "criteria": {
+      "min": 10000,
+      "max": 14999
+    }
+  },
+  {
+    "nickname": "15,000 to 20,000",
+    "officialTitle": "Books with 15,000 to 19,999 to-read shelf counts",
+    "id": "141016",
+    "url": "https://www.goodreads.com/list/show/141016",
+    "criteria": {
+      "min": 15000,
+      "max": 19999
+    }
+  },
+  {
+    "nickname": "150,000 to 199,999",
+    "officialTitle": "Books with 150,000 to 199,999 to-read shelf counts",
+    "id": "117146",
+    "url": "https://www.goodreads.com/list/show/117146",
+    "criteria": {
+      "min": 150000,
+      "max": 199999
+    }
+  },
+  {
+    "nickname": "20,000 to 25,000",
+    "officialTitle": "Books with 20,000 to 24,999 to-read shelf counts",
+    "id": "141024",
+    "url": "https://www.goodreads.com/list/show/141024",
+    "criteria": {
+      "min": 20000,
+      "max": 24999
+    }
+  },
+  {
+    "nickname": "25,000 to 30,000",
+    "officialTitle": "Books with 25,000 to 29,999 to-read shelf counts",
+    "id": "141025",
+    "url": "https://www.goodreads.com/list/show/141025",
+    "criteria": {
+      "min": 25000,
+      "max": 29999
+    }
+  },
+  {
+    "nickname": "30,000 to 40,000",
+    "officialTitle": "Books with 30,000 to 39,999 to-read shelf counts",
+    "id": "141027",
+    "url": "https://www.goodreads.com/list/show/141027",
+    "criteria": {
+      "min": 30000,
+      "max": 39999
+    }
+  },
+  {
+    "nickname": "40,000 to 50,000",
+    "officialTitle": "Books with 40,000 to 49,999 to-read shelf counts",
+    "id": "141032",
+    "url": "https://www.goodreads.com/list/show/141032",
+    "criteria": {
+      "min": 40000,
+      "max": 49999
+    }
+  },
+  {
+    "nickname": "50,000 to 60,000",
+    "officialTitle": "Books with 50,000 to 59,999 to-read shelf counts",
+    "id": "141033",
+    "url": "https://www.goodreads.com/list/show/141033",
+    "criteria": {
+      "min": 50000,
+      "max": 59999
+    }
+  },
+  {
+    "nickname": "60,000 to 70,000",
+    "officialTitle": "Books with 60,000 to 69,999 to-read shelf counts",
+    "id": "141034",
+    "url": "https://www.goodreads.com/list/show/141034",
+    "criteria": {
+      "min": 60000,
+      "max": 69999
+    }
+  },
+  {
+    "nickname": "70,000 to 80,000",
+    "officialTitle": "Books with 70,000 to 79,999 to-read shelf counts",
+    "id": "141035",
+    "url": "https://www.goodreads.com/list/show/141035",
+    "criteria": {
+      "min": 70000,
+      "max": 79999
+    }
+  },
+  {
+    "nickname": "90,000 to 99,999",
+    "officialTitle": "Books with 90,000 to 99,999 to-read shelf counts",
+    "id": "117368",
+    "url": "https://www.goodreads.com/list/show/117368",
+    "criteria": {
+      "min": 90000,
+      "max": 99999
+    }
+  },
+  {
+    "nickname": "100,000 to 149,999",
+    "officialTitle": "Books with between 100,000 and 149,999 to-read shelf counts",
+    "id": "35708",
+    "url": "https://www.goodreads.com/list/show/35708",
+    "criteria": {
+      "min": 100000,
+      "max": 149999
+    }
+  },
+  {
+    "nickname": "200,000 to 499,999",
+    "officialTitle": "Books with between 200,000 and 499,999 to-read shelf counts",
+    "id": "36647",
+    "url": "https://www.goodreads.com/list/show/36647",
+    "criteria": {
+      "min": 200000,
+      "max": 499999
+    }
+  },
+  {
+    "nickname": "500,000 to 999,999",
+    "officialTitle": "Books with between 500,000 and 999,999 to-read shelf counts",
+    "id": "35177",
+    "url": "https://www.goodreads.com/list/show/35177",
+    "criteria": {
+      "min": 500000,
+      "max": 999999
+    }
+  },
+  {
+    "nickname": "80,000 to 89,999",
+    "officialTitle": "Books with between 80,000 and 89,999 to-read shelf counts",
+    "id": "39332",
+    "url": "https://www.goodreads.com/list/show/39332",
+    "criteria": {
+      "min": 80000,
+      "max": 89999
+    }
+  },
+  {
+    "id": "39616",
+    "nickname": "Most Popular Childrens",
+    "officialTitle": "Most Popular Childrens Books on Goodreads with more than 50 thousand ratings",
+    "url": "https://www.goodreads.com/list/show/39616.Most_Popular_Childrens_Books_on_Goodreads_with_more_than_50_thousand_ratings",
+    "criteria": {
+       "min": 50000
+    }
+  },
+  {
+    "id": "46916",
+    "nickname": "Popular Fantasy on 50,000 to 99,999",
+    "officialTitle": "Popular Fantasy on Goodreads with  between 50000 and 99999 ratings",
+    "url": "https://www.goodreads.com/list/show/46916.Popular_Fantasy_on_Goodreads_with_between_50000_and_99999_ratings",
+    "criteria": {
+      "min": 50000,
+      "max": 99999
+    }
+  },
+  {
+    "id": "79318",
+    "nickname": "Popular Fantasy 100 to 999 ratings",
+    "officialTitle": "Popular Fantasy on Goodreads with between 100 and 999 ratings",
+    "url": "https://www.goodreads.com/list/show/79318.Popular_Fantasy_on_Goodreads_with_between_100_and_999_ratings",
+    "criteria": {
+      "min": 100,
+      "max": 999
+    }
+  },
+  {
+    "id": "80066",
+    "nickname": "Popular Fantasy on 1,000 to 9,999",
+    "officialTitle": "Popular Fantasy on Goodreads with between 1000 and 9999 ratings",
+    "url": "https://www.goodreads.com/list/show/80066.Popular_Fantasy_on_Goodreads_with_between_1000_and_9999_ratings",
+    "criteria": {
+      "min": 1000,
+      "max": 9999
+    }
+  },
+  {
+    "id": "76860",
+    "nickname": "Popular Fantasy on Goodreads 10000 to 24999",
+    "officialTitle": "Popular Fantasy on Goodreads with between 10000 and 24999 ratings",
+    "url": "https://www.goodreads.com/list/show/76860.Popular_Fantasy_on_Goodreads_with_between_10000_and_24999_ratings",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "id": "74893",
+    "nickname": "Popular Fantasy on Goodreads 25000 to 49999",
+    "officialTitle": "Popular Fantasy on Goodreads with between 25000 and 49999 ratings",
+    "url": "https://www.goodreads.com/list/show/74893.Popular_Fantasy_on_Goodreads_with_between_25000_and_49999_ratings",
+    "criteria": {
+      "min": 25000,
+      "max": 49999
+    }
+  },
+  {
+    "id": "418919",
+    "nickname": "The Most Popular Fantasy 100,000 to 199,999",
+    "officialTitle": "The Most Popular Fantasy on Goodreads 100,000 to 199,999",
+    "url": "https://www.goodreads.com/list/show/418919",
+    "criteria": {
+       "min": 100000,
+       "max": 199999
+    }
+  },
+  {
+    "id": "35857",
+    "nickname": "The Most Popular Fantasy > 200,000",
+    "officialTitle": "The Most Popular Fantasy on Goodreads",
+    "url": "https://www.goodreads.com/list/show/35857.The_Most_Popular_Fantasy_on_Goodreads",
+    "criteria": {
+       "min": 200000
+    }
+  },
+  {
+    "id": "203738",
+    "nickname": "Popular Highly Rated 2000s",
+    "officialTitle": "Popular Highly Rated Books of the 2000s",
+    "url": "https://www.goodreads.com/list/show/203738.Popular_Highly_Rated_Books_of_the_2000s",
+    "criteria": {
+      "minYear": 2000,
+      "maxYear": 2009
+    }
+  },
+  {
+    "id": "203808",
+    "nickname": "Popular Highly Rated 2010s",
+    "officialTitle": "Popular Highly Rated Books of the 2010s",
+    "url": "https://www.goodreads.com/list/show/203808.Popular_Highly_Rated_Books_of_the_2010s",
+    "criteria": {
+      "minYear": 2010,
+      "maxYear": 2019
+    }
+  },
+  {
+    "id": "113378",
+    "nickname": "Popular Marvel Comic",
+    "officialTitle": "Popular Marvel Comics Books",
+    "url": "https://www.goodreads.com/list/show/113378.Popular_Marvel_Comics_Books",
+    "criteria": {}
+  },
+  {
+    "id": "142774",
+    "nickname": "Popular Mysteries on 10000 and 24999",
+    "officialTitle": "Popular Mysteries on Goodreads with between 10000 and 24999 ratings",
+    "url": "https://www.goodreads.com/list/show/142774.Popular_Mysteries_on_Goodreads_with_between_10000_and_24999_ratings",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "id": "80850",
+    "nickname": "Popular Mysteries on 25000 and 49999",
+    "officialTitle": "Popular Mysteries on Goodreads with between 25000 and 49999 ratings",
+    "url": "https://www.goodreads.com/list/show/80850.Popular_Mysteries_on_Goodreads_with_between_25000_and_49999_ratings",
+    "criteria": {
+      "min": 25000,
+      "max": 49999
+    }
+  },
+  {
+    "id": "79160",
+    "nickname": "Popular Mysteries on 50000 and 99999",
+    "officialTitle": "Popular Mysteries on Goodreads with between 50000 and 99999 ratings",
+    "url": "https://www.goodreads.com/list/show/79160.Popular_Mysteries_on_Goodreads_with_between_50000_and_99999_ratings",
+    "criteria": {
+      "min": 50000,
+      "max": 99999
+    }
+  },
+  {
+    "id": "107404",
+    "nickname": "Best Popular Romance",
+    "officialTitle": "Best Popular Romance Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107404.Best_Popular_Romance_Books_on_Goodreads",
+    "criteria": {
+       "min": 200000
+    }
+  },
+  {
+    "id": "156485",
+    "nickname": "Popular Romance 25k-50k",
+    "officialTitle": "Popular Romance on Goodreads with between 25000 and 50000 ratings",
+    "url": "https://www.goodreads.com/list/show/156485.Popular_Romance_on_Goodreads_with_between_25000_and_50000_ratings",
+    "criteria": {
+      "min": 25000,
+      "max": 50000
+    }
+  },
+  {
+    "id": "120149",
+    "nickname": "Popular Romance 50k-100k",
+    "officialTitle": "Popular Romance on Goodreads with between 50000 and 100000 ratings",
+    "url": "https://www.goodreads.com/list/show/120149.Popular_Romance_on_Goodreads_with_between_50000_and_100000_ratings",
+    "criteria": {
+      "min": 50000,
+      "max": 100000
+    }
+  },
+  {
+    "nickname": "SF 100,000 and more",
+    "officialTitle": "Popular Science Fiction on Goodreads with 100,000 and more ratings",
+    "id": "35776",
+    "url": "https://www.goodreads.com/list/show/35776",
+    "criteria": {
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "10000 to 24999",
+    "officialTitle": "Popular Science Fiction on Goodreads with between 10,000 and 24,999 ratings",
+    "id": "46769",
+    "url": "https://www.goodreads.com/list/show/46769",
+    "criteria": {
+      "min": 10000,
+      "max": 24999
+    }
+  },
+  {
+    "nickname": "100 to 999",
+    "officialTitle": "Popular Science Fiction on Goodreads with between 100 and 999 ratings",
+    "id": "78128",
+    "url": "https://www.goodreads.com/list/show/78128",
+    "criteria": {
+      "min": 100,
+      "max": 999
+    }
+  },
+  {
+    "nickname": "25000 to 49999",
+    "officialTitle": "Popular Science Fiction on Goodreads with between 25,000 and 49,999 ratings",
+    "id": "39287",
+    "url": "https://www.goodreads.com/list/show/39287",
+    "criteria": {
+      "min": 25000,
+      "max": 49999
+    }
+  },
+  {
+    "nickname": "50000 to 99999",
+    "officialTitle": "Popular Science Fiction on Goodreads with between 50,000 and 99,999 ratings",
+    "id": "138257",
+    "url": "https://www.goodreads.com/list/show/138257",
+    "criteria": {
+      "min": 50000,
+      "max": 99999
+    }
+  },
+  {
+    "nickname": "Less than 100",
+    "officialTitle": "Popular Science Fiction on Goodreads with less than 100 ratings",
+    "id": "79670",
+    "url": "https://www.goodreads.com/list/show/79670",
+    "criteria": {
+      "max": 99
+    }
+  },
+  {
+    "id": "131399",
+    "nickname": "Surprisingly Popular",
+    "officialTitle": "Surprisingly Popular Listopia Books",
+    "url": "https://www.goodreads.com/list/show/131399.Surprisingly_Popular_Listopia_Books",
+    "criteria": {}
+  },
+  {
+    "id": "172262",
+    "nickname": "The Most Popular Bibliophilia",
+    "officialTitle": "The Most Popular Bibliophilia Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/172262.The_Most_Popular_Bibliophilia_Books_on_Goodreads",
+    "criteria": {
+       "min": 100
+    }
+  },
+  {
+    "id": "92581",
+    "nickname": "The Most Popular Horror",
+    "officialTitle": "The Most Popular Horror on Goodreads",
+    "url": "https://www.goodreads.com/list/show/92581.The_Most_Popular_Horror_on_Goodreads",
+    "criteria": {
+       "min": 50000
+    }
+  },
+  {
+    "id": "195574",
+    "nickname": "The Most Popular Mystery",
+    "officialTitle": "The Most Popular Mysteries on Goodreads",
+    "url": "https://www.goodreads.com/list/show/195574.The_Most_Popular_Mysteries_on_Goodreads",
+    "criteria": {
+      "min": 100000
+    }
+  },
+  {
+    "id": "157772",
+    "nickname": "The Most Popular Neuroscience",
+    "officialTitle": "The Most Popular Neuroscience Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/157772.The_Most_Popular_Neuroscience_Books_on_Goodreads",
+    "criteria": {
+       "min": 400
+    }
+  },
+  {
+    "id": "157453",
+    "nickname": "The Most Popular New Adult",
+    "officialTitle": "The Most Popular New Adult Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/157453.The_Most_Popular_New_Adult_Books_on_Goodreads",
+    "criteria": {
+       "min": 40000
+    }
+  },
+  {
+    "id": "36384",
+    "nickname": "The Most Popular Non-Fiction",
+    "officialTitle": "The Most Popular Non-Fiction on Goodreads",
+    "url": "https://www.goodreads.com/list/show/36384.The_Most_Popular_Non_Fiction_on_Goodreads",
+    "criteria": {
+       "min": 100000
+    }
+  },
+  {
+    "id": "159497",
+    "nickname": "The Most Popular Software Architecture",
+    "officialTitle": "The Most Popular Software Architecture Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/159497.The_Most_Popular_Software_Architecture_Books_on_Goodreads",
+    "criteria": {
+       "min": 50
+    }
+  },
+  {
+    "id": "200988",
+    "nickname": "The Most Popular Time Travel",
+    "officialTitle": "The Most Popular Time Travel Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/200988.The_Most_Popular_Time_Travel_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "171186",
+    "nickname": "The Most Popular Weird",
+    "officialTitle": "The Most Popular Weird Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/171186.The_Most_Popular_Weird_Books_on_Goodreads",
+    "criteria": {
+       "min": 1000
+    }
+  },
+  {
+    "id": "93222",
+    "nickname": "The Most Popular Young Adult",
+    "officialTitle": "The Most Popular Young Adult Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/93222.The_Most_Popular_Young_Adult_Books_on_Goodreads",
+    "criteria": {
+       "min": 100000
+    }
+  },
+  {
+    "id": "47037",
+    "nickname": "Unknown books on more than 60 goodreads list",
+    "officialTitle": "Unknown books on more than 60 Goodreads Lists",
+    "url": "https://www.goodreads.com/list/show/47037.Unknown_books_on_more_than_60_Goodreads_Lists",
+    "criteria": {
+       "max": 999
+    }
+  }
+]

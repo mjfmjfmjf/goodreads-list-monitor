@@ -1,0 +1,185 @@
+{
+  "tag": "2019",
+  "lists": [
+    {
+      "nickname": "best books of 2019",
+      "officialTitle": "best books of 2019",
+      "id": "131403",
+      "url": "https://www.goodreads.com/list/best_of_year/2019",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "highest rated books of 2019",
+      "officialTitle": "highest rated books of 2019",
+      "id": "418261",
+      "url": "https://www.goodreads.com/list/show/418261",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019,
+        "minAvg": 4.4
+      }
+    },
+    {
+      "nickname": "10,000 to 15,000",
+      "officialTitle": "Books with 10,000 to 14,999 to-read shelf counts",
+      "id": "141019",
+      "url": "https://www.goodreads.com/list/show/141019",
+      "criteria": {
+        "min": 10000,
+        "max": 14999
+      }
+    },
+    {
+      "nickname": "15,000 to 20,000",
+      "officialTitle": "Books with 15,000 to 19,999 to-read shelf counts",
+      "id": "141016",
+      "url": "https://www.goodreads.com/list/show/141016",
+      "criteria": {
+        "min": 15000,
+        "max": 19999
+      }
+    },
+    {
+      "nickname": "20,000 to 25,000",
+      "officialTitle": "Books with 20,000 to 24,999 to-read shelf counts",
+      "id": "141024",
+      "url": "https://www.goodreads.com/list/show/141024",
+      "criteria": {
+        "min": 20000,
+        "max": 24999
+      }
+    },
+    {
+      "nickname": "25,000 to 30,000",
+      "officialTitle": "Books with 25,000 to 29,999 to-read shelf counts",
+      "id": "141025",
+      "url": "https://www.goodreads.com/list/show/141025",
+      "criteria": {
+        "min": 25000,
+        "max": 29999
+      }
+    },
+    {
+      "nickname": "30,000 to 40,000",
+      "officialTitle": "Books with 30,000 to 39,999 to-read shelf counts",
+      "id": "141027",
+      "url": "https://www.goodreads.com/list/show/141027",
+      "criteria": {
+        "min": 30000,
+        "max": 39999
+      }
+    },
+    {
+      "nickname": "40,000 to 50,000",
+      "officialTitle": "Books with 40,000 to 49,999 to-read shelf counts",
+      "id": "141032",
+      "url": "https://www.goodreads.com/list/show/141032",
+      "criteria": {
+        "min": 40000,
+        "max": 49999
+      }
+    },
+    {
+      "nickname": "50,000 to 60,000",
+      "officialTitle": "Books with 50,000 to 59,999 to-read shelf counts",
+      "id": "141033",
+      "url": "https://www.goodreads.com/list/show/141033",
+      "criteria": {
+        "min": 50000,
+        "max": 59999
+      }
+    },
+    {
+      "nickname": "60,000 to 70,000",
+      "officialTitle": "Books with 60,000 to 69,999 to-read shelf counts",
+      "id": "141034",
+      "url": "https://www.goodreads.com/list/show/141034",
+      "criteria": {
+        "min": 60000,
+        "max": 69999
+      }
+    },
+    {
+      "nickname": "70,000 to 80,000",
+      "officialTitle": "Books with 70,000 to 79,999 to-read shelf counts",
+      "id": "141035",
+      "url": "https://www.goodreads.com/list/show/141035",
+      "criteria": {
+        "min": 70000,
+        "max": 79999
+      }
+    },
+    {
+      "nickname": "80,000 to 89,999",
+      "officialTitle": "Books with between 80,000 and 89,999 to-read shelf counts",
+      "id": "39332",
+      "url": "https://www.goodreads.com/list/show/39332",
+      "criteria": {
+        "min": 80000,
+        "max": 89999
+      }
+    },
+    {
+      "nickname": "90,000 to 99,999",
+      "officialTitle": "Books with 90,000 to 99,999 to-read shelf counts",
+      "id": "117368",
+      "url": "https://www.goodreads.com/list/show/117368",
+      "criteria": {
+        "min": 90000,
+        "max": 99999
+      }
+    },
+    {
+      "nickname": "100,000 to 149,999",
+      "officialTitle": "Books with between 100,000 and 149,999 to-read shelf counts",
+      "id": "35708",
+      "url": "https://www.goodreads.com/list/show/35708",
+      "criteria": {
+        "min": 100000,
+        "max": 149999
+      }
+    },
+    {
+      "nickname": "150,000 to 199,999",
+      "officialTitle": "Books with 150,000 to 199,999 to-read shelf counts",
+      "id": "117146",
+      "url": "https://www.goodreads.com/list/show/117146",
+      "criteria": {
+        "min": 150000,
+        "max": 199999
+      }
+    },
+    {
+      "nickname": "200,000 to 499,999",
+      "officialTitle": "Books with between 200,000 and 499,999 to-read shelf counts",
+      "id": "36647",
+      "url": "https://www.goodreads.com/list/show/36647",
+      "criteria": {
+        "min": 200000,
+        "max": 499999
+      }
+    },
+    {
+      "nickname": "500,000 to 999,999",
+      "officialTitle": "Books with between 500,000 and 999,999 to-read shelf counts",
+      "id": "35177",
+      "url": "https://www.goodreads.com/list/show/35177",
+      "criteria": {
+        "min": 500000,
+        "max": 999999
+      }
+    },
+    {
+      "nickname": "1,000,000 and more",
+      "officialTitle": "Books with 1,000,000 and more to-read shelf counts",
+      "id": "35080",
+      "url": "https://www.goodreads.com/list/show/35080",
+      "criteria": {
+        "min": 1000000
+      }
+    }
+  ]
+}

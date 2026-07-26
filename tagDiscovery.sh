@@ -1,0 +1,15 @@
+./tagDiscoveryBiography.sh		
+./tagDiscoveryFantasy.sh			
+./tagDiscoveryHarlequin.sh		
+./tagDiscoveryMystery.sh			
+./tagDiscoveryRomance.sh
+./tagDiscoveryComputerScience.sh		
+./tagDiscoveryGeology.sh			
+./tagDiscoveryHistoricalRomance.sh	
+./tagDiscoveryNonFiction.json		
+./tagDiscoveryScienceFiction.sh
+./tagDiscoveryEconomics.sh		
+./tagDiscoveryGraphicNovels.sh		
+./tagDiscoveryManga.sh			
+./tagDiscoveryRacism.sh			
+./tagDiscoveryToRead.sh

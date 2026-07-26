@@ -177,8 +177,24 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25):
           const ratingsMatch = metaText.match(/([\d,]+) rating/);
           const ratings = ratingsMatch ? ratingsMatch[1] : '0';
 
-          const avgRatingMatch = metaText.match(/(\d\.\d{2}) avg rating/);
-          const avgRating = avgRatingMatch ? avgRatingMatch[1] : undefined;
+// mjf 
+//console.log(`metaText=${metaText}`);
+
+// list         const avgRatingMatch = metaText.match(/(\d\.\d{2}) avg rating/);
+//          const avgRating = avgRatingMatch ? avgRatingMatch[1] : undefined;
+
+// tag const avgRatingMatch = metaText.match(/avg rating (\d\.\d{2})/);
+// const avgRating = avgRatingMatch ? avgRatingMatch[1] : undefined;
+
+//const regexRating = /(?:avg rating (\d\.\d{2}))|(?:(\d\.\d{2}) avg rating)/;
+//const avgRating = match ? (regexRating[1] || regexRating[2]) : undefined;
+
+// Matches a decimal number that is either right after or right before "avg rating"
+const regexRating = /(?:avg rating\s+(\d\.\d{2}))|(?:(\d\.\d{2})\s+avg rating)/;
+const match = metaText.match(regexRating);
+
+// Still requires the OR check because of the two capture groups
+const avgRating = match ? (match[1] || match[2]) : undefined;
 
           const yearMatch = metaText.match(/(?:published|publication).*?(\d{4})/i) || metaText.match(/\b(?:18|19|20)\d{2}\b/);
           const published = yearMatch ? (yearMatch[1] || yearMatch[0]) : 'Unknown';

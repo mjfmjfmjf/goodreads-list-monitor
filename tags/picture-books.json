@@ -1,0 +1,233 @@
+{
+  "tag": "picture-books",
+  "lists": [
+    {
+      "nickname": "best pb, tagged 50",
+      "officialTitle": "best pb, tagged 50",
+      "id": "460",
+      "url": "https://www.goodreads.com/list/show/460",
+      "criteria": {
+        "minTags": 50
+      }
+    },
+    {
+      "nickname": "pb >5000, tagged 500",
+      "officialTitle": "pb>5000, tagged 500",
+      "id": "107582",
+      "url": "https://www.goodreads.com/list/show/107582",
+      "criteria": {
+        "min": 5000,
+        "minTags": 500
+      }
+    },
+    {
+      "nickname": "2026",
+      "officialTitle": "2026",
+      "id": "227565",
+      "url": "https://www.goodreads.com/list/show/227565",
+      "criteria": {
+        "minYear": 2026,
+        "maxYear": 2026
+      }
+    },
+    {
+      "nickname": "2025",
+      "officialTitle": "2025",
+      "id": "202032",
+      "url": "https://www.goodreads.com/list/show/202032",
+      "criteria": {
+        "minYear": 2025,
+        "maxYear": 2025
+      }
+    },
+    {
+      "nickname": "2024",
+      "officialTitle": "2024",
+      "id": "189464",
+      "url": "https://www.goodreads.com/list/show/189464",
+      "criteria": {
+        "minYear": 2024,
+        "maxYear": 2024
+      }
+    },
+    {
+      "nickname": "2023",
+      "officialTitle": "2023",
+      "id": "199243",
+      "url": "https://www.goodreads.com/list/show/199243",
+      "criteria": {
+        "minYear": 2023,
+        "maxYear": 2023
+      }
+    },
+    {
+      "nickname": "2022",
+      "officialTitle": "2022",
+      "id": "146961",
+      "url": "https://www.goodreads.com/list/show/146961",
+      "criteria": {
+        "minYear": 2021,
+        "maxYear": 2021
+      }
+    },
+    {
+      "nickname": "2021",
+      "officialTitle": "2021",
+      "id": "140537",
+      "url": "https://www.goodreads.com/list/show/140537",
+      "criteria": {
+        "minYear": 2021,
+        "maxYear": 2021
+      }
+    },
+    {
+      "nickname": "2020",
+      "officialTitle": "2020",
+      "id": "111973",
+      "url": "https://www.goodreads.com/list/show/111973",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2020
+      }
+    },
+    {
+      "nickname": "2019",
+      "officialTitle": "2019",
+      "id": "92034",
+      "url": "https://www.goodreads.com/list/show/92034",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2018",
+      "officialTitle": "2018",
+      "id": "90077",
+      "url": "https://www.goodreads.com/list/show/90077",
+      "criteria": {
+        "minYear": 2018,
+        "maxYear": 2018
+      }
+    },
+    {
+      "nickname": "2017",
+      "officialTitle": "2017",
+      "id": "74433",
+      "url": "https://www.goodreads.com/list/show/74433",
+      "criteria": {
+        "minYear": 2017,
+        "maxYear": 2017
+      }
+    },
+    {
+      "nickname": "2016",
+      "officialTitle": "2016",
+      "id": "74271",
+      "url": "https://www.goodreads.com/list/show/74271",
+      "criteria": {
+        "minYear": 2016,
+        "maxYear": 2016
+      }
+    },
+    {
+      "nickname": "2015",
+      "officialTitle": "2015",
+      "id": "74270",
+      "url": "https://www.goodreads.com/list/show/74270",
+      "criteria": {
+        "minYear": 2015,
+        "maxYear": 2015
+      }
+    },
+    {
+      "nickname": "2020s",
+      "officialTitle": "2020s",
+      "id": "171983",
+      "url": "https://www.goodreads.com/list/show/171983",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2029
+      }
+    },
+    {
+      "nickname": "2010s",
+      "officialTitle": "2010s",
+      "id": "156780",
+      "url": "https://www.goodreads.com/list/show/156780",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "2000s",
+      "officialTitle": "2000s",
+      "id": "152407",
+      "url": "https://www.goodreads.com/list/show/152407",
+      "criteria": {
+        "minYear": 2000,
+        "maxYear": 2009
+      }
+    },
+    {
+      "nickname": "1990s",
+      "officialTitle": "1990s",
+      "id": "136157",
+      "url": "https://www.goodreads.com/list/show/136157",
+      "criteria": {
+        "minYear": 1990,
+        "maxYear": 1999
+      }
+    },
+    {
+      "nickname": "1980s",
+      "officialTitle": "1980s",
+      "id": "130602",
+      "url": "https://www.goodreads.com/list/show/130602",
+      "criteria": {
+        "minYear": 1980,
+        "maxYear": 1989
+      }
+    },
+    {
+      "nickname": "1970s",
+      "officialTitle": "1970s",
+      "id": "128449",
+      "url": "https://www.goodreads.com/list/show/128449",
+      "criteria": {
+        "minYear": 1970,
+        "maxYear": 1979
+      }
+    },
+    {
+      "nickname": "1960s",
+      "officialTitle": "1960s",
+      "id": "128865",
+      "url": "https://www.goodreads.com/list/show/128865",
+      "criteria": {
+        "minYear": 1960,
+        "maxYear": 1969
+      }
+    },
+    {
+      "nickname": "1950s",
+      "officialTitle": "1950s",
+      "id": "130600",
+      "url": "https://www.goodreads.com/list/show/130600",
+      "criteria": {
+        "minYear": 1950,
+        "maxYear": 1959
+      }
+    },
+    {
+      "nickname": "1940s and before",
+      "officialTitle": "1940s and before",
+      "id": "134592",
+      "url": "https://www.goodreads.com/list/show/134592",
+      "criteria": {
+        "maxYear": 1949
+      }
+    }
+  ]
+}

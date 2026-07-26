@@ -1,0 +1,30 @@
+[
+  {
+    "nickname": "Average Rating of 3.99 and below",
+    "officialTitle": "Average Rating of 3.99 and below",
+    "id": "13035",
+    "url": "https://www.goodreads.com/list/show/13035",
+    "criteria": {
+      "maxAvg": 3.99
+    }
+  },
+  {
+    "nickname": "Average Rating below 3.6",
+    "officialTitle": "Average Rating below 3.6",
+    "id": "24328",
+    "url": "https://www.goodreads.com/list/show/24328",
+    "criteria": {
+      "maxAvg": 3.59
+    }
+  },
+  {
+    "nickname": "Average Rating of 3.0 and below with at least 100 ratings",
+    "officialTitle": "Average Rating of 3.0 and below with at least 100 ratings",
+    "id": "23974",
+    "url": "https://www.goodreads.com/list/show/23974",
+    "criteria": {
+      "maxAvg": 3,
+      "min": 100
+    }
+  }
+]

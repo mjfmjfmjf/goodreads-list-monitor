@@ -111,12 +111,24 @@
       }
     },
     {
-      "nickname": "More than 100000",
+      "nickname": "More than 200000",
       "officialTitle": "The Most Popular Fantasy on Goodreads",
       "id": "35857",
       "url": "https://www.goodreads.com/list/show/35857",
       "criteria": {
-        "min": 100000
+        "min": 200000,
+        "minTags": 2000
+      }
+    },
+    {
+      "nickname": "100,000 to 199,999 and 2000 tags",
+      "officialTitle": "100,000 to 199,999 and 2000 tags",
+      "id": "418919",
+      "url": "https://www.goodreads.com/list/show/418919",
+      "criteria": {
+        "min": 100000,
+        "max": 199999,
+        "minTags": 2000
       }
     },
     {

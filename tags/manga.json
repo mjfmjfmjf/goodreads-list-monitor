@@ -1,0 +1,25 @@
+{
+  "tag": "manga",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "manga > 5000 ratings and 1000 shelves",
+      "id": "108216",
+      "url": "https://www.goodreads.com/list/show/108216",
+      "criteria": {
+        "min": 5000,
+        "minTags": 1000
+      }
+    },
+    {
+      "nickname": "Best Manga of all time",
+      "officialTitle": "Best Manga of all time",
+      "id": "7512",
+      "url": "https://www.goodreads.com/list/show/7512",
+      "criteria": {
+        "min": 100,
+        "minTags": 10
+      }
+    }
+  ]
+}

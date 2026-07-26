@@ -1,0 +1,15 @@
+{
+  "tag": "racism",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "racism > 2000 ratings and 40 shelves",
+      "id": "142549",
+      "url": "https://www.goodreads.com/list/show/142549",
+      "criteria": {
+        "min": 2000,
+        "minTags": 40
+      }
+    }
+  ]
+}

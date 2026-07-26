@@ -7,8 +7,8 @@
       "id": "108393",
       "url": "https://www.goodreads.com/list/show/108393",
       "criteria": {
-        "min": 5000,
-        "minTags": 500
+        "min": 10000,
+        "minTags": 1000
       }
     },
     {
@@ -134,8 +134,8 @@
     {
       "nickname": "2014",
       "officialTitle": "History Published in 2014",
-      "id": "120832",
-      "url": "https://www.goodreads.com/list/show/120832",
+      "id": "120921",
+      "url": "https://www.goodreads.com/list/show/120921",
       "criteria": {
         "minYear": 2014,
         "maxYear": 2014
@@ -144,8 +144,8 @@
     {
       "nickname": "2013",
       "officialTitle": "History Published in 2013",
-      "id": "120921",
-      "url": "https://www.goodreads.com/list/show/120921",
+      "id": "120894",
+      "url": "https://www.goodreads.com/list/show/120894",
       "criteria": {
         "minYear": 2013,
         "maxYear": 2013
@@ -169,16 +169,6 @@
       "criteria": {
         "minYear": 2011,
         "maxYear": 2011
-      }
-    },
-    {
-      "nickname": "2010",
-      "officialTitle": "History Published in 2010",
-      "id": "120925",
-      "url": "https://www.goodreads.com/list/show/120925",
-      "criteria": {
-        "minYear": 2010,
-        "maxYear": 2010
       }
     }
   ]

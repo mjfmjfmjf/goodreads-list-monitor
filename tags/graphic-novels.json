@@ -11,12 +11,24 @@
       }
     },
     {
-      "nickname": "All graphic novels with at least 25,000 ratings",
+      "nickname": "All graphic novels with at least 50,000 ratings",
       "officialTitle": "Most Popular Graphic Novels on goodreads with over 25 thousand ratings",
       "id": "73088",
       "url": "https://www.goodreads.com/list/show/73088",
       "criteria": {
-        "min": 25000
+        "min": 50000,
+        "minTags": 500
+      }
+    },
+    {
+      "nickname": "All graphic novels with 25,000 and 49,999 ratings",
+      "officialTitle": "All Graphic Novels with 25,000 and 49,999 ratings",
+      "id": "418497",
+      "url": "https://www.goodreads.com/list/show/418497",
+      "criteria": {
+        "min": 25000,
+        "max": 49999,
+        "minTags": 500
       }
     },
     {

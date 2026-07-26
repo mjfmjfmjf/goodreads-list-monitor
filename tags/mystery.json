@@ -28,7 +28,8 @@
       "url": "https://www.goodreads.com/list/show/142751",
       "criteria": {
         "min": 40000,
-        "minTags": 500
+        "minTags": 500,
+        "minAvg": 4.0
       }
     },
     {

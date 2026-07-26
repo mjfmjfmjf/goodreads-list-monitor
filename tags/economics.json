@@ -1,0 +1,65 @@
+{
+  "tag": "economics",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "economics > 1000 ratings and 200 shelves",
+      "id": "131817",
+      "url": "https://www.goodreads.com/list/show/131817",
+      "criteria": {
+        "min": 1000,
+        "minTags": 200
+      }
+    },
+    {
+      "nickname": "2026",
+      "officialTitle": "economics 2026",
+      "id": "235114",
+      "url": "https://www.goodreads.com/list/show/235114",
+      "criteria": {
+        "minYear": 2026,
+        "maxYear": 2026
+      }
+    },
+    {
+      "nickname": "2025",
+      "officialTitle": "economics 2025",
+      "id": "222110",
+      "url": "https://www.goodreads.com/list/show/222110",
+      "criteria": {
+        "minYear": 2025,
+        "maxYear": 2025
+      }
+    },
+    {
+      "nickname": "2024",
+      "officialTitle": "economics 2024",
+      "id": "193711",
+      "url": "https://www.goodreads.com/list/show/193711",
+      "criteria": {
+        "minYear": 2024,
+        "maxYear": 2024
+      }
+    },
+    {
+      "nickname": "2023",
+      "officialTitle": "economics 2023",
+      "id": "180240",
+      "url": "https://www.goodreads.com/list/show/180240",
+      "criteria": {
+        "minYear": 2023,
+        "maxYear": 2023
+      }
+    },
+    {
+      "nickname": "2020s",
+      "officialTitle": "economics 2020s",
+      "id": "143298",
+      "url": "https://www.goodreads.com/list/show/143298",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2029
+      }
+    }
+  ]
+}

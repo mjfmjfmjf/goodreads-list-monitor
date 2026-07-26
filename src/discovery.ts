@@ -113,13 +113,20 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
     // Filter shelf books for this list's criteria FIRST
     const candidates = shelfBooks.map((sb, idx) => ({ book: sb, pos: idx + 1 })).filter(({ book }) => {
       const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
+
+// mjf
+   //   console.log(`avgRating=${book.avgRating}, tagCount=${book.tagCount}`);
       
       // Ratings check
       if (bookRatings < minVal || (maxVal < Infinity && bookRatings > maxVal)) return false;
 
       // Avg Rating check
-      const bookAvg = book.avgRating ? parseFloat(book.avgRating) : 0;
-      if (bookAvg < minAvg || (maxAvg < Infinity && bookAvg > maxAvg)) return false;
+      if (!book.avgRating) {
+        if (minAvg > 0 || maxAvg < Infinity) return false;
+      } else {
+        const bookAvg = parseFloat(book.avgRating);
+        if (bookAvg < minAvg || bookAvg > maxAvg) return false;
+      }
 
       // Per-list Tag Count check
       if (listMinTags > 0 && (book.tagCount || 0) < listMinTags) return false;
