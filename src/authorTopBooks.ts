@@ -11,11 +11,18 @@ export interface AuthorTopBooksOptions {
 const parseRatingsNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
 
 export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOptions = {}): Promise<void> {
-  const bookCache = await loadBookCache();
-  const authorCache = await loadAuthorCache();
-
   const minRatings = options.minRatings !== undefined ? parseRatingsNum(options.minRatings) : 0;
   const maxRatings = options.maxRatings !== undefined ? parseRatingsNum(options.maxRatings) : Infinity;
+
+  console.log(chalk.cyan.bold(`\n👤 Author Stats: capturing stats for the authors of the top ${n} books by ratings`));
+  console.log(chalk.gray(`   Ratings filter: ${minRatings.toLocaleString()} - ${maxRatings === Infinity ? '∞' : maxRatings.toLocaleString()}`));
+
+  console.log(chalk.gray('   Loading book cache...'));
+  const bookCache = await loadBookCache();
+  console.log(chalk.gray(`   Loading author cache...`));
+  const authorCache = await loadAuthorCache();
+
+  console.log(chalk.gray(`   Loaded ${Object.keys(bookCache).length.toLocaleString()} books, ${Object.keys(authorCache).length.toLocaleString()} authors. Filtering and sorting...`));
 
   // 1. Books from the book cache, filtered by ratings range (same semantics as the histograms)
   const candidates = Object.values(bookCache)
@@ -27,8 +34,6 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
 
   const topBooks = candidates.slice(0, n);
 
-  console.log(chalk.cyan.bold(`\n👤 Author Stats: capturing stats for the authors of the top ${topBooks.length} books by ratings`));
-  console.log(chalk.gray(`   Ratings filter: ${minRatings.toLocaleString()} - ${maxRatings === Infinity ? '∞' : maxRatings.toLocaleString()}`));
   console.log(chalk.gray(`   Books in range: ${candidates.length.toLocaleString()}\n`));
 
   if (topBooks.length === 0) {
@@ -47,7 +52,7 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
     authors.push({ name: book.author, slug });
   }
 
-  console.log(chalk.gray(`   ${authors.length} distinct authors to scrape.\n`));
+  console.log(chalk.gray(`   Top ${topBooks.length} books → ${authors.length} distinct authors to scrape.\n`));
 
   let failed = 0;
   let updated = 0;
