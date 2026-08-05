@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
-import { scrapeListBooks, scrapeShelfBooks, scrapeBookDetails } from './scraper.js';
+import { scrapeListBooks, scrapeShelfBooks, scrapeBookDetails, scrapeTopShelves } from './scraper.js';
 import { loadState, loadBookCache, saveBookCache, syncBooksToCache } from './storage.js';
 import { TagConfig, ListEntry } from './tagConfig.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
@@ -33,22 +33,27 @@ async function appendToAuditReport(listTitle: string, message: string): Promise<
   await fs.appendFile(AUDIT_REPORT, entry);
 }
 
-export async function runTagDiscovery(tagName: string, globalOptions: { minTags?: string, minAvg?: string, maxAvg?: string }): Promise<void> {
+export async function runTagDiscovery(tagName: string, globalOptions: { minTags?: string, minAvg?: string, maxAvg?: string, cacheOnly?: boolean }): Promise<void> {
   const configPath = path.join(process.cwd(), 'tags', `${tagName}.json`);
-  if (!(await fs.pathExists(configPath))) {
-    throw new Error(`Config file for tag "${tagName}" not found. Run tag-config first.`);
+  let config: TagConfig | null = null;
+  if (await fs.pathExists(configPath)) {
+    config = await fs.readJson(configPath);
+  } else {
+    console.log(chalk.yellow(`\n⚠️ Config file for tag "${tagName}" not found at ${configPath}.`));
+    console.log(chalk.yellow(`   Parsing shelf books into book cache without list audits.`));
   }
 
-  const config: TagConfig = await fs.readJson(configPath);
   const bookCache = await loadBookCache();
+  const initialCacheSize = Object.keys(bookCache).length;
   const minTags = parseInt(globalOptions.minTags?.replace(/,/g, '') || '0', 10);
   const globalMinAvg = globalOptions.minAvg ? parseFloat(globalOptions.minAvg) : 0;
   const globalMaxAvg = globalOptions.maxAvg ? parseFloat(globalOptions.maxAvg) : Infinity;
 
   console.log(chalk.cyan.bold(`\n🔦 Starting Discovery for tag: "${tagName}"`));
-  let targetMsg = `   Target: ${config.lists.length} lists, Min Tags: ${minTags}`;
+  let targetMsg = `   Target: ${config && !globalOptions.cacheOnly ? `${config.lists.length} lists` : 'Book cache sync only'}, Min Tags: ${minTags}`;
   if (globalMinAvg > 0 || globalMaxAvg < Infinity) targetMsg += `, Global Avg: ${globalMinAvg}-${globalMaxAvg}`;
-  console.log(chalk.gray(`${targetMsg}\n`));
+  console.log(chalk.gray(targetMsg));
+  console.log(chalk.gray(`   Book cache starting size: ${initialCacheSize.toLocaleString()} books\n`));
 
   // 1. GLOBAL SHELF SCAN
   console.log(chalk.cyan.bold(`🔎 Step 1: Scanning global shelf "${tagName}" (Top 25 pages)...`));
@@ -65,7 +70,14 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   console.log(chalk.green.bold(`   ✅ Shelf scan complete. Found ${shelfBooks.length} unique books above threshold.\n`));
 
   // 2. METADATA SYNC (Fill in missing details for books that are still Unknown)
+  const booksNeedingMetadata = shelfBooks.filter(sb => bookCache[sb.id]?.published === 'Unknown');
   console.log(chalk.cyan.bold(`🔄 Step 2: Ensuring metadata for ${shelfBooks.length} discovered books...`));
+  if (booksNeedingMetadata.length === 0) {
+    console.log(chalk.green.bold(`   ✅ All discovered books already have a publication year. Nothing to fetch.`));
+  } else {
+    console.log(chalk.gray(`   ${booksNeedingMetadata.length} of ${shelfBooks.length} books have an "Unknown" publication year in the cache (the shelf page did not include a year), so each is fetched individually to fill it in.`));
+  }
+
   let syncCount = 0;
   for (let i = 0; i < shelfBooks.length; i++) {
     const sb = shelfBooks[i];
@@ -74,7 +86,8 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
     // Check if we still need to fetch details (if shelf page didn't have the year)
     const cached = bookCache[sb.id];
     if (cached?.published === 'Unknown') {
-      process.stdout.write(chalk.gray(`   [${shelfPos}/${shelfBooks.length}] Fetching details for: "${sb.title.substring(0, 30)}..." \r`));
+      const avgStr = sb.avgRating ? `, Avg: ${sb.avgRating}` : '';
+      console.log(chalk.gray(`   [${shelfPos}/${shelfBooks.length}] Fetching details for ${formatBookLink(sb.title, sb.id)} by ${sb.author} (Shelf Pos: ${shelfPos}, Tags: ${sb.tagCount}, Ratings: ${sb.ratings}${avgStr}, Pub: ${sb.published})`));
       const details = await scrapeBookDetails(sb.id, sb.title, sb.author);
       
       if (details.published && details.published !== 'Unknown') {
@@ -92,13 +105,25 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   await saveBookCache(bookCache);
   console.log(chalk.green.bold(`\n   ✅ Metadata sync complete. Fetched ${syncCount} missing book details.\n`));
 
+  const finalCacheSize = Object.keys(bookCache).length;
+  const newBooksCount = finalCacheSize - initialCacheSize;
+  const countMsg = ` (${initialCacheSize.toLocaleString()} → ${finalCacheSize.toLocaleString()} books, +${newBooksCount.toLocaleString()} new books added)`;
+
+  if (!config || globalOptions.cacheOnly) {
+    if (globalOptions.cacheOnly && config) {
+      console.log(chalk.gray(`   ⏩ Skipping list audits for "${tagName}" (cache-only mode enabled).`));
+    }
+    console.log(chalk.cyan.bold(`✨ Discovery run complete for tag "${tagName}". Book cache updated${countMsg}.`));
+    return;
+  }
+
   const finalResults: DiscoveryResult[] = [];
 
   // 3. ITERATE THROUGH LISTS
   for (let i = 0; i < config.lists.length; i++) {
     const listEntry = config.lists[i];
     console.log(chalk.yellow.bold(`\n--------------------------------------------------`));
-    console.log(chalk.yellow.bold(`📋 AUDIT [${i + 1}/${config.lists.length}]: ${listEntry.nickname} - ${listEntry.officialTitle}`));
+    console.log(chalk.yellow.bold(`📋 AUDIT [${i + 1}/${config.lists.length}]: ${listEntry.nickname} - ${listEntry.officialTitle} (ID: ${listEntry.id})`));
     console.log(chalk.yellow.bold(`--------------------------------------------------`));
 
     const criteria = listEntry.criteria;
@@ -189,5 +214,58 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   }
 
   await saveBookCache(bookCache);
+  const endCacheSize = Object.keys(bookCache).length;
+  const netAdded = endCacheSize - initialCacheSize;
   console.log(chalk.cyan.bold(`\nDiscovery run complete. All results saved to auditReport.txt.`));
+  console.log(chalk.green.bold(`   Book cache updated: ${initialCacheSize.toLocaleString()} → ${endCacheSize.toLocaleString()} books (+${netAdded.toLocaleString()} new books added).`));
+}
+
+export async function runBulkTagDiscovery(options: { start?: string, count?: string, minTags?: string, minAvg?: string, maxAvg?: string, audits?: boolean, cacheOnly?: boolean }): Promise<void> {
+  const startNum = parseInt(options.start || '1', 10);
+  const countNum = parseInt(options.count || '10', 10);
+  const cacheOnly = options.audits ? false : (options.cacheOnly !== undefined ? options.cacheOnly : true);
+
+  if (isNaN(startNum) || startNum < 1) {
+    throw new Error(`Invalid start shelf number: ${options.start}`);
+  }
+  if (isNaN(countNum) || countNum < 1) {
+    throw new Error(`Invalid count/number of shelves: ${options.count}`);
+  }
+
+  console.log(chalk.cyan.bold(`\n🌐 Fetching top shelves list from https://www.goodreads.com/shelf...`));
+  const allShelves = await scrapeTopShelves();
+
+  if (allShelves.length === 0) {
+    throw new Error('No shelves discovered on https://www.goodreads.com/shelf');
+  }
+
+  const startIndex = startNum - 1;
+  const selectedShelves = allShelves.slice(startIndex, startIndex + countNum);
+
+  console.log(chalk.green.bold(`\n📚 Discovered ${allShelves.length} total shelves on Goodreads top shelves page.`));
+  console.log(chalk.cyan.bold(`🎯 Processing ${selectedShelves.length} shelf/shelves (starting at shelf #${startNum}):`));
+  selectedShelves.forEach((s, idx) => {
+    console.log(chalk.gray(`   ${startNum + idx}. ${s}`));
+  });
+  console.log();
+
+  for (let i = 0; i < selectedShelves.length; i++) {
+    const shelfTag = selectedShelves[i];
+    const currentNum = startNum + i;
+    console.log(chalk.yellow.bold(`\n==================================================`));
+    console.log(chalk.yellow.bold(`🚀 BULK TAG DISCOVERY [${i + 1}/${selectedShelves.length}] (Shelf #${currentNum}): "${shelfTag}"`));
+    console.log(chalk.yellow.bold(`==================================================`));
+
+    try {
+      await runTagDiscovery(shelfTag, { ...options, cacheOnly });
+    } catch (err: any) {
+      console.error(chalk.red.bold(`❌ Error running tag discovery for "${shelfTag}":`), err.message);
+    }
+
+    if (i < selectedShelves.length - 1) {
+      await delay(1000, 3000);
+    }
+  }
+
+  console.log(chalk.cyan.bold(`\n🎉 Bulk tag discovery complete for ${selectedShelves.length} shelves.`));
 }

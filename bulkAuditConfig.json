@@ -1,5 +1,15 @@
 [
   {
+    "id": "418014",
+    "nickname": "avg rating 4.7 min 1000 ratings",
+    "officialTitle": "avg rating 4.7 min 1000 ratings",
+    "url": "https://www.goodreads.com/list/show/418014.Books_With_a_Goodreads_Average_Rating_of_4_7_and_above_and_With_At_Least_1000_Ratings_",
+    "criteria": {
+       "min": 1000,
+       "minAvg": 4.7
+    }
+  },
+  {
     "id": "230634",
     "nickname": "100 Authors With Hig",
     "officialTitle": "100 Authors With Highest Average Rating",
@@ -196,6 +206,27 @@
     "criteria": {
       "minYear": 2019,
       "maxYear": 2028
+    }
+  },
+  {
+    "id": "73088",
+    "nickname": "All Graphic Novels w50,000 ratings and 500 tags",
+    "officialTitle": "All Graphic Novels w50000 ratings and 500 tags",
+    "url": "https://www.goodreads.com/list/show/73088",
+    "criteria": {
+       "min": 50000,
+       "minTags": 500
+    }
+  },
+  {
+    "id": "418497",
+    "nickname": "All Graphic Novels w25,000 to 49,999 ratings and 500 tags",
+    "officialTitle": "All Graphic Novels w25,000 to 49,999 ratings and 500 tags",
+    "url": "https://www.goodreads.com/list/show/418497",
+    "criteria": {
+       "min": 25000,
+       "max": 49999,
+       "minTags": 500
     }
   },
   {
@@ -400,12 +431,13 @@
     "url": "https://www.goodreads.com/list/show/146629.Best_Fantasy_of_the_2020s",
     "criteria": {
       "minYear": 2020,
-      "maxYear": 2029
+      "maxYear": 2029,
+      "min": 100
     }
   },
   {
     "id": "115751",
-    "nickname": "Best Fantasy of the ",
+    "nickname": "Best Fantasy of the 20th",
     "officialTitle": "Best Fantasy of the 20th Century",
     "url": "https://www.goodreads.com/list/show/115751.Best_Fantasy_of_the_20th_Century",
     "criteria": {
@@ -425,7 +457,7 @@
   },
   {
     "id": "79807",
-    "nickname": "Best Fantasy of the ",
+    "nickname": "Best Fantasy of the 40s",
     "officialTitle": "Best Fantasy of the 40s",
     "url": "https://www.goodreads.com/list/show/79807.Best_Fantasy_of_the_40s",
     "criteria": {
@@ -435,21 +467,21 @@
   },
   {
     "id": "75483",
-    "nickname": "Best Fantasy of the ",
+    "nickname": "Best Fantasy of the 50s",
     "officialTitle": "Best Fantasy of the 50s",
     "url": "https://www.goodreads.com/list/show/75483.Best_Fantasy_of_the_50s",
     "criteria": {}
   },
   {
     "id": "75425",
-    "nickname": "Best Fantasy of the ",
+    "nickname": "Best Fantasy of the 60s",
     "officialTitle": "Best Fantasy of the 60s",
     "url": "https://www.goodreads.com/list/show/75425.Best_Fantasy_of_the_60s",
     "criteria": {}
   },
   {
     "id": "76987",
-    "nickname": "Best Fantasy on Good",
+    "nickname": "Best Fantasy on Good <100",
     "officialTitle": "Best Fantasy on Goodreads with less than 100 ratings",
     "url": "https://www.goodreads.com/list/show/76987.Best_Fantasy_on_Goodreads_with_less_than_100_ratings",
     "criteria": {
@@ -870,15 +902,6 @@
     "url": "https://www.goodreads.com/list/show/142549.Best_Popular_Racism_Books_on_Goodreads",
     "criteria": {
        "min": 2000
-    }
-  },
-  {
-    "id": "107404",
-    "nickname": "Best Popular Romance",
-    "officialTitle": "Best Popular Romance Books on Goodreads",
-    "url": "https://www.goodreads.com/list/show/107404.Best_Popular_Romance_Books_on_Goodreads",
-    "criteria": {
-       "min": 100000
     }
   },
   {
@@ -1703,15 +1726,6 @@
     }
   },
   {
-    "id": "73088",
-    "nickname": "Most Popular Graphic Novels",
-    "officialTitle": "Most Popular Graphic Novels on goodreads with over 25 thousand ratings",
-    "url": "https://www.goodreads.com/list/show/73088.Most_Popular_Graphic_Novels_on_goodreads_with_over_25_thousand_ratings",
-    "criteria": {
-       "min": 25000
-    }
-  },
-  {
     "id": "220708",
     "nickname": "Most Rated Book by C",
     "officialTitle": "Most Rated Book by Country",
@@ -1844,12 +1858,13 @@
     "url": "https://www.goodreads.com/list/show/171983.Picture_Books_of_the_2020s",
     "criteria": {
       "minYear": 2020,
-      "maxYear": 2029
+      "maxYear": 2029,
+      "min": 50
     }
   },
   {
     "id": "46916",
-    "nickname": "Popular Fantasy on G",
+    "nickname": "Popular Fantasy on 50,000 to 99,999",
     "officialTitle": "Popular Fantasy on Goodreads with  between 50000 and 99999 ratings",
     "url": "https://www.goodreads.com/list/show/46916.Popular_Fantasy_on_Goodreads_with_between_50000_and_99999_ratings",
     "criteria": {
@@ -1869,7 +1884,7 @@
   },
   {
     "id": "80066",
-    "nickname": "Popular Fantasy on G",
+    "nickname": "Popular Fantasy on 1,000 to 9,999",
     "officialTitle": "Popular Fantasy on Goodreads with between 1000 and 9999 ratings",
     "url": "https://www.goodreads.com/list/show/80066.Popular_Fantasy_on_Goodreads_with_between_1000_and_9999_ratings",
     "criteria": {
@@ -1898,6 +1913,25 @@
     }
   },
   {
+    "id": "418919",
+    "nickname": "The Most Popular Fantasy 100,000 to 199,999",
+    "officialTitle": "The Most Popular Fantasy on Goodreads 100,000 to 199,999",
+    "url": "https://www.goodreads.com/list/show/418919",
+    "criteria": {
+       "min": 100000,
+       "max": 199999
+    }
+  },
+  {
+    "id": "35857",
+    "nickname": "The Most Popular Fantasy > 200,000",
+    "officialTitle": "The Most Popular Fantasy on Goodreads",
+    "url": "https://www.goodreads.com/list/show/35857.The_Most_Popular_Fantasy_on_Goodreads",
+    "criteria": {
+       "min": 200000
+    }
+  },
+  {
     "id": "160157",
     "nickname": "Popular First Book G",
     "officialTitle": "Popular First Book Graphic Novels",
@@ -1922,33 +1956,6 @@
     "criteria": {
       "minYear": 2010,
       "maxYear": 2019
-    }
-  },
-  {
-    "id": "114178",
-    "nickname": "Popular Highly Rated Fantasy",
-    "officialTitle": "Popular Highly Rated Fantasy",
-    "url": "https://www.goodreads.com/list/show/114178.Popular_Highly_Rated_Fantasy",
-    "criteria": {
-       "min": 50000 
-    }
-  },
-  {
-    "id": "142751",
-    "nickname": "Popular Highly Rated Mystery",
-    "officialTitle": "Popular Highly Rated Mystery",
-    "url": "https://www.goodreads.com/list/show/142751.Popular_Highly_Rated_Mystery",
-    "criteria": {
-      "min": 40000
-    }
-  },
-  {
-    "id": "114163",
-    "nickname": "Popular Highly Rated SF",
-    "officialTitle": "Popular Highly Rated Science Fiction",
-    "url": "https://www.goodreads.com/list/show/114163.Popular_Highly_Rated_Science_Fiction",
-    "criteria": {
-       "min": 25000
     }
   },
   {
@@ -1986,6 +1993,15 @@
     "criteria": {
       "min": 50000,
       "max": 99999
+    }
+  },
+  {
+    "id": "107404",
+    "nickname": "Best Popular Romance",
+    "officialTitle": "Best Popular Romance Books on Goodreads",
+    "url": "https://www.goodreads.com/list/show/107404.Best_Popular_Romance_Books_on_Goodreads",
+    "criteria": {
+       "min": 200000
     }
   },
   {
@@ -2298,7 +2314,8 @@
     "url": "https://www.goodreads.com/list/show/75182",
     "criteria": {
       "minYear": 2010,
-      "maxYear": 2019
+      "maxYear": 2019,
+      "min": 100
     }
   },
   {
@@ -2308,7 +2325,8 @@
     "url": "https://www.goodreads.com/list/show/146613",
     "criteria": {
       "minYear": 2020,
-      "maxYear": 2029
+      "maxYear": 2029,
+      "min": 100
     }
   },
   {
@@ -2447,15 +2465,6 @@
     }
   },
   {
-    "id": "35857",
-    "nickname": "The Most Popular Fantasy",
-    "officialTitle": "The Most Popular Fantasy on Goodreads",
-    "url": "https://www.goodreads.com/list/show/35857.The_Most_Popular_Fantasy_on_Goodreads",
-    "criteria": {
-       "min": 100000
-    }
-  },
-  {
     "id": "92581",
     "nickname": "The Most Popular Horror",
     "officialTitle": "The Most Popular Horror on Goodreads",
@@ -2548,7 +2557,9 @@
     "nickname": "Unknown books on more than 60 goodreads list",
     "officialTitle": "Unknown books on more than 60 Goodreads Lists",
     "url": "https://www.goodreads.com/list/show/47037.Unknown_books_on_more_than_60_Goodreads_Lists",
-    "criteria": {}
+    "criteria": {
+       "max": 999
+    }
   },
   {
     "id": "140833",

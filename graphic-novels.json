@@ -1,0 +1,443 @@
+  [
+    {
+      "nickname": "All graphic novels with at least 50,000 ratings",
+      "officialTitle": "graphic novels 50,000",
+      "id": "73088",
+      "url": "https://www.goodreads.com/list/show/73088",
+      "criteria": {
+        "min": 50000,
+        "minTags": 500
+      }
+    },
+    {
+      "nickname": "All graphic novels with 25,000 and 49,999 ratings",
+      "officialTitle": "All Graphic Novels with 25,000 and 49,999 ratings",
+      "id": "418497",
+      "url": "https://www.goodreads.com/list/show/418497",
+      "criteria": {
+        "min": 25000,
+        "max": 49999,
+        "minTags": 500
+      }
+    },
+    {
+      "nickname": "All graphic novels with 10,000 and 24,999 ratings",
+      "officialTitle": "All Graphic Novels with 10,000 and 24,999 ratings",
+      "id": "73202",
+      "url": "https://www.goodreads.com/list/show/73202",
+      "criteria": {
+        "min": 10000,
+        "max": 24999
+      }
+    },
+    {
+      "nickname": "All graphic novels with 5,000 and 9,999 ratings",
+      "officialTitle": "All Graphic Novels with 5,000 to 9,999 ratings",
+      "id": "91245",
+      "url": "https://www.goodreads.com/list/show/91245",
+      "criteria": {
+        "min": 5000,
+        "max": 9999
+      }
+    },
+    {
+      "nickname": "All graphic novels with 3,000 and 4,999 ratings",
+      "officialTitle": "All Graphic Novels with 3,000 to 4,999 ratings",
+      "id": "155141",
+      "url": "https://www.goodreads.com/list/show/155141",
+      "criteria": {
+        "min": 3000,
+        "max": 4999
+      }
+    },
+    {
+      "nickname": "All graphic novels with 2,000 and 2,999 ratings",
+      "officialTitle": "All Graphic Novels with 2,000 to 2,999 ratings",
+      "id": "155022",
+      "url": "https://www.goodreads.com/list/show/155022",
+      "criteria": {
+        "min": 2000,
+        "max": 2999
+      }
+    },
+    {
+      "nickname": "All graphic novels with 1,000 and 1,999 ratings",
+      "officialTitle": "All Graphic Novels with 1,000 to 1,999 ratings",
+      "id": "154990",
+      "url": "https://www.goodreads.com/list/show/154990",
+      "criteria": {
+        "min": 1000,
+        "max": 1999
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2026",
+      "officialTitle": "Great Graphic Novels 2026",
+      "id": "230127",
+      "url": "https://www.goodreads.com/list/show/230127",
+      "criteria": {
+        "minYear": 2026,
+        "maxYear": 2026
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2025",
+      "officialTitle": "Great Graphic Novels 2025",
+      "id": "219957",
+      "url": "https://www.goodreads.com/list/show/219957",
+      "criteria": {
+        "minYear": 2025,
+        "maxYear": 2025
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2024",
+      "officialTitle": "Great Graphic Novels 2024",
+      "id": "194885",
+      "url": "https://www.goodreads.com/list/show/194885",
+      "criteria": {
+        "minYear": 2024,
+        "maxYear": 2024
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2023",
+      "officialTitle": "Great Graphic Novels 2023",
+      "id": "182428",
+      "url": "https://www.goodreads.com/list/show/182428",
+      "criteria": {
+        "minYear": 2023,
+        "maxYear": 2023
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2022",
+      "officialTitle": "Great Graphic Novels 20222",
+      "id": "169410",
+      "url": "https://www.goodreads.com/list/show/169410",
+      "criteria": {
+        "minYear": 2022,
+        "maxYear": 2022
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2021",
+      "officialTitle": "Great Graphic Novels 2021",
+      "id": "155850",
+      "url": "https://www.goodreads.com/list/show/155850",
+      "criteria": {
+        "minYear": 2021,
+        "maxYear": 2021
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2020",
+      "officialTitle": "Great Graphic Novels 2020",
+      "id": "143568",
+      "url": "https://www.goodreads.com/list/show/143568",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2020
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2019",
+      "officialTitle": "Great Graphic Novels 2019",
+      "id": "132268",
+      "url": "https://www.goodreads.com/list/show/132268",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2018",
+      "officialTitle": "Great Graphic Novels 2018",
+      "id": "117512",
+      "url": "https://www.goodreads.com/list/show/117512",
+      "criteria": {
+        "minYear": 2018,
+        "maxYear": 2018
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2017",
+      "officialTitle": "Great Graphic Novels 2017",
+      "id": "106204",
+      "url": "https://www.goodreads.com/list/show/106204",
+      "criteria": {
+        "minYear": 2017,
+        "maxYear": 2017
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2016",
+      "officialTitle": "Great Graphic Novels 2016",
+      "id": "97045",
+      "url": "https://www.goodreads.com/list/show/97045",
+      "criteria": {
+        "minYear": 2016,
+        "maxYear": 2016
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2015",
+      "officialTitle": "Great Graphic Novels 2015",
+      "id": "86117",
+      "url": "https://www.goodreads.com/list/show/86117",
+      "criteria": {
+        "minYear": 2015,
+        "maxYear": 2015
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2014",
+      "officialTitle": "Great Graphic Novels 2014",
+      "id": "78551",
+      "url": "https://www.goodreads.com/list/show/78551",
+      "criteria": {
+        "minYear": 2014,
+        "maxYear": 2014
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2013",
+      "officialTitle": "Great Graphic Novels 2013",
+      "id": "154696",
+      "url": "https://www.goodreads.com/list/show/154696",
+      "criteria": {
+        "minYear": 2013,
+        "maxYear": 2013
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2012",
+      "officialTitle": "Great Graphic Novels 2012",
+      "id": "154752",
+      "url": "https://www.goodreads.com/list/show/154752",
+      "criteria": {
+        "minYear": 2012,
+        "maxYear": 2012
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2011",
+      "officialTitle": "Great Graphic Novels 2011",
+      "id": "154778",
+      "url": "https://www.goodreads.com/list/show/154778",
+      "criteria": {
+        "minYear": 2011,
+        "maxYear": 2011
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2010",
+      "officialTitle": "Great Graphic Novels 2010",
+      "id": "154976",
+      "url": "https://www.goodreads.com/list/show/154976",
+      "criteria": {
+        "minYear": 2010,
+        "maxYear": 2010
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2009",
+      "officialTitle": "Great Graphic Novels 2009",
+      "id": "175385",
+      "url": "https://www.goodreads.com/list/show/175385",
+      "criteria": {
+        "minYear": 2009,
+        "maxYear": 2009
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2008",
+      "officialTitle": "Great Graphic Novels 2008",
+      "id": "182440",
+      "url": "https://www.goodreads.com/list/show/182440",
+      "criteria": {
+        "minYear": 2008,
+        "maxYear": 2008
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2007",
+      "officialTitle": "Great Graphic Novels 2007",
+      "id": "219509",
+      "url": "https://www.goodreads.com/list/show/219509",
+      "criteria": {
+        "minYear": 2007,
+        "maxYear": 2007
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2006",
+      "officialTitle": "Great Graphic Novels 2006",
+      "id": "232538",
+      "url": "https://www.goodreads.com/list/show/232538",
+      "criteria": {
+        "minYear": 2006,
+        "maxYear": 2006
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2005",
+      "officialTitle": "Great Graphic Novels 2005",
+      "id": "232618",
+      "url": "https://www.goodreads.com/list/show/232618",
+      "criteria": {
+        "minYear": 2005,
+        "maxYear": 2005
+      }
+    },
+    {
+      "nickname": "Great Graphic Novels 2004",
+      "officialTitle": "Great Graphic Novels 2004",
+      "id": "416571",
+      "url": "https://www.goodreads.com/list/show/416571",
+      "criteria": {
+        "minYear": 2004,
+        "maxYear": 2004
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2026",
+      "officialTitle": "Best Comics and Graphic Novels of 2026",
+      "id": "230128",
+      "url": "https://www.goodreads.com/list/show/230128",
+      "criteria": {
+        "minYear": 2026,
+        "maxYear": 2026
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2025",
+      "officialTitle": "Best Comics and Graphic Novels of 2025",
+      "id": "219958",
+      "url": "https://www.goodreads.com/list/show/219958",
+      "criteria": {
+        "minYear": 2025,
+        "maxYear": 2025
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2024",
+      "officialTitle": "best comics 2024",
+      "id": "198198",
+      "url": "https://www.goodreads.com/list/show/198198",
+      "criteria": {
+        "minYear": 2024,
+        "maxYear": 2024
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2023",
+      "officialTitle": "best comics 2023",
+      "id": "184232",
+      "url": "https://www.goodreads.com/list/show/184232",
+      "criteria": {
+        "minYear": 2023,
+        "maxYear": 2023
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2022",
+      "officialTitle": "best comics 2022",
+      "id": "171831",
+      "url": "https://www.goodreads.com/list/show/171831",
+      "criteria": {
+        "minYear": 2022,
+        "maxYear": 2022
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2021",
+      "officialTitle": "Best Comics and Graphic Novels of 2021",
+      "id": "162590",
+      "url": "https://www.goodreads.com/list/show/162590",
+      "criteria": {
+        "minYear": 2021,
+        "maxYear": 2021
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2020",
+      "officialTitle": "Best Comics and Graphic Novels of 2020",
+      "id": "161693",
+      "url": "https://www.goodreads.com/list/show/161693",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2020
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2019",
+      "officialTitle": "Best Comics and Graphic Novels of 2019",
+      "id": "161694",
+      "url": "https://www.goodreads.com/list/show/161694",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2018",
+      "officialTitle": "Best Comics and Graphic Novels of 2018",
+      "id": "161696",
+      "url": "https://www.goodreads.com/list/show/161696",
+      "criteria": {
+        "minYear": 2018,
+        "maxYear": 2018
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2017",
+      "officialTitle": "Best Comics and Graphic Novels of 2017",
+      "id": "162592",
+      "url": "https://www.goodreads.com/list/show/162592",
+      "criteria": {
+        "minYear": 2017,
+        "maxYear": 2017
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2016",
+      "officialTitle": "Best Comics and Graphic Novels of 2016",
+      "id": "162591",
+      "url": "https://www.goodreads.com/list/show/162591",
+      "criteria": {
+        "minYear": 2016,
+        "maxYear": 2016
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2015",
+      "officialTitle": "Best Comics and Graphic Novels of 2015",
+      "id": "85659",
+      "url": "https://www.goodreads.com/list/show/85659",
+      "criteria": {
+        "minYear": 2015,
+        "maxYear": 2015
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2014",
+      "officialTitle": "Best Comics & Graphic Novels of 2014",
+      "id": "80904",
+      "url": "https://www.goodreads.com/list/show/80904",
+      "criteria": {
+        "minYear": 2014,
+        "maxYear": 2014
+      }
+    },
+    {
+      "nickname": "Best Comics and Graphic Novels 2013",
+      "officialTitle": "Best Comics and Graphic Novels of 2013",
+      "id": "87819",
+      "url": "https://www.goodreads.com/list/show/87819",
+      "criteria": {
+        "minYear": 2013,
+        "maxYear": 2013
+      }
+    }
+  ]

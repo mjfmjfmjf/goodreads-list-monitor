@@ -1,0 +1,115 @@
+{
+  "tag": "science",
+  "lists": [
+    {
+      "nickname": "science 5000 ratings/500 tags",
+      "officialTitle": "science 5000 ratings/500 tags",
+      "id": "143259",
+      "url": "https://www.goodreads.com/list/show/143259",
+      "criteria": {
+        "minTags": 500,
+        "min": 5000
+      }
+    },
+    {
+      "nickname": "science 2026",
+      "officialTitle": "science 2026",
+      "id": "232674",
+      "url": "https://www.goodreads.com/list/show/232674",
+      "criteria": {
+        "minYear": 2026,
+        "maxYear": 2026 
+      }
+    },
+    {
+      "nickname": "science 2025",
+      "officialTitle": "science 2025",
+      "id": "205269",
+      "url": "https://www.goodreads.com/list/show/205269",
+      "criteria": {
+        "minYear": 2025,
+        "maxYear": 2025 
+      }
+    },
+    {
+      "nickname": "science 2024",
+      "officialTitle": "science 2024",
+      "id": "188489",
+      "url": "https://www.goodreads.com/list/show/188489",
+      "criteria": {
+        "minYear": 2024,
+        "maxYear": 2024 
+      }
+    },
+    {
+      "nickname": "science 2023",
+      "officialTitle": "science 2023",
+      "id": "180238",
+      "url": "https://www.goodreads.com/list/show/180238",
+      "criteria": {
+        "minYear": 2023,
+        "maxYear": 2023 
+      }
+    },
+    {
+      "nickname": "science 2022",
+      "officialTitle": "science 2022",
+      "id": "161707",
+      "url": "https://www.goodreads.com/list/show/161707",
+      "criteria": {
+        "minYear": 2022,
+        "maxYear": 2022 
+      }
+    },
+    {
+      "nickname": "science 2021",
+      "officialTitle": "science 2021",
+      "id": "150630",
+      "url": "https://www.goodreads.com/list/show/150630",
+      "criteria": {
+        "minYear": 2021,
+        "maxYear": 2021 
+      }
+    },
+    {
+      "nickname": "science 2020",
+      "officialTitle": "science 2020",
+      "id": "132679",
+      "url": "https://www.goodreads.com/list/show/132679",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2020 
+      }
+    },
+    {
+      "nickname": "science 2019",
+      "officialTitle": "science 2019",
+      "id": "125364",
+      "url": "https://www.goodreads.com/list/show/125364",
+      "criteria": {
+        "minYear": 2019,
+        "maxYear": 2019 
+      }
+    },
+    {
+      "nickname": "science 2018",
+      "officialTitle": "science 2018",
+      "id": "120550",
+      "url": "https://www.goodreads.com/list/show/120550",
+      "criteria": {
+        "minYear": 2018,
+        "maxYear": 2018 
+      }
+    },
+    {
+      "nickname": "science 2017",
+      "officialTitle": "science 2017",
+      "id": "120771",
+      "url": "https://www.goodreads.com/list/show/120771",
+      "criteria": {
+        "minYear": 2017,
+        "maxYear": 2017 
+      }
+    }
+  ]
+}

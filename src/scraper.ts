@@ -5,7 +5,8 @@ import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
 import { delay, fetchWithRetry, formatDate } from './utils.js';
-import { loadConfig, loadAuthorCache, syncAuthorsToCache } from './storage.js';
+import { loadConfig, loadAuthorCache, syncAuthorsToCache, saveAuthorCache, updateAuthorStats } from './storage.js';
+import type { AuthorCache, AuthorCacheEntry, AuthorStats } from './storage.js';
 
 let structuralWarningIssued = false;
 
@@ -112,6 +113,30 @@ export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]
   }
 
   return allLists;
+}
+
+export async function scrapeTopShelves(): Promise<string[]> {
+  const configData = await loadConfig();
+  const url = 'https://www.goodreads.com/shelf';
+  const headers: any = { 'User-Agent': USER_AGENT };
+  if (configData.cookie) headers['Cookie'] = configData.cookie;
+
+  const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
+  const $ = cheerio.load(response.data);
+
+  const tags: string[] = [];
+  $('a[href*="/shelf/show/"]').each((_, element) => {
+    const href = $(element).attr('href') || '';
+    const match = href.match(/\/shelf\/show\/([^?#]+)/);
+    if (match) {
+      const tag = decodeURIComponent(match[1].trim());
+      if (tag && !tags.includes(tag)) {
+        tags.push(tag);
+      }
+    }
+  });
+
+  return tags;
 }
 
 export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25): Promise<BookMetadata[]> {
@@ -621,7 +646,80 @@ export async function scrapeBookBySearch(id: string, title: string, author: stri
   }
 }
 
-export async function scrapeBookByAuthorPage(id: string, authorSlug: string): Promise<Partial<BookMetadata>> {
+export interface AuthorListBook {
+  id: string;
+  title: string;
+  author: string;
+  authorId?: string;
+  authorSlug?: string;
+  ratings: string;
+  avgRating?: string;
+  published: string;
+}
+
+function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
+  const statsText = $('.leftContainer a.authorName[href*="/author/show/"]').first().parent().text();
+  if (!statsText.trim()) return {};
+  const avgMatch = statsText.match(/Average rating\s+([\d.]+)/);
+  const ratingsMatch = statsText.match(/([\d,]+)\s+ratings/);
+  const reviewsMatch = statsText.match(/([\d,]+)\s+reviews/);
+  const shelvesMatch = statsText.match(/shelved\s+([\d,]+)\s+times/);
+  return {
+    averageRating: avgMatch ? avgMatch[1] : undefined,
+    numRatings: ratingsMatch ? ratingsMatch[1] : undefined,
+    numReviews: reviewsMatch ? reviewsMatch[1] : undefined,
+    numShelves: shelvesMatch ? shelvesMatch[1] : undefined
+  };
+}
+
+function findAuthorEntryBySlug(authorCache: AuthorCache, slug: string): AuthorCacheEntry | undefined {
+  for (const entry of Object.values(authorCache)) {
+    if (entry.slug === slug) return entry;
+  }
+  return undefined;
+}
+
+async function updateAuthorStatsFromPage($: cheerio.CheerioAPI, authorSlug: string): Promise<void> {
+  const stats = parseAuthorStats($);
+  if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) return;
+  const authorCache = await loadAuthorCache();
+  const entry = findAuthorEntryBySlug(authorCache, authorSlug);
+  if (entry && updateAuthorStats(entry, stats)) {
+    await saveAuthorCache(authorCache);
+  }
+}
+
+function parseAuthorListBooks($: cheerio.CheerioAPI, authorSlug?: string): AuthorListBook[] {
+  const books: AuthorListBook[] = [];
+  $('.tableList tr, tr[itemscope][itemtype="http://schema.org/Book"]').each((_, el) => {
+    const $el = $(el);
+    const $title = $el.find('.bookTitle');
+    const href = $title.attr('href') || '';
+    const match = href.match(/\/book\/show\/(\d+)/);
+    const entryId = match ? match[1] : '';
+    if (!entryId) return;
+
+    const entryTitle = $title.find('span[itemprop="name"]').text().trim() || $title.text().trim();
+    const $authorLink = $el.find('a.authorName[href*="/author/show/"]');
+    const entryAuthor = $authorLink.text().trim() || 'Unknown Author';
+    const authorHref = $authorLink.attr('href') || '';
+    const authorMatch = authorHref.match(/\/author\/show\/([^?#\s/]+)/);
+    const entryAuthorId = authorMatch ? authorMatch[1].split('.')[0] : undefined;
+
+    const metaText = $el.find('.greyText.smallText').first().text().trim();
+    const ratingsMatch = metaText.match(/([\d,]+) rating/);
+    const ratings = ratingsMatch ? ratingsMatch[1] : '0';
+    const avgRatingMatch = metaText.match(/(\d\.\d{2}) avg rating/);
+    const avgRating = avgRatingMatch ? avgRatingMatch[1] : undefined;
+    const yearMatch = metaText.match(/(?:published|publication).*?(\d{4})/i) || metaText.match(/\b(?:18|19|20)\d{2}\b/);
+    const published = yearMatch ? (yearMatch[1] || yearMatch[0]) : 'Unknown';
+
+    books.push({ id: entryId, title: entryTitle, author: entryAuthor, authorId: entryAuthorId, authorSlug, ratings, avgRating, published });
+  });
+  return books;
+}
+
+export async function scrapeBookByAuthorPage(id: string, authorSlug: string, titleHint?: string): Promise<Partial<BookMetadata>> {
   const url = `https://www.goodreads.com/author/list/${authorSlug}`;
   const config = await loadConfig();
 
@@ -632,37 +730,38 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string): Pr
     const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
     const $ = cheerio.load(response.data);
 
-    let foundDetails: Partial<BookMetadata> = { id };
+    // Capture/refresh the author's overall stats whenever we scrape their page
+    await updateAuthorStatsFromPage($, authorSlug);
 
-    // The author/list page uses .tableList or simply tr.book
-    $('.tableList tr, tr[itemscope][itemtype="http://schema.org/Book"]').each((_, el) => {
-      const $el = $(el);
-      const $title = $el.find('.bookTitle');
-      const href = $title.attr('href') || '';
-      const match = href.match(/\/book\/show\/(\d+)/);
-      const entryId = match ? match[1] : '';
+    const exactTitleHint = titleHint ? titleHint.trim().toLowerCase() : null;
+    const books = parseAuthorListBooks($, authorSlug);
 
-      if (entryId === id) {
-        const entryTitle = $title.find('span[itemprop="name"]').text().trim() || $title.text().trim();
-        const entryAuthor = $el.find('.authorName').text().trim();
-        const metaText = $el.find('.greyText.smallText').first().text().trim();
+    const idMatch = books.find(b => b.id === id) || null;
+    const titleMatch = !idMatch && exactTitleHint ? (books.find(b => b.title.trim().toLowerCase() === exactTitleHint) || null) : null;
 
-        const ratingsMatch = metaText.match(/([\d,]+) rating/);
-        const ratings = ratingsMatch ? ratingsMatch[1] : '0';
-
-        const avgRatingMatch = metaText.match(/(\d\.\d{2}) avg rating/);
-        const avgRating = avgRatingMatch ? avgRatingMatch[1] : undefined;
-
-        const yearMatch = metaText.match(/(?:published|publication).*?(\d{4})/i) || metaText.match(/\b(?:18|19|20)\d{2}\b/);
-        const published = yearMatch ? (yearMatch[1] || yearMatch[0]) : 'Unknown';
-
-        foundDetails = { id, title: entryTitle, author: entryAuthor, ratings, avgRating, published };        return false; // break
-      }
-    });
-
-    return foundDetails;
+    if (idMatch) return idMatch;
+    if (titleMatch) return titleMatch;
+    return { id };
   } catch (error) {
     return { id };
+  }
+}
+
+export async function scrapeAuthorStats(authorSlug: string): Promise<AuthorStats | undefined> {
+  const url = `https://www.goodreads.com/author/list/${authorSlug}`;
+  const config = await loadConfig();
+
+  try {
+    const headers: any = { 'User-Agent': USER_AGENT };
+    if (config.cookie) headers['Cookie'] = config.cookie;
+
+    const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
+    const $ = cheerio.load(response.data);
+    const stats = parseAuthorStats($);
+    if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) return undefined;
+    return stats;
+  } catch (error) {
+    return undefined;
   }
 }
 
@@ -732,8 +831,8 @@ export async function scrapeBookDetails(bookId: string, titleHint?: string, auth
   if (effectiveSlug) {
     const start = Date.now();
     try {
-      console.log(chalk.gray(`   👤 [Method: Author List] Attempting for book ${bookId} (Author: ${effectiveSlug})...`));
-      const authorDetails = await scrapeBookByAuthorPage(bookId, effectiveSlug);
+      console.log(chalk.gray(`   👤 [Method: Author List] Attempting for book ${bookId}${titleHint ? ` "${titleHint}"` : ''} (Author: ${effectiveSlug})...`));
+      const authorDetails = await scrapeBookByAuthorPage(bookId, effectiveSlug, titleHint);
       const duration = ((Date.now() - start) / 1000).toFixed(2);
       if (authorDetails.title && authorDetails.published !== 'Unknown') {
         console.log(chalk.gray(`      ✅ Success via Author List (${duration}s)`));

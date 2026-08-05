@@ -1,0 +1,34 @@
+I want to add a new feature. I want to be able to give an id like 51477729 and have it be removed from the local book cache
+==== 
+like with queueYearRatings.sh npm run queue-discovery -- queueYearRatings.json, I'd like a new feature that captures a histogram of number of books in the book cache by number of ratings with the categories
+  > 10 million, 9-10m down to 1-2m, 900k to 1m down to 100k to 200k, 90k to 100k down to 10k to 20k, 9k to 10k down to 1k to 2k, 900 to 1000 down to 100 to 200, 90 to 100 down to 10-20, 9 down to 0
+  a category for say 900 to 1000 should actually be 900 to 999.
+====
+> there are messages which point to a book and are of the form [book: something |id]
+
+  but they have a problem that is especially notable with books with asian characters and part of a series
+
+  so like the book
+
+  約束のネバーランド 1 [Yakusoku no Neverland 1] (Paperback)
+
+  should be formatted like
+
+  [book:約束のネバーランド 1  Yakusoku no Neverland 1 |34106559]
+
+  it absolutely must not count [ or ] - so containing "[Yakusoku no Neverland 1]" causes a problem
+
+  can you look at the code without running anything and see if this is easy to fix
+======
+> when scraping an author using a link like https://www.goodreads.com/author/list/19527332.Chanel_Miller
+  I'd like to capture overall author statistics - specifically
+  Average rating 4.67 · 274,250 ratings · 38,656 reviews · shelved 780,609 times
+
+  averageRating, numRatings, numReviews, numShelves
+
+  and whenever we need to scrape an author page, these values should be updated
+
+  although ratings and reviews should go up - if the new number is not greater or equal to - none of these numbers should be replaced
+
+  in addition we should add a new capability to scrape author pages looking at books with most ratings - so the n most (where n might be 10 or 100 or 1000) - but only scrape an author once with this new capability even if the author shows up more than onc
+

@@ -1,5 +1,15 @@
 [
   {
+    "nickname": "Average Rating of 4.7 and above with at least 1000 ratings",
+    "officialTitle": "Average Rating of 4.7 and above with at least 1000 ratings",
+    "id": "205516",
+    "url": "https://www.goodreads.com/list/show/418014",
+    "criteria": {
+      "minAvg": 4.7,
+      "min": 1000
+    }
+  },
+  {
     "nickname": "2013 Average Rating of 4.40 and above with at least 1000 ratings",
     "officialTitle": "2013 Average Rating of 4.40 and above with at least 1000 ratings",
     "id": "419422",
@@ -120,71 +130,80 @@
     }
   },
   {
-    "nickname": "2023 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2023 Average Rating of 4.40 and above with at least 1000 ratings",
-    "id": "418174",
-    "url": "https://www.goodreads.com/list/show/418174",
+    "nickname": "Best Books of 2026",
+    "officialTitle": "Best Books of 2026",
+    "id": "350755",
+    "url": "https://www.goodreads.com/list/best_of_year/2026",
     "criteria": {
-      "minAvg": 4.40,
-      "min": 1000,
-      "minYear": 2023,
-      "maxYear": 2023
-    }
-  },
-  {
-    "nickname": "2024 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2024 Average Rating of 4.40 and above with at least 1000 ratings",
-    "id": "250123",
-    "url": "https://www.goodreads.com/list/show/250123",
-    "criteria": {
-      "minAvg": 4.40,
-      "min": 1000,
-      "minYear": 2024,
-      "maxYear": 2024
-    }
-  },
-  {
-    "nickname": "2025 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2025 Average Rating of 4.40 and above with at least 1000 ratings",
-    "id": "419829",
-    "url": "https://www.goodreads.com/list/show/419829",
-    "criteria": {
-      "minAvg": 4.40,
-      "min": 1000,
-      "minYear": 2025,
-      "maxYear": 2025
-    }
-  },
-  {
-    "nickname": "2026 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2026 Average Rating of 4.40 and above with at least 1000 ratings",
-    "id": "419830",
-    "url": "https://www.goodreads.com/list/show/419830",
-    "criteria": {
-      "minAvg": 4.40,
-      "min": 1000,
       "minYear": 2026,
-      "maxYear": 2026
-    }
-  },
-  {
-    "nickname": "Average Rating of 4.7 and above with at least 1000 ratings",
-    "officialTitle": "Average Rating of 4.7 and above with at least 1000 ratings",
-    "id": "205516",
-    "url": "https://www.goodreads.com/list/show/418014",
-    "criteria": {
-      "minAvg": 4.7,
+      "maxYear": 2026,
       "min": 1000
     }
   },
   {
-    "nickname": "Average Rating of 3.0 and below with at least 100 ratings",
-    "officialTitle": "Average Rating of 3.0 and below with at least 100 ratings",
-    "id": "23974",
-    "url": "https://www.goodreads.com/list/show/23974",
+    "nickname": "Best Books of 2025",
+    "officialTitle": "Best Books of 2025",
+    "id": "222558",
+    "url": "https://www.goodreads.com/list/best_of_year/2025",
     "criteria": {
-      "maxAvg": 3,
-      "min": 100
+      "minYear": 2025,
+      "maxYear": 2025,
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "Best Books of 2024",
+    "officialTitle": "Best Books of 2024",
+    "id": "196307",
+    "url": "https://www.goodreads.com/list/best_of_year/2024",
+    "criteria": {
+      "minYear": 2024,
+      "maxYear": 2024,
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "Best Books of 2023",
+    "officialTitle": "Best Books of 2023",
+    "id": "183940",
+    "url": "https://www.goodreads.com/list/best_of_year/2023",
+    "criteria": {
+      "minYear": 2023,
+      "maxYear": 2023,
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "Best Books of 2022",
+    "officialTitle": "Best Books of 2022",
+    "id": "171064",
+    "url": "https://www.goodreads.com/list/best_of_year/2022",
+    "criteria": {
+      "minYear": 2022,
+      "maxYear": 2022,
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "Best Books of 2021",
+    "officialTitle": "Best Books of 2021",
+    "id": "157516",
+    "url": "https://www.goodreads.com/list/best_of_year/2021",
+    "criteria": {
+      "minYear": 2021,
+      "maxYear": 2021,
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "Best Books of 2020",
+    "officialTitle": "Best Books of 2020",
+    "id": "143444",
+    "url": "https://www.goodreads.com/list/best_of_year/2020",
+    "criteria": {
+      "minYear": 2020,
+      "maxYear": 2020,
+      "min": 1000
     }
   }
 ]

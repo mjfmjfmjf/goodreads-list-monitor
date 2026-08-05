@@ -104,9 +104,25 @@ npm run bulk-audit -- bulkAvgRatings.json
 ```
 (Replace `bulkAvgRatings.json` with your custom configuration file.)
 
+### 6. Author Statistics
+Capture and rank authors by popularity. All author data lives in `authorsCache.json`.
+
+**Capture Author Stats:**
+```bash
+npm run author-top-books [n] -- --minRatings [min] --maxRatings [max]
+```
+Scans the book cache for the top `n` books by number of ratings (optionally filtered by a ratings range), builds a distinct list of their authors, and scrapes each author's page **once** — capturing `averageRating`, `numRatings`, `numReviews`, and `numShelves` into `authorsCache.json`. Author stats are updated monotonically: a value is only replaced if it hasn't decreased.
+
+**Read Top Authors from the Cache:**
+```bash
+npm run author-top-stats -- --limit [n] --sortBy [field] --minRatings [min] --maxRatings [max]
+```
+Lists the top authors from `authorsCache.json` sorted descending. `--sortBy` is one of `numRatings` (default), `averageRating`, `numReviews`, or `numShelves`; `--limit` defaults to 100. Authors missing a value for the sort field are excluded from the results.
+
 ## Files
 - `state.json`: Stores your monitored lists and their book counts.
 - `booksCache.json`: Global cache of book metadata (titles, years, ratings, average ratings, tags).
+- `authorsCache.json`: Global cache of author metadata (slugs, average ratings, ratings, reviews, shelves).
 - `changeLog.txt`: Permanent record of all additions and removals detected during monitoring.
 - `auditReport.txt`: Record of all audit outliers and discovery findings.
 - `bulkAuditConfig.json`: Default configuration for bulk audits.

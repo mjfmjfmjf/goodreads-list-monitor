@@ -7,14 +7,17 @@ npm-debug.log*
 .DS_Store
 
 # Large data/cache files
+authorsCache.json
 booksCache.json
 auditReport.txt
 state.json*
 shelf.html
 
 # Configuration (contains private cookies/tokens)
-config.json
+config.json*
 
 # Local scripts/backups
 *.bak
 memory/
+
+rawGoodreadsToken*

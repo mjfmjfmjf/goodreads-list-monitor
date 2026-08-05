@@ -3,13 +3,20 @@ import chalk from 'chalk';
 import { checkUpdates, performIngest } from './monitor.js';
 import { runAudit, runTagAudit } from './auditor.js';
 import { generateTagConfig } from './tagConfig.js';
-import { runTagDiscovery } from './discovery.js';
+import { runTagDiscovery, runBulkTagDiscovery } from './discovery.js';
 import { runQueueDiscovery } from './queueDiscovery.js';
 import { generateBulkConfig } from './bulkConfig.js';
 import { runBulkAudit } from './bulkAudit.js';
 import { scrapeAndCacheBook } from './singleBook.js';
+import { addBookFromBuffer } from './addBook.js';
+import { removeBookFromCache } from './removeBook.js';
 import { runCheckQueue } from './checkQueue.js';
 import { runSummaryByYear } from './summary.js';
+import { runSummaryRatings } from './summaryRatings.js';
+import { runRatingsHistogram } from './summaryHistogram.js';
+import { runAvgHistogram } from './summaryAvgHistogram.js';
+import { runAuthorTopBooks } from './authorTopBooks.js';
+import { runAuthorTopStats } from './authorTopStats.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
 import { loadState, saveState, loadConfig } from './storage.js';
 
@@ -62,13 +69,114 @@ program
   });
 
 program
-  .command('check-book <bookId>')
-  .description('Fetch and cache the latest info for a single book (useful for fixing "Unknown" years)')
-  .action(async (bookId) => {
+  .command('summary-ratings')
+  .description('Show a ratings count histogram of books in the cache')
+  .option('--hideZero', 'Hide categories with 0 books')
+  .action(async (options) => {
     try {
+      await runSummaryRatings(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate ratings summary:'), (error as any).message);
+    }
+  });
+
+program
+  .command('ratings-histogram')
+  .description('Show a coarse histogram of the number of books in the cache by number of ratings')
+  .action(async () => {
+    try {
+      await runRatingsHistogram();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate ratings histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('avg-histogram')
+  .description('Show a histogram of books by average rating, skipping buckets with no books')
+  .option('--step <number>', 'Grouping step (default 0.01; 0.01 or less = no grouping)', '0.01')
+  .option('--minRatings <number>', 'Only include books with at least this many ratings')
+  .option('--maxRatings <number>', 'Only include books with at most this many ratings')
+  .action(async (options) => {
+    try {
+      await runAvgHistogram(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate average rating histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-top-books <n>')
+  .description('For the top N books by ratings (from the book cache, filtered by ratings range), scrape each distinct author once to capture their overall stats (avg rating, ratings, reviews, shelves) into the author cache')
+  .option('--minRatings <number>', 'Only consider books with at least this many ratings')
+  .option('--maxRatings <number>', 'Only consider books with at most this many ratings')
+  .action(async (n, options) => {
+    const count = parseInt(n, 10);
+    if (isNaN(count) || count <= 0) {
+      console.error(chalk.red.bold('Error: <n> must be a positive number.'));
+      process.exit(1);
+    }
+    try {
+      await runAuthorTopBooks(count, options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run author top books:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-top-stats')
+  .description('List top authors from the author cache by a chosen stat (number of ratings, average rating, number of reviews, or number of shelves)')
+  .option('--limit <number>', 'Number of authors to return (default 100)', '100')
+  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default numRatings)', 'numRatings')
+  .option('--minRatings <number>', 'Only include authors with at least this many ratings')
+  .option('--maxRatings <number>', 'Only include authors with at most this many ratings')
+  .action(async (options) => {
+    try {
+      await runAuthorTopStats(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate author stats summary:'), (error as any).message);
+    }
+  });
+
+program
+  .command('check-book <bookIdOrUrl>')
+  .description('Fetch and cache the latest info for a single book via direct HTTP lookup using logged-in credentials')
+  .action(async (bookIdOrUrl) => {
+    try {
+      const match = bookIdOrUrl.match(/\/book\/show\/(\d+)/);
+      const bookId = match ? match[1] : bookIdOrUrl.trim().replace(/[^\d]/g, '');
       await scrapeAndCacheBook(bookId);
     } catch (error) {
       console.error(chalk.red.bold('Failed to check book:'), (error as any).message);
+    }
+  });
+
+program
+  .command('add-book <bookId> [rawInput...]')
+  .description('Add or update a book in the cache using text/HTML from your copy-paste buffer')
+  .option('--data <text>', 'Raw text or HTML from copy-paste buffer')
+  .option('--title <title>', 'Explicit book title')
+  .option('--author <author>', 'Explicit author name')
+  .option('--ratings <number>', 'Explicit ratings count')
+  .option('--avg <number>', 'Explicit average rating')
+  .option('--published <date>', 'Explicit published date or year')
+  .action(async (bookId, rawInputArray, options) => {
+    try {
+      const rawInputArg = options.data || (rawInputArray && rawInputArray.length ? rawInputArray.join(' ') : undefined);
+      await addBookFromBuffer(bookId, rawInputArg, options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to add book to cache:'), (error as any).message);
+    }
+  });
+
+program
+  .command('remove-book <ids...>')
+  .description('Remove one or more books from the local book cache (booksCache.json)')
+  .action(async (ids) => {
+    try {
+      await removeBookFromCache(ids);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to remove book from cache:'), (error as any).message);
     }
   });
 
@@ -195,11 +303,30 @@ program
   .option('--minTags <number>', 'Minimum tag count (applied to all audits in the batch)', '0')
   .option('--minAvg <number>', 'Global minimum average rating')
   .option('--maxAvg <number>', 'Global maximum average rating')
+  .option('--cacheOnly', 'Only parse shelf books into book cache and skip list audits')
   .action(async (tagName, options) => {
     try {
       await runTagDiscovery(tagName, options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run tag discovery:'), (error as any).message);
+    }
+  });
+
+program
+  .command('bulk-tag-discovery')
+  .description('Run tag discovery for top shelves discovered on Goodreads (https://www.goodreads.com/shelf)')
+  .option('--start <number>', 'Starting shelf index (1-based, default 1)', '1')
+  .option('--count <number>', 'Number of shelves to process (default 10)', '10')
+  .option('--minTags <number>', 'Minimum tag count (applied to all audits in the batch)', '0')
+  .option('--minAvg <number>', 'Global minimum average rating')
+  .option('--maxAvg <number>', 'Global maximum average rating')
+  .option('--audits', 'Run list audits for tags that have a tag config file (defaults to cache-only mode)')
+  .option('--cacheOnly', 'Only parse shelf books into book cache and skip list audits (default behavior)')
+  .action(async (options) => {
+    try {
+      await runBulkTagDiscovery(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run bulk tag discovery:'), (error as any).message);
     }
   });
 

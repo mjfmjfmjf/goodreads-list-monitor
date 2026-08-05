@@ -40,12 +40,59 @@ export interface Config {
   cookie?: string;
 }
 
+export interface AuthorCacheEntry {
+  id: string;
+  slug: string; // The "1077326.J_K_Rowling" part
+  lastSeen: string;
+  averageRating?: string;
+  numRatings?: string;
+  numReviews?: string;
+  numShelves?: string;
+}
+
 export interface AuthorCache {
-  [authorName: string]: {
-    id: string;
-    slug: string; // The "1077326.J_K_Rowling" part
-    lastSeen: string;
-  };
+  [authorName: string]: AuthorCacheEntry;
+}
+
+export interface AuthorStats {
+  averageRating?: string;
+  numRatings?: string;
+  numReviews?: string;
+  numShelves?: string;
+}
+
+export function updateAuthorStats(entry: AuthorCacheEntry, stats: AuthorStats): boolean {
+  const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
+
+  const existingRatings = parseNum(entry.numRatings);
+  const existingReviews = parseNum(entry.numReviews);
+  const newRatings = parseNum(stats.numRatings);
+  const newReviews = parseNum(stats.numReviews);
+
+  // Ratings and reviews only grow over time. If either went down (data error or
+  // page mismatch), keep all four numbers untouched.
+  if (newRatings < existingRatings || newReviews < existingReviews) return false;
+
+  let changed = false;
+  if (stats.averageRating !== undefined && entry.averageRating !== stats.averageRating) {
+    entry.averageRating = stats.averageRating;
+    changed = true;
+  }
+  if (stats.numRatings !== undefined && entry.numRatings !== stats.numRatings) {
+    entry.numRatings = stats.numRatings;
+    changed = true;
+  }
+  if (stats.numReviews !== undefined && entry.numReviews !== stats.numReviews) {
+    entry.numReviews = stats.numReviews;
+    changed = true;
+  }
+  if (stats.numShelves !== undefined && entry.numShelves !== stats.numShelves) {
+    entry.numShelves = stats.numShelves;
+    changed = true;
+  }
+
+  if (changed) entry.lastSeen = new Date().toISOString();
+  return changed;
 }
 
 const STATE_FILE = path.join(process.cwd(), 'state.json');

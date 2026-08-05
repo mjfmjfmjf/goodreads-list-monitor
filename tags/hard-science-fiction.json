@@ -1,0 +1,17 @@
+{
+  "tag": "hard-science-fiction",
+  "lists": [
+    {
+      "nickname": "hard sf 21st cent",
+      "officialTitle": "hard-sci-fi>5 and 1000 ratings",
+      "id": "47731",
+      "url": "https://www.goodreads.com/list/show/47731",
+      "criteria": {
+        "min": 1000,
+        "minTags": 5,
+        "minYear": 2000,
+        "maxYear": 2099
+      }
+    }
+  ]
+}

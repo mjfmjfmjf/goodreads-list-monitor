@@ -1,0 +1,72 @@
+  [
+    {
+      "nickname": "80,000 to 89,999",
+      "officialTitle": "Books with between 80,000 and 89,999 to-read shelf counts",
+      "id": "39332",
+      "url": "https://www.goodreads.com/list/show/39332",
+      "criteria": {
+        "min": 80000,
+        "max": 89999
+      }
+    },
+    {
+      "nickname": "90,000 to 99,999",
+      "officialTitle": "Books with 90,000 to 99,999 to-read shelf counts",
+      "id": "117368",
+      "url": "https://www.goodreads.com/list/show/117368",
+      "criteria": {
+        "min": 90000,
+        "max": 99999
+      }
+    },
+    {
+      "nickname": "100,000 to 149,999",
+      "officialTitle": "Books with between 100,000 and 149,999 to-read shelf counts",
+      "id": "35708",
+      "url": "https://www.goodreads.com/list/show/35708",
+      "criteria": {
+        "min": 100000,
+        "max": 149999
+      }
+    },
+    {
+      "nickname": "150,000 to 199,999",
+      "officialTitle": "Books with 150,000 to 199,999 to-read shelf counts",
+      "id": "117146",
+      "url": "https://www.goodreads.com/list/show/117146",
+      "criteria": {
+        "min": 150000,
+        "max": 199999
+      }
+    },
+    {
+      "nickname": "200,000 to 499,999",
+      "officialTitle": "Books with between 200,000 and 499,999 to-read shelf counts",
+      "id": "36647",
+      "url": "https://www.goodreads.com/list/show/36647",
+      "criteria": {
+        "min": 200000,
+        "max": 499999
+      }
+    },
+    {
+      "nickname": "500,000 to 999,999",
+      "officialTitle": "Books with between 500,000 and 999,999 to-read shelf counts",
+      "id": "35177",
+      "url": "https://www.goodreads.com/list/show/35177",
+      "criteria": {
+        "min": 500000,
+        "max": 999999
+      }
+    },
+    {
+      "nickname": "1,000,000 and more",
+      "officialTitle": "Books with 1,000,000 and more to-read shelf counts",
+      "id": "35080",
+      "url": "https://www.goodreads.com/list/show/35080",
+      "criteria": {
+        "min": 1000000
+      }
+    }
+  ]
+

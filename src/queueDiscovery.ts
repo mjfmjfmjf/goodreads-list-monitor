@@ -86,7 +86,7 @@ export async function runQueueDiscovery(
   for (let i = 0; i < lists.length; i++) {
     const listEntry = lists[i];
     console.log(chalk.yellow.bold(`\n--------------------------------------------------`));
-    console.log(chalk.yellow.bold(`📋 DISCOVER [${i + 1}/${lists.length}]: ${listEntry.nickname} - ${listEntry.officialTitle}`));
+    console.log(chalk.yellow.bold(`📋 DISCOVER [${i + 1}/${lists.length}]: ${listEntry.nickname} - ${listEntry.officialTitle} (ID: ${listEntry.id})`));
     console.log(chalk.yellow.bold(`--------------------------------------------------`));
 
     const criteria = listEntry.criteria;

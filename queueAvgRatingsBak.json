@@ -99,7 +99,7 @@
     "nickname": "2021 Average Rating of 4.40 and above with at least 1000 ratings",
     "officialTitle": "2021 Average Rating of 4.40 and above with at least 1000 ratings",
     "id": "418217",
-    "url": "https://www.goodreads.com/list/show/418217",
+    "url": "https://www.goodreads.com/list/show/418205",
     "criteria": {
       "minAvg": 4.40,
       "min": 1000,
@@ -132,8 +132,8 @@
     }
   },
   {
-    "nickname": "2024 Average Rating of 4.4 and above with at least 1000 ratings",
-    "officialTitle": "2024 Average Rating of 4.4 and above with at least 1000 ratings",
+    "nickname": "Average Rating of 4.4 and above with at least 1000 ratings",
+    "officialTitle": "Average Rating of 4.4 and above with at least 1000 ratings",
     "id": "250123",
     "url": "https://www.goodreads.com/list/show/250123",
     "criteria": {
@@ -144,136 +144,13 @@
     }
   },
   {
-    "nickname": "2025 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2025 Average Rating of 4.40 and above with at least 1000 ratings",
-    "id": "419829",
-    "url": "https://www.goodreads.com/list/show/419829",
-    "criteria": {
-      "minAvg": 4.40,
-      "min": 1000,
-      "minYear": 2025,
-      "maxYear": 2025
-    }
-  },
-  {
-    "nickname": "2026 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2026 Average Rating of 4.40 and above with at least 1000 ratings",
-    "id": "419830",
-    "url": "https://www.goodreads.com/list/show/419830",
-    "criteria": {
-      "minAvg": 4.40,
-      "min": 1000,
-      "minYear": 2026,
-      "maxYear": 2026
-    }
-  },
-  {
-    "id": "418014",
-    "nickname": "Average rating of 4.7 with 1000 ratings",
-    "officialTitle": "Average rating of 4.7 with 1000 ratings",
-    "url": "https://www.goodreads.com/list/show/418014.Books_With_a_Goodreads_Average_Rating_of_4_7_and_above_and_With_At_Least_1000_Ratings_",
-    "criteria": {
-       "min": 1000,
-       "minAvg": 4.7
-    }
-  },
-  {
-    "id": "114178",
-    "nickname": "Popular Highly Rated Fantasy",
-    "officialTitle": "Popular Highly Rated Fantasy",
-    "url": "https://www.goodreads.com/list/show/114178.Popular_Highly_Rated_Fantasy",
-    "criteria": {
-       "min": 50000,
-       "minAvg": 4.0
-    }
-  },
-  {
-    "id": "142751",
-    "nickname": "Popular Highly Rated Mystery",
-    "officialTitle": "Popular Highly Rated Mystery",
-    "url": "https://www.goodreads.com/list/show/142751.Popular_Highly_Rated_Mystery",
-    "criteria": {
-      "min": 40000,
-      "minAvg": 4.0
-    }
-  },
-  {
-    "id": "114163",
-    "nickname": "Popular Highly Rated SF",
-    "officialTitle": "Popular Highly Rated Science Fiction",
-    "url": "https://www.goodreads.com/list/show/114163.Popular_Highly_Rated_Science_Fiction",
-    "criteria": {
-       "min": 25000,
-       "minAvg": 4.0
-    }
-  },
-  {
-    "nickname": "Top 100 Highest Rated Books with at least 10000 Ratings (fiction or memoir, one per series)",
-    "officialTitle": "Top 100 Highest Rated Books with at least 10000 Ratings (fiction or memoir, one per series)",
-    "id": "153860",
-    "url": "https://www.goodreads.com/list/show/153860",
-    "criteria": {
-      "min": 10000
-    }
-  },
-  {
-    "nickname": "Average Rating of 4.6 and above with at least 3000 ratings",
-    "officialTitle": "Average Rating of 4.6 and above with at least 3000 ratings",
+    "nickname": "Average Rating of 4.7 and above with at least 1000 ratings",
+    "officialTitle": "Average Rating of 4.7 and above with at least 1000 ratings",
     "id": "205516",
-    "url": "https://www.goodreads.com/list/show/205516",
+    "url": "https://www.goodreads.com/list/show/418014",
     "criteria": {
-      "minAvg": 4.6,
-      "min": 3000
-    }
-  },
-  {
-    "nickname": "Average Rating of 4.5 and above with at least 3000 ratings",
-    "officialTitle": "Average Rating of 4.5 and above with at least 3000 ratings",
-    "id": "165317",
-    "url": "https://www.goodreads.com/list/show/165317",
-    "criteria": {
-      "minAvg": 4.5,
-      "min": 3000
-    }
-  },
-  {
-    "nickname": "Average Rating of 4.5 and above with at least 100 ratings",
-    "officialTitle": "Average Rating of 4.5 and above with at least 100 ratings",
-    "id": "10198",
-    "url": "https://www.goodreads.com/list/show/10198",
-    "criteria": {
-      "minAvg": 4.5,
-      "min": 100
-    }
-  },
-  {
-    "nickname": "Average Rating of 4.3 and above with at least 1000 ratings",
-    "officialTitle": "Average Rating of 4.3 and above with at least 1000 ratings",
-    "id": "74717",
-    "url": "https://www.goodreads.com/list/show/74717",
-    "criteria": {
-      "minAvg": 4.3,
+      "minAvg": 4.7,
       "min": 1000
-    }
-  },
-  {
-    "nickname": "Average Rating of 4.2 and above with at least 1000 ratings",
-    "officialTitle": "Average Rating of 4.2 and above with at least 1000 ratings",
-    "id": "24320",
-    "url": "https://www.goodreads.com/list/show/24320",
-    "criteria": {
-      "minAvg": 4.2,
-      "min": 1000
-    }
-  },
-  {
-    "nickname": "Average Rating of 4.0 and above with at least 30000 ratings",
-    "officialTitle": "Average Rating of 4.0 and above with at least 30000 ratings",
-    "id": "165313",
-    "url": "https://www.goodreads.com/list/show/165313",
-    "criteria": {
-      "minAvg": 4,
-      "min": 30000
     }
   },
   {
@@ -312,17 +189,6 @@
     "criteria": {
       "maxAvg": 3,
       "min": 100
-    }
-  },
-  {
-    "nickname": "Average Rating of 4.5 and above and with 10 to 99 ratings",
-    "officialTitle": "Average Rating of 4.5 and above and with 10 to 99 ratings",
-    "id": "165146",
-    "url": "https://www.goodreads.com/list/show/165146",
-    "criteria": {
-      "minAvg": 4.5,
-      "min": 10,
-      "max": 99
     }
   }
 ]
