@@ -658,8 +658,13 @@ export interface AuthorListBook {
 }
 
 function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
+  const $authorLink = $('a.authorName[href*="/author/show/"]').first();
+  const name = $authorLink.text().trim() || undefined;
+  const href = $authorLink.attr('href') || '';
+  const slugMatch = href.match(/\/author\/show\/([^?#\s/]+)/);
+  const slug = slugMatch ? slugMatch[1] : undefined;
   const statsText = $('.leftContainer a.authorName[href*="/author/show/"]').first().parent().text();
-  if (!statsText.trim()) return {};
+  if (!statsText.trim()) return { name, slug };
   const avgMatch = statsText.match(/Average rating\s+([\d.]+)/);
   const ratingsMatch = statsText.match(/([\d,]+)\s+ratings/);
   const reviewsMatch = statsText.match(/([\d,]+)\s+reviews/);
@@ -668,7 +673,9 @@ function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
     averageRating: avgMatch ? avgMatch[1] : undefined,
     numRatings: ratingsMatch ? ratingsMatch[1] : undefined,
     numReviews: reviewsMatch ? reviewsMatch[1] : undefined,
-    numShelves: shelvesMatch ? shelvesMatch[1] : undefined
+    numShelves: shelvesMatch ? shelvesMatch[1] : undefined,
+    name,
+    slug
   };
 }
 

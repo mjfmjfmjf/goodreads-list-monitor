@@ -59,6 +59,8 @@ export interface AuthorStats {
   numRatings?: string;
   numReviews?: string;
   numShelves?: string;
+  name?: string;
+  slug?: string;
 }
 
 export function updateAuthorStats(entry: AuthorCacheEntry, stats: AuthorStats): boolean {

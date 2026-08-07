@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { loadAuthorCache } from './storage.js';
+import type { AuthorCache } from './storage.js';
 import type { AuthorCacheEntry } from './storage.js';
 
 export type AuthorSortField = 'numRatings' | 'averageRating' | 'numReviews' | 'numShelves';
@@ -9,6 +10,12 @@ export interface AuthorTopStatsOptions {
   sortBy?: string;
   minRatings?: string;
   maxRatings?: string;
+}
+
+export interface SelectedAuthor {
+  name: string;
+  entry: AuthorCacheEntry;
+  value: number;
 }
 
 const SORT_FIELDS: AuthorSortField[] = ['numRatings', 'averageRating', 'numReviews', 'numShelves'];
@@ -23,9 +30,7 @@ const SORT_LABELS: Record<AuthorSortField, string> = {
 const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
 const parseAvg = (s?: string): number => parseFloat(s || '0') || 0;
 
-export async function runAuthorTopStats(options: AuthorTopStatsOptions = {}): Promise<void> {
-  const authorCache = await loadAuthorCache();
-
+export function selectAuthors(authorCache: AuthorCache, options: AuthorTopStatsOptions = {}): { authors: SelectedAuthor[]; missingField: number } {
   const sortBy = (options.sortBy || 'numRatings') as AuthorSortField;
   if (!SORT_FIELDS.includes(sortBy)) {
     console.error(chalk.red.bold(`Error: --sortBy must be one of: ${SORT_FIELDS.join(', ')}`));
@@ -39,7 +44,7 @@ export async function runAuthorTopStats(options: AuthorTopStatsOptions = {}): Pr
   const valueOf = (entry: AuthorCacheEntry): number =>
     sortBy === 'averageRating' ? parseAvg(entry.averageRating) : parseNum(entry[sortBy]);
 
-  const authors: { name: string; entry: AuthorCacheEntry; value: number }[] = [];
+  const authors: SelectedAuthor[] = [];
   let missingField = 0;
 
   for (const [name, entry] of Object.entries(authorCache)) {
@@ -56,8 +61,24 @@ export async function runAuthorTopStats(options: AuthorTopStatsOptions = {}): Pr
 
   authors.sort((a, b) => {
     if (a.value !== b.value) return b.value - a.value;
+    const ar = parseNum(a.entry.numRatings);
+    const br = parseNum(b.entry.numRatings);
+    if (ar !== br) return br - ar;
     return a.name.localeCompare(b.name);
   });
+
+  return { authors: authors.slice(0, limit), missingField };
+}
+
+export async function runAuthorTopStats(options: AuthorTopStatsOptions = {}): Promise<void> {
+  const authorCache = await loadAuthorCache();
+
+  const sortBy = (options.sortBy || 'numRatings') as AuthorSortField;
+  const limit = options.limit ? parseInt(options.limit, 10) : 100;
+  const minRatings = options.minRatings !== undefined ? parseNum(options.minRatings) : 0;
+  const maxRatings = options.maxRatings !== undefined ? parseNum(options.maxRatings) : Infinity;
+
+  const { authors, missingField } = selectAuthors(authorCache, options);
 
   console.log(chalk.cyan.bold(`\n🏆 Top Authors by ${SORT_LABELS[sortBy]}`));
   let criteriaMsg = `   Criteria: Min Ratings: ${minRatings.toLocaleString()}`;

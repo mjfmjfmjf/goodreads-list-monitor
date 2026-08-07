@@ -20,6 +20,8 @@
     "avg-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts avg-histogram",
     "author-top-books": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts author-top-books",
     "author-top-stats": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts author-top-stats",
+    "author-rescan": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts author-rescan",
+    "author-one": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts author-one",
     "tag-audit": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-audit",
     "tag-config": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-config",
     "tag-discovery": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-discovery",

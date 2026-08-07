@@ -6,6 +6,7 @@ import { delay } from './utils.js';
 export interface AuthorTopBooksOptions {
   minRatings?: string;
   maxRatings?: string;
+  skip?: boolean;
 }
 
 const parseRatingsNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
@@ -52,16 +53,33 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
     authors.push({ name: book.author, slug });
   }
 
-  console.log(chalk.gray(`   Top ${topBooks.length} books → ${authors.length} distinct authors to scrape.\n`));
+  console.log(chalk.gray(`   Top ${topBooks.length} books → ${authors.length} distinct authors.`));
+
+  // 3. Optionally skip authors that already have captured stats
+  let toScrape = authors;
+  if (options.skip) {
+    let skipped = 0;
+    toScrape = authors.filter(a => {
+      const entry = authorCache[a.name] || Object.values(authorCache).find(e => e.slug === a.slug);
+      if (entry && entry.numRatings !== undefined) {
+        skipped++;
+        return false;
+      }
+      return true;
+    });
+    console.log(chalk.gray(`   Skipping ${skipped} authors already in the cache (--skip).\n`));
+  }
+
+  console.log(chalk.gray(`   ${toScrape.length} authors to scrape.\n`));
 
   let failed = 0;
   let updated = 0;
   const start = Date.now();
 
-  for (let i = 0; i < authors.length; i++) {
-    const author = authors[i];
+  for (let i = 0; i < toScrape.length; i++) {
+    const author = toScrape[i];
     try {
-      console.log(chalk.white.bold(`[${i + 1}/${authors.length}] Author: ${author.name} (${author.slug})`));
+      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${author.name} (${author.slug})`));
       const stats = await scrapeAuthorStats(author.slug);
       if (!stats) {
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${author.name}`));
@@ -92,6 +110,7 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
           console.log(chalk.gray(`   (No change - values already current or not greater)`));
         }
       }
+      await saveAuthorCache(authorCache);
     } catch (error) {
       failed++;
       console.error(chalk.red.bold(`   ❌ Failed for ${author.name}: ${(error as any).message}`));
@@ -102,5 +121,5 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
   await saveAuthorCache(authorCache);
 
   const duration = ((Date.now() - start) / 1000).toFixed(1);
-  console.log(chalk.cyan.bold(`\n🏁 Done. Processed ${authors.length} authors, updated ${updated} (${failed} failures, ${duration}s).`));
+  console.log(chalk.cyan.bold(`\n🏁 Done. Processed ${toScrape.length} authors, updated ${updated} (${failed} failures, ${duration}s).`));
 }

@@ -123,7 +123,7 @@ export async function checkUpdates(userId: string): Promise<void> {
           let finalPub = bookCache[book.id]?.published || book.published;
 
           const bookLink = formatBookLink(bookCache[book.id]?.title || book.title, book.id);
-          const msg = `ADDED to "${list.title}": ${bookLink} by ${bookCache[book.id]?.author || book.author} (Pos: ${book.position}, Ratings: ${bookCache[book.id]?.ratings || book.ratings}, Pub: ${finalPub})`;
+          const msg = `ADDED to "${list.title}" (List: ${listId}): ${bookLink} by ${bookCache[book.id]?.author || book.author} (Pos: ${book.position}, Ratings: ${bookCache[book.id]?.ratings || book.ratings}, Pub: ${finalPub})`;
           console.log(chalk.magenta.bold(`  ✨ ${msg}`));
           await appendToLog(msg);
         }

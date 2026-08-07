@@ -71,3 +71,18 @@ New `src/authorTopStats.ts` with `runAuthorTopStats(options)`, following `src/su
 
 - README section for both `author-top-books` and `author-top-stats`.
 - Commit the feature work (currently uncommitted).
+
+## Part 4 — Rescan command (approved 2026-08-06)
+
+Re-scrape the author page for every author matching the reader criteria, refreshing stats in `authorsCache.json`.
+
+- Shared selection: `selectAuthors(authorCache, options)` extracted from `src/authorTopStats.ts` — same filter/sort/top-N logic used by both the reader and the rescan (`--limit`, `--sortBy`, `--minRatings`, `--maxRatings`).
+- New `src/authorRescan.ts` `runAuthorRescan(options)`:
+  - Select authors via `selectAuthors`, apply `--minAge <days>` (default 0) to skip entries whose `lastSeen` is younger than N days.
+  - For each author: `scrapeAuthorStats` → warn-and-continue if no stats line (challenge/rate-limit) → `updateAuthorStats` (monotonic) → `saveAuthorCache` after every author → `delay(2000, 5000)`.
+  - Per-author output matches `author-top-books` (current/prev values); end summary reports processed / updated / no-stats / failures / minAge-skipped / duration.
+- CLI `author-rescan` + npm script + `authorRescan.sh`. Usage:
+  ```
+  ./authorRescan.sh --limit 120 --sortBy averageRating --minRatings 100000 --minAge 1
+  ```
+- Note: a concurrently running `check`/`ingest` process holds the author cache in memory and will overwrite rescan writes with its stale copy when it saves. Don't run `author-rescan` at the same time as monitoring.

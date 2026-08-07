@@ -111,13 +111,25 @@ Capture and rank authors by popularity. All author data lives in `authorsCache.j
 ```bash
 npm run author-top-books [n] -- --minRatings [min] --maxRatings [max]
 ```
-Scans the book cache for the top `n` books by number of ratings (optionally filtered by a ratings range), builds a distinct list of their authors, and scrapes each author's page **once** — capturing `averageRating`, `numRatings`, `numReviews`, and `numShelves` into `authorsCache.json`. Author stats are updated monotonically: a value is only replaced if it hasn't decreased.
+Scans the book cache for the top `n` books by number of ratings (optionally filtered by a ratings range), builds a distinct list of their authors, and scrapes each author's page **once** — capturing `averageRating`, `numRatings`, `numReviews`, and `numShelves` into `authorsCache.json`. Author stats are updated monotonically: a value is only replaced if it hasn't decreased. Add `--skip` to skip authors that already have captured stats in the cache.
 
 **Read Top Authors from the Cache:**
 ```bash
 npm run author-top-stats -- --limit [n] --sortBy [field] --minRatings [min] --maxRatings [max]
 ```
 Lists the top authors from `authorsCache.json` sorted descending. `--sortBy` is one of `numRatings` (default), `averageRating`, `numReviews`, or `numShelves`; `--limit` defaults to 100. Authors missing a value for the sort field are excluded from the results.
+
+**Refresh Stats for a Selected Set of Authors:**
+```bash
+npm run author-rescan -- --limit [n] --sortBy [field] --minRatings [min] --maxRatings [max] --minAge [days]
+```
+Re-scrapes the author page for every author matching the same criteria as `author-top-stats`, refreshing their stats in `authorsCache.json`. Use `--minAge [days]` to skip authors whose stats were updated within the last `[days]` days (default 0 = scrape everything). Progress is saved to disk after every author, so an interrupted run can be resumed with `--minAge`.
+
+**Update Stats for a Single Author:**
+```bash
+npm run author-one -- [url-or-slug]
+```
+Scrapes the stats for one author, e.g. `https://www.goodreads.com/author/show/14018357.Steve_the_Noob` (or the slug/ID), and updates `authorsCache.json` — creating the entry if it doesn't exist yet.
 
 ## Files
 - `state.json`: Stores your monitored lists and their book counts.

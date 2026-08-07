@@ -17,6 +17,8 @@ import { runRatingsHistogram } from './summaryHistogram.js';
 import { runAvgHistogram } from './summaryAvgHistogram.js';
 import { runAuthorTopBooks } from './authorTopBooks.js';
 import { runAuthorTopStats } from './authorTopStats.js';
+import { runAuthorRescan } from './authorRescan.js';
+import { runAuthorOne } from './authorOne.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
 import { loadState, saveState, loadConfig } from './storage.js';
 
@@ -110,6 +112,7 @@ program
   .description('For the top N books by ratings (from the book cache, filtered by ratings range), scrape each distinct author once to capture their overall stats (avg rating, ratings, reviews, shelves) into the author cache')
   .option('--minRatings <number>', 'Only consider books with at least this many ratings')
   .option('--maxRatings <number>', 'Only consider books with at most this many ratings')
+  .option('--skip', 'Skip authors whose stats are already captured in the author cache')
   .action(async (n, options) => {
     const count = parseInt(n, 10);
     if (isNaN(count) || count <= 0) {
@@ -120,6 +123,33 @@ program
       await runAuthorTopBooks(count, options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run author top books:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-rescan')
+  .description('Re-scrape the author page for each author matching the reader criteria (--limit/--sortBy/--minRatings/--maxRatings) to refresh their stats in the author cache')
+  .option('--limit <number>', 'Number of authors to refresh (default 100)', '100')
+  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default numRatings)', 'numRatings')
+  .option('--minRatings <number>', 'Only consider authors with at least this many ratings')
+  .option('--maxRatings <number>', 'Only consider authors with at most this many ratings')
+  .option('--minAge <days>', 'Skip authors whose stats were last updated within this many days (default 0 = scrape everything)')
+  .action(async (options) => {
+    try {
+      await runAuthorRescan(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run author rescan:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-one <urlOrSlug>')
+  .description('Scrape the overall stats (avg rating, ratings, reviews, shelves) for a single author page and update the author cache. Accepts a full author URL, a slug like 14018357.Steve_the_Noob, or a numeric author ID')
+  .action(async (urlOrSlug) => {
+    try {
+      await runAuthorOne(urlOrSlug);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to update single author:'), (error as any).message);
     }
   });
 
