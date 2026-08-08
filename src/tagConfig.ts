@@ -15,6 +15,9 @@ export interface AuditCriteria {
   minTags?: number;
   minAvg?: number;
   maxAvg?: number;
+  titleRegex?: string;
+  authorLastRegex?: string;
+  authorFirstRegex?: string;
 }
 
 export interface ListEntry {

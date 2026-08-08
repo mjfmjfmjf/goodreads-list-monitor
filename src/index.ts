@@ -20,6 +20,8 @@ import { runAuthorTopStats } from './authorTopStats.js';
 import { runAuthorRescan } from './authorRescan.js';
 import { runAuthorOne } from './authorOne.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
+import { runBooks } from './books.js';
+import { runLibraryQuery } from './library.js';
 import { loadState, saveState, loadConfig } from './storage.js';
 
 const program = new Command();
@@ -27,7 +29,8 @@ const program = new Command();
 program
   .name('goodreads-monitor')
   .description('Monitor Goodreads Listopia lists for new additions')
-  .version('1.0.0');
+  .version('1.0.0')
+  .showHelpAfterError();
 
 program
   .command('summary-year')
@@ -110,6 +113,11 @@ program
 program
   .command('author-top-books <n>')
   .description('For the top N books by ratings (from the book cache, filtered by ratings range), scrape each distinct author once to capture their overall stats (avg rating, ratings, reviews, shelves) into the author cache')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-top-books -- 100
+  $ npm run author-top-books -- 100 --minRatings 100000 --maxRatings 500000
+  $ ./authorTopBooks.sh 100 --skip`)
   .option('--minRatings <number>', 'Only consider books with at least this many ratings')
   .option('--maxRatings <number>', 'Only consider books with at most this many ratings')
   .option('--skip', 'Skip authors whose stats are already captured in the author cache')
@@ -129,6 +137,11 @@ program
 program
   .command('author-rescan')
   .description('Re-scrape the author page for each author matching the reader criteria (--limit/--sortBy/--minRatings/--maxRatings) to refresh their stats in the author cache')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-rescan -- --limit 50
+  $ npm run author-rescan -- --sortBy averageRating --minRatings 100000 --limit 10
+  $ ./authorRescan.sh --limit 10 --sortBy averageRating --minRatings 100000`)
   .option('--limit <number>', 'Number of authors to refresh (default 100)', '100')
   .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default numRatings)', 'numRatings')
   .option('--minRatings <number>', 'Only consider authors with at least this many ratings')
@@ -145,6 +158,11 @@ program
 program
   .command('author-one <urlOrSlug>')
   .description('Scrape the overall stats (avg rating, ratings, reviews, shelves) for a single author page and update the author cache. Accepts a full author URL, a slug like 14018357.Steve_the_Noob, or a numeric author ID')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-one -- 14018357.Steve_the_Noob
+  $ npm run author-one -- https://www.goodreads.com/author/show/14018357.Steve_the_Noob
+  $ ./authorOne.sh 14018357.Steve_the_Noob`)
   .action(async (urlOrSlug) => {
     try {
       await runAuthorOne(urlOrSlug);
@@ -156,6 +174,12 @@ program
 program
   .command('author-top-stats')
   .description('List top authors from the author cache by a chosen stat (number of ratings, average rating, number of reviews, or number of shelves)')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-top-stats -- --limit 10
+  $ npm run author-top-stats -- --sortBy averageRating --limit 20
+  $ npm run author-top-stats -- --sortBy averageRating --minRatings 100000 --limit 10
+  $ ./authorTopStats.sh --sortBy averageRating --minRatings 100000`)
   .option('--limit <number>', 'Number of authors to return (default 100)', '100')
   .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default numRatings)', 'numRatings')
   .option('--minRatings <number>', 'Only include authors with at least this many ratings')
@@ -165,6 +189,67 @@ program
       await runAuthorTopStats(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate author stats summary:'), (error as any).message);
+    }
+  });
+
+program
+  .command('books [pattern]')
+  .description('Search the book cache by regex against title, first author\'s last name, or first author\'s first name. Patterns are case-insensitive regexes (e.g. "^j" matches titles starting with j). A bare [pattern] applies to the title.')
+  .addHelpText('after', `
+Examples:
+  $ npm run books -- '^j'
+  $ npm run books -- --title '^[jqx]'
+  $ npm run books -- --authorLast '^sanderson'
+  $ npm run books -- --authorFirst '^brandon' --sort year
+  $ npm run books -- --title 'space' --sort avgRating --minRatings 1000 --limit 50
+  $ npm run books -- '^j' --excludeReviewed          # uses cached library import
+  $ npm run books -- '^j' --excludeReviewed --export ~/Downloads/goodreads_library_export.csv  # refresh cached import
+  $ npm run books -- --import ~/Downloads/goodreads_library_export.csv   # import + validate + cache
+  $ ./books.sh --authorLast '^s' --limit 20`)
+  .option('--title <regex>', 'Match title against this regex')
+  .option('--authorLast <regex>', 'Match first author\'s last name against this regex')
+  .option('--authorFirst <regex>', 'Match first author\'s first name against this regex')
+  .option('--sort <field>', 'Sort by: ratings, avgRating, year, title, author (default ratings)', 'ratings')
+  .option('--limit <number>', 'Maximum number of books to show (default 100)', '100')
+  .option('--minRatings <number>', 'Only include books with at least this many ratings')
+  .option('--maxRatings <number>', 'Only include books with at most this many ratings')
+  .option('--minYear <year>', 'Only include books published in or after this year')
+  .option('--maxYear <year>', 'Only include books published in or before this year')
+  .option('--asc', 'Sort ascending (default: descending for numeric fields, ascending for title/author)')
+  .option('--desc', 'Sort descending')
+  .option('--includeBad', 'Include books previously marked as bad (repeated fetch failures)')
+  .option('--excludeReviewed', 'Exclude books already reviewed in your Goodreads library export (uses cached import; pass --export/--import to refresh)')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (pattern, options) => {
+    try {
+      await runBooks({ ...options, pattern, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to search books:'), (error as any).message);
+    }
+  });
+
+program
+  .command('library <query>')
+  .description('Run custom queries over your imported Goodreads library export (uses the cached import; pass --export/--import to refresh). Queries: by-char, published-year, missing.')
+  .addHelpText('after', `
+Examples:
+  $ npm run library -- by-char --year 2024
+  $ npm run library -- by-char --year 2024 --field authorLast
+  $ npm run library -- by-char --year 2024 --field authorFirst
+  $ npm run library -- published-year --year 2024
+  $ npm run library -- missing --year 2024
+  $ npm run library -- by-char --year 2024 --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
+  $ ./library.sh by-char --year 2024 --field authorLast`)
+  .option('--year <year>', 'Year to filter by (e.g. 2024)')
+  .option('--field <field>', 'Character to bucket by: title (default), authorLast, authorFirst')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (query, options) => {
+    try {
+      await runLibraryQuery(query, { ...options, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run library query:'), (error as any).message);
     }
   });
 
@@ -269,25 +354,35 @@ program
 
 program
   .command('audit <listId>')
-  .description('Audit a list for books that do not meet criteria (Ratings OR Year mode)')
+  .description('Audit a list for books that do not meet criteria (Ratings OR Year OR Avg Rating OR Regex mode)')
+  .addHelpText('after', `
+Examples:
+  $ npm run audit -- 1234 --min 1000
+  $ npm run audit -- 1234 --titleRegex '^j'
+  $ npm run audit -- 1234 --authorLastRegex '^sanderson' --maxYear 1999
+  $ ./bulkAudit.sh  # reads regex criteria from bulkAuditConfig.json`)
   .option('--min <number>', 'Minimum number of ratings allowed (e.g., 1000)')
   .option('--max <number>', 'Maximum number of ratings allowed (e.g., 50000)')
   .option('--minYear <year>', 'Minimum publishing year allowed (e.g., 2010)')
   .option('--maxYear <year>', 'Maximum publishing year allowed (e.g., 2024)')
   .option('--minAvg <number>', 'Minimum average rating (e.g., 4.0)')
   .option('--maxAvg <number>', 'Maximum average rating (e.g., 5.0)')
+  .option('--titleRegex <regex>', 'Flag books whose title does NOT match this regex (case-insensitive)')
+  .option('--authorLastRegex <regex>', 'Flag books whose first author\'s last name does NOT match this regex')
+  .option('--authorFirstRegex <regex>', 'Flag books whose first author\'s first name does NOT match this regex')
   .action(async (listId, options) => {
     const hasRatings = options.min !== undefined || options.max !== undefined;
     const hasYear = options.minYear !== undefined || options.maxYear !== undefined;
     const hasAvg = options.minAvg !== undefined || options.maxAvg !== undefined;
+    const hasRegex = options.titleRegex !== undefined || options.authorLastRegex !== undefined || options.authorFirstRegex !== undefined;
 
     if (hasRatings && hasYear) {
       console.error(chalk.red.bold('Error: You can audit by ratings OR publishing year, but not both at the same time.'));
       process.exit(1);
     }
 
-    if (!hasRatings && !hasYear && !hasAvg) {
-      console.error(chalk.red.bold('Error: You must provide at least one criteria (e.g., --min, --minYear, or --minAvg).'));
+    if (!hasRatings && !hasYear && !hasAvg && !hasRegex) {
+      console.error(chalk.red.bold('Error: You must provide at least one criteria (e.g., --min, --minYear, --minAvg, or --titleRegex).'));
       process.exit(1);
     }
 

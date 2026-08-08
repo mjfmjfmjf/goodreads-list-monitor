@@ -5,6 +5,7 @@ import { scrapeListBooks } from './scraper.js';
 import { loadBookCache, CachedBook } from './storage.js';
 import { ListEntry } from './tagConfig.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
+import { matchesRegex } from './bookMatch.js';
 
 const AUDIT_REPORT = path.join(process.cwd(), 'auditReport.txt');
 const DEFAULT_BULK_CONFIG_FILE = path.join(process.cwd(), 'bulkAuditConfig.json');
@@ -119,6 +120,14 @@ export async function runQueueDiscovery(
       if (minYear > 0 || maxYear < Infinity) {
         if (bookYear === null || bookYear < minYear || bookYear > maxYear) return false;
       }
+
+      // Regex check
+      const regexCriterion = {
+        titleRegex: criteria.titleRegex,
+        authorLastRegex: criteria.authorLastRegex,
+        authorFirstRegex: criteria.authorFirstRegex
+      };
+      if (!matchesRegex(book, regexCriterion)) return false;
 
       return true;
     });

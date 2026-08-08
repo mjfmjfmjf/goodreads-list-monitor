@@ -9,6 +9,7 @@ npm-debug.log*
 # Large data/cache files
 authorsCache.json
 booksCache.json
+libraryExportCache.json
 auditReport.txt
 state.json*
 shelf.html

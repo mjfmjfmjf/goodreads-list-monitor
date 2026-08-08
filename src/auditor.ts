@@ -4,6 +4,7 @@ import path from 'path';
 import { scrapeListBooks, scrapeBookDetails, scrapeShelfBooks } from './scraper.js';
 import { loadState, saveState, loadBookCache, saveBookCache, syncBooksToCache } from './storage.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
+import { RegexCriterion, matchesRegex } from './bookMatch.js';
 
 const AUDIT_REPORT = path.join(process.cwd(), 'auditReport.txt');
 
@@ -16,6 +17,9 @@ export interface AuditOptions {
   minTags?: string;
   minAvg?: string;
   maxAvg?: string;
+  titleRegex?: string;
+  authorLastRegex?: string;
+  authorFirstRegex?: string;
 }
 
 /**
@@ -191,6 +195,16 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
   const minAvg = options.minAvg ? parseFloat(options.minAvg) : 0;
   const maxAvg = options.maxAvg ? parseFloat(options.maxAvg) : Infinity;
 
+  const regexCriterion: RegexCriterion = {
+    titleRegex: options.titleRegex,
+    authorLastRegex: options.authorLastRegex,
+    authorFirstRegex: options.authorFirstRegex
+  };
+  const isRegexAudit = !!(regexCriterion.titleRegex || regexCriterion.authorLastRegex || regexCriterion.authorFirstRegex);
+  for (const pattern of [regexCriterion.titleRegex, regexCriterion.authorLastRegex, regexCriterion.authorFirstRegex]) {
+    if (pattern) new RegExp(pattern, 'i');
+  }
+
   const isYearAudit = minYear > 0 || maxYear < Infinity;
   const isRatingsAudit = minRatings > 0 || maxRatings < Infinity;
   const isAvgAudit = minAvg > 0 || maxAvg < Infinity;
@@ -199,7 +213,14 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
   if (isYearAudit) console.log(chalk.gray(`   - Year Criteria: ${minYear} to ${maxYear === Infinity ? 'Any' : maxYear}`));
   if (isRatingsAudit) console.log(chalk.gray(`   - Ratings Criteria: ${minRatings} to ${maxRatings === Infinity ? 'Any' : maxRatings}`));
   if (isAvgAudit) console.log(chalk.gray(`   - Avg Rating Criteria: ${minAvg} to ${maxAvg === Infinity ? 'Any' : maxAvg}`));
-  if (!isYearAudit && !isRatingsAudit && !isAvgAudit) console.log(chalk.gray(`   - Mode: Harvesting metadata only`));
+  if (isRegexAudit) {
+    const parts: string[] = [];
+    if (regexCriterion.titleRegex) parts.push(`Title: /${regexCriterion.titleRegex}/`);
+    if (regexCriterion.authorLastRegex) parts.push(`Author Last: /${regexCriterion.authorLastRegex}/`);
+    if (regexCriterion.authorFirstRegex) parts.push(`Author First: /${regexCriterion.authorFirstRegex}/`);
+    console.log(chalk.gray(`   - Regex Criteria: ${parts.join(', ')}`));
+  }
+  if (!isYearAudit && !isRatingsAudit && !isAvgAudit && !isRegexAudit) console.log(chalk.gray(`   - Mode: Harvesting metadata only`));
 
   try {
     const listBooks = await scrapeListBooks(listId);
@@ -212,6 +233,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
     const tooLateYears: string[] = [];
     const tooLowAvg: string[] = [];
     const tooHighAvg: string[] = [];
+    const regexMismatch: string[] = [];
 
     // Pre-index cache by normalized title for year lookups
     const titleCache: Record<string, string> = {};
@@ -332,6 +354,16 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
           }
         }
       }
+
+      // 4. REGEX CHECK
+      if (isRegexAudit && !matchesRegex(book, regexCriterion)) {
+        const bookLink = formatBookLink(book.title, book.id);
+        const authorStr = book.author ? ` by ${book.author}` : '';
+        console.log(chalk.red.bold(`   ❌ OUTLIER: [REGEX MISMATCH] ${bookLink}${authorStr} (Pos: ${book.position})`));
+        await appendToAuditReport(listTitle, `[REGEX MISMATCH] ${book.title}${authorStr} [ID: ${book.id}]`);
+        outliersFound++;
+        regexMismatch.push(bookLink);
+      }
     }
 
     await saveBookCache(bookCache);
@@ -343,6 +375,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
     if (tooLateYears.length > 0) console.log(chalk.red.bold(`\n❌ Too late: ${tooLateYears.join(' and ')}`));
     if (tooLowAvg.length > 0) console.log(chalk.red.bold(`\n❌ Below avg rating threshold: ${tooLowAvg.join(' and ')}`));
     if (tooHighAvg.length > 0) console.log(chalk.red.bold(`\n❌ Above avg rating threshold: ${tooHighAvg.join(' and ')}`));
+    if (regexMismatch.length > 0) console.log(chalk.red.bold(`\n❌ Regex mismatch: ${regexMismatch.join(' and ')}`));
 
     reportAuditSummary(outliersFound, listBooks.length);
   } catch (error) {

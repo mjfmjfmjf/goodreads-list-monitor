@@ -29,6 +29,9 @@ export async function runBulkAudit(customConfigFile?: string): Promise<void> {
     if (maxYear !== undefined) auditOptions.maxYear = maxYear.toString();
     if (minAvg !== undefined) auditOptions.minAvg = minAvg.toString();
     if (maxAvg !== undefined) auditOptions.maxAvg = maxAvg.toString();
+    auditOptions.titleRegex = list.criteria.titleRegex;
+    auditOptions.authorLastRegex = list.criteria.authorLastRegex;
+    auditOptions.authorFirstRegex = list.criteria.authorFirstRegex;
 
     await runAudit(list.id, auditOptions);
   }
