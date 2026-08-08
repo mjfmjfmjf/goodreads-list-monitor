@@ -161,7 +161,7 @@ npm run author-one -- [url-or-slug]
 Scrapes the stats for one author, e.g. `https://www.goodreads.com/author/show/14018357.Steve_the_Noob` (or the slug/ID), and updates `authorsCache.json` — creating the entry if it doesn't exist yet.
 
 ### 8. Library Queries
-Run custom queries over your imported Goodreads library export (the same cached import used by `books --excludeReviewed`). `libraryExportCache.json` keeps every parsed entry (`id, title, author, shelf, dateRead, hasReview`), so queries never touch the CSV again until you refresh with `--export`. Convenient wrapper: `./library.sh`.
+Run custom queries over your imported Goodreads library export (the same cached import used by `books --excludeReviewed`). `libraryExportCache.json` keeps every parsed entry (`id, title, author, shelf, dateRead, hasReview, published, myRating, pages`), so queries never touch the CSV again until you refresh with `--export`. Convenient wrapper: `./library.sh`.
 
 ```bash
 ./library.sh by-char --year 2024                    # books read + reviewed (review text) in 2024, by first letter of title
@@ -172,6 +172,29 @@ Run custom queries over your imported Goodreads library export (the same cached 
 ./library.sh by-char --year 2020 --export ~/Downloads/goodreads_library_export.csv   # refresh the cache first
 ```
 Each query requires `--year <YYYY>`; a book counts if it's on the `read` shelf **and** has review text, attributed to a year via `Date Read`. `by-char` supports `--field title` (default), `authorLast`, or `authorFirst` (first author, same name-splitting as `books`); all 26 letters always print (zero counts included), plus `#` for non-alphabetic when non-zero. `published-year` shows only non-zero publication years, oldest first, with `Unknown` (missing/unparseable year) last. `missing` reports, for all three char fields, the letters A–Z with zero books, plus publication years 1961–N (where N is the later of the review year and the newest publication year seen) with zero books. `--import` is an alias for `--export`.
+
+**Fill gaps from a shelf** (same missing-audit buckets, but found from a live Goodreads shelf):
+```bash
+./tag-gaps.sh picture-books                       # most recent review year, scans 25 shelf pages, 3 per dimension
+./tag-gaps.sh picture-books --year 2026 --pages 25 --limit 3
+./tag-gaps.sh non-fiction --year 2026 --pages 1 --limit 3
+```
+Scans `https://www.goodreads.com/shelf/show/<tag>` page-by-page (reusing `scrapeShelfBooks`) and, in shelf order, reports up to `--limit` (default 3) books **per missing bucket** — each missing title / author first name / author last name letter and each missing publication year — that aren't already in your reviewed library. `--pages` defaults to 25, `--year` defaults to the most recent year with reviews.
+
+**Next unreviewed books from a shelf** (no gap logic — just what's next):
+```bash
+./next-books.sh picture-books --limit 10           # next 10 picture books you haven't reviewed
+./next-books.sh non-fiction --pages 25 --limit 10
+```
+Scans the same shelf and lists the first `--limit` (default 10) books in shelf order that aren't in your reviewed library, skipping already-reviewed ones. `--pages` defaults to 25; `--minTags` and `--export`/`--import` also supported.
+
+**Year in Books** (a better version of https://www.goodreads.com/user/year_in_books — text only, no covers):
+```bash
+./year-in-books.sh                 # most recent review year
+./year-in-books.sh 2026            # a specific year
+./year-in-books.sh 2026 --export ~/Downloads/goodreads_library_export.csv   # refresh the cache first
+```
+Same book set as the queries above (read shelf + review text, year from `Date Read`). Sections: **Reading stats** (books read, pages read with a note if any books lack page counts, shortest & longest book, mean & median page length), **Ratings** (non-zero star histogram + average rating, from the export's `My Rating`), **Distribution** (first-letter A–Z counts for title / author last name / author first name plus publication-year counts — each letter and publication year also shows the first book that met it that year, and each block lists its missing letters/years), and **Five-star books** (every book rated 5, as an id link with `Year`, `Ratings`, `Avg` pulled from `booksCache.json` when present, else `N/A` — no live fetching; Goodreads locks the API down after a few lookups, so missing cache entries are just left blank). Page counts come from the export's `Number of Pages`; books without page counts are excluded from shortest/longest/mean/median and noted in the stats.
 
 ## Files
 - `state.json`: Stores your monitored lists and their book counts.

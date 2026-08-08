@@ -151,4 +151,29 @@ One-shot zero-value audit for a review year.
 - Refactored `library.ts`: shared `reviewedInYear` filter + `charCounts`/`publishedCounts` helpers now power `by-char`, `published-year`, and `missing` (registry: `by-char`, `published-year`, `missing`).
 - `missing --year N`: for each of `title`/`authorLast`/`authorFirst`, lists the A–Z letters with 0 books; then lists publication years `1961–N` (upper = max(review year, newest publication year seen)) with 0 books. Same read+review-text filter as other queries.
 - Verified live: 2024 (537 books) → title: none, authorLast: none, authorFirst: O,Q,X,Z, pub years 1961-2024 → 13 missing (1961, 1963, 1964, 1965, 1966, 1968, 1969, 1972, 1973, 1978, 1979, 1980, 1985). Cross-checked vs `by-char` (O/Q/X/Z all 0); 2026 → title X missing, authorFirst H,U,X,Y, 30 missing pub years. Docs: README section 8, `library.sh`.
+
+## Part 11 — `tag-gaps` shelf gap filler (2026-08-08)
+
+Find live Goodreads shelf books that fill the per-year missing audit buckets.
+
+- `library.ts`: exported `parseYear`, `reviewedInYear`, `charCounts`, `publishedCounts`, `missingLetters`, `firstCharBucket` for reuse.
+- New `tag-gaps <shelfTag>` command (`src/tagGaps.ts`, `tag-gaps.sh`, `tag-gaps` npm script): scans `shelf/show/<tag>` via `scrapeShelfBooks(tag, minTags, pages)` (default 25 pages) and reports up to `--limit` (default 3) books **per missing bucket** (each missing title / authorFirst / authorLast letter, each missing publication year) for the audit year (`--year`, default = most recent year with reviews). Already-reviewed books (id + normalized title/author, `matchesReviewed`) are skipped and counted; scan stops early only when every bucket is full.
+- Verified live: `picture-books` 2026 → 0 candidates (398/400 reviewed, remaining 2 hit no gaps); 2024 → 0 in top 150. `non-fiction` 2026 page 1 → Homo Deus fills authorFirst "Y", A Brief History of Time fills pub "1988"; title/authorLast no-gap/zero-found paths render. Docs: README section 8, `tag-gaps.sh`.
+
+## Part 12 — `next-books` shelf scan (2026-08-08)
+
+`tag-gaps` without the gap logic: next N unreviewed books on a shelf.
+
+- `library.ts`: `getLibrary` exported (was duplicated in `tagGaps.ts`, now shared).
+- New `next-books <shelfTag>` command (`src/nextBooks.ts`, `next-books.sh`, `next-books` npm script): `scrapeShelfBooks(tag, minTags, pages)` (default 25 pages), skips `matchesReviewed` books, lists first `--limit` (default 10) in shelf order with ratings/avg/pub.
+- Verified live: `picture-books --limit 3 --pages 3` → 1 unreviewed in 150 (Officer Buckle and Gloria, 149 skipped); `non-fiction --limit 3 --pages 1` → Atomic Habits, A Brief History of Time, The Power of Habit (35 skipped). Docs: README section 8, `next-books.sh`.
 - Docs: README section 8, `library.sh` usage.
+
+## Part 13 — `year-in-books` (2026-08-08)
+
+A better "Year in Books" — text summaries only, no covers. Also bumped the library cache to v4.
+
+- `libraryExport.ts`: `LibraryEntry` now stores `myRating` and `pages` (raw CSV `My Rating` / `Number of Pages`); `REQUIRED_COLUMNS` extended; `CACHE_VERSION 3 → 4` (old cache goes stale → one `--export` rebuild).
+- `library.ts`: exported `CharField`, `mostRecentReviewYear`, `pubYearUpper`, `missingPubYears`, and low-level renderers `renderCharCountLines` / `renderPublishedYearLines` / `renderMissingLines`; `by-char`/`published-year`/`missing` now render through them (output byte-identical). `tagGaps.ts` de-duped onto the shared `mostRecentReviewYear`/`missingPubYears`.
+- New `year-in-books [year]` command (`src/yearInBooks.ts`, `year-in-books.sh`, `year-in-books` npm script): section registry (`stats`, `ratings`, `distribution`, `five-star`) so more sections can be appended later. Same read+review+`Date Read` book set as the library queries; default year = most recent review year. Sections: reading stats (pages read with no-page-count note, shortest/longest, mean/median), ratings (non-zero star histogram + average, `parseRating` treats `0`/empty as unrated), distribution (A–Z counts + missing summary per field, publication-year counts + missing years — with separators before each new block and the first book that met each letter/year shown inline), and the five-star list (id link + `Year`/`Ratings`/`Avg` from `booksCache.json` when present, else `N/A` — **no live fetching**; a one-off `scrapeBookBySearch` fallback was removed at user request because Goodreads locks the API down after a few lookups).
+- Verified live (2026, 227 books): 45,694 pages (2 without page counts), shortest The Time Traveler's Passport Collection 7p / longest This Inevitable Ruin 870p, mean 203 / median 174, avg 3.46, hist 19/88/100/19/1, 19 five-star books. Empty year (1990) and default-year paths render cleanly; `library missing` output still matches. Docs: README section 8, `year-in-books.sh`.

@@ -10,7 +10,7 @@ export interface LibraryQueryOptions {
 
 const QUERIES = ['by-char', 'published-year', 'missing'];
 const FIELDS = ['title', 'authorLast', 'authorFirst'] as const;
-type CharField = typeof FIELDS[number];
+export type CharField = typeof FIELDS[number];
 
 const FIELD_LABELS: Record<CharField, string> = {
   title: 'title',
@@ -26,7 +26,7 @@ const CHAR_LABELS: Record<CharField, string> = {
 
 const ALPHABET = Array.from({ length: 26 }, (_, i) => String.fromCharCode('A'.charCodeAt(0) + i));
 
-function firstCharBucket(value: string): string {
+export function firstCharBucket(value: string): string {
   const c = value.trim().charAt(0).toUpperCase();
   return /[A-Z]/.test(c) ? c : '#';
 }
@@ -39,26 +39,30 @@ function fieldValue(entry: LibraryEntry, field: CharField): string {
   return field === 'authorLast' ? last : first;
 }
 
-function parseYear(value: string): string | null {
+export function charBucket(entry: LibraryEntry, field: CharField): string {
+  return firstCharBucket(fieldValue(entry, field));
+}
+
+export function parseYear(value: string): string | null {
   const m = value.trim().match(/^(\d{4})/);
   return m ? m[1] : null;
 }
 
-function reviewedInYear(library: LibraryExport, year: string): LibraryEntry[] {
+export function reviewedInYear(library: LibraryExport, year: string): LibraryEntry[] {
   const prefix = `${year}/`;
   return library.entries.filter(e => e.shelf === 'read' && e.hasReview && e.dateRead.startsWith(prefix));
 }
 
-function charCounts(entries: LibraryEntry[], field: CharField): Map<string, number> {
+export function charCounts(entries: LibraryEntry[], field: CharField): Map<string, number> {
   const counts = new Map<string, number>();
   for (const entry of entries) {
-    const bucket = firstCharBucket(fieldValue(entry, field));
+    const bucket = charBucket(entry, field);
     counts.set(bucket, (counts.get(bucket) || 0) + 1);
   }
   return counts;
 }
 
-function publishedCounts(entries: LibraryEntry[]): Map<string, number> {
+export function publishedCounts(entries: LibraryEntry[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const entry of entries) {
     const bucket = parseYear(entry.published) ?? 'Unknown';
@@ -67,11 +71,87 @@ function publishedCounts(entries: LibraryEntry[]): Map<string, number> {
   return counts;
 }
 
+export function missingLetters(counts: Map<string, number>): string[] {
+  return ALPHABET.filter(letter => !counts.get(letter));
+}
+
+export function mostRecentReviewYear(library: LibraryExport): string {
+  let maxYear = 0;
+  for (const entry of library.entries) {
+    const y = parseInt(entry.dateRead.slice(0, 4), 10);
+    if (!isNaN(y) && y > maxYear) maxYear = y;
+  }
+  return String(maxYear);
+}
+
+export function pubYearUpper(counts: Map<string, number>, reviewYear: number): number {
+  let upper = reviewYear;
+  for (const key of counts.keys()) {
+    if (key !== 'Unknown') upper = Math.max(upper, parseInt(key, 10));
+  }
+  return upper;
+}
+
+export function missingPubYears(counts: Map<string, number>, reviewYear: number): string[] {
+  const upper = pubYearUpper(counts, reviewYear);
+  const missing: string[] = [];
+  for (let y = 1961; y <= upper; y++) {
+    if (!counts.get(String(y))) missing.push(String(y));
+  }
+  return missing;
+}
+
+export function renderCharCountLines(entries: LibraryEntry[], field: CharField, firstExample?: (bucket: string) => string): string[] {
+  const counts = charCounts(entries, field);
+  const lines: string[] = [];
+  for (const letter of ALPHABET) {
+    let line = `   ${chalk.white(letter)}: ${(counts.get(letter) || 0).toLocaleString()}`;
+    if (firstExample && counts.get(letter)) line += firstExample(letter);
+    lines.push(line);
+  }
+  const hashCount = counts.get('#') || 0;
+  if (hashCount > 0) {
+    let line = `   ${chalk.white('#')}: ${hashCount.toLocaleString()}`;
+    if (firstExample) line += firstExample('#');
+    lines.push(line);
+  }
+  return lines;
+}
+
+export function renderPublishedYearLines(entries: LibraryEntry[], firstExample?: (pubYear: string) => string): string[] {
+  const counts = publishedCounts(entries);
+  const years = Array.from(counts.keys()).sort((a, b) => {
+    if (a === 'Unknown') return 1;
+    if (b === 'Unknown') return -1;
+    return parseInt(a, 10) - parseInt(b, 10);
+  });
+  return years.map(pubYear => {
+    let line = `   ${chalk.white(pubYear)}: ${(counts.get(pubYear) || 0).toLocaleString()}`;
+    if (firstExample) line += firstExample(pubYear);
+    return line;
+  });
+}
+
+export function renderMissingLines(entries: LibraryEntry[], year: string): string[] {
+  const lines: string[] = [];
+  for (const field of FIELDS) {
+    const missing = missingLetters(charCounts(entries, field));
+    const value = missing.length ? missing.join(', ') : '—';
+    lines.push(`   ${chalk.white(CHAR_LABELS[field])} (${missing.length} missing): ${chalk.yellow(value)}`);
+  }
+  const counts = publishedCounts(entries);
+  const upper = pubYearUpper(counts, parseInt(year, 10));
+  const missingYears = missingPubYears(counts, parseInt(year, 10));
+  const yearsText = missingYears.length ? missingYears.join(', ') : '—';
+  lines.push(`   ${chalk.white(`Publication years 1961-${upper}`)} (${missingYears.length} missing): ${chalk.yellow(yearsText)}`);
+  return lines;
+}
+
 function printDivider(): void {
   console.log(chalk.gray('------------------------------------------'));
 }
 
-async function getLibrary(options: { export?: string }): Promise<LibraryExport> {
+export async function getLibrary(options: { export?: string }): Promise<LibraryExport> {
   if (options.export) return loadLibraryExport(options.export);
   const library = await loadLibraryExportCache();
   if (!library) {
@@ -82,42 +162,24 @@ async function getLibrary(options: { export?: string }): Promise<LibraryExport> 
 
 function runByChar(library: LibraryExport, year: string, field: CharField): void {
   const entries = reviewedInYear(library, year);
-  const counts = charCounts(entries, field);
 
   console.log(chalk.cyan.bold(`\n📚 Reviewed books in ${year} by first letter`));
   console.log(chalk.gray(`   Definition: read shelf + review text, year from Date Read, by ${FIELD_LABELS[field]}`));
   printDivider();
-  for (const letter of ALPHABET) {
-    console.log(`   ${chalk.white(letter)}: ${(counts.get(letter) || 0).toLocaleString()}`);
-  }
-  const hashCount = counts.get('#') || 0;
-  if (hashCount > 0) console.log(`   ${chalk.white('#')}: ${hashCount.toLocaleString()}`);
+  for (const line of renderCharCountLines(entries, field)) console.log(line);
   printDivider();
   console.log(chalk.cyan(`Total: ${entries.length.toLocaleString()}\n`));
 }
 
 function runPublishedYear(library: LibraryExport, year: string): void {
   const entries = reviewedInYear(library, year);
-  const counts = publishedCounts(entries);
-
-  const years = Array.from(counts.keys()).sort((a, b) => {
-    if (a === 'Unknown') return 1;
-    if (b === 'Unknown') return -1;
-    return parseInt(a, 10) - parseInt(b, 10);
-  });
 
   console.log(chalk.cyan.bold(`\n📚 Reviewed books in ${year} by publication year`));
   console.log(chalk.gray('   Definition: read shelf + review text, year from Date Read, publication year from Year Published'));
   printDivider();
-  for (const pubYear of years) {
-    console.log(`   ${chalk.white(pubYear)}: ${(counts.get(pubYear) || 0).toLocaleString()}`);
-  }
+  for (const line of renderPublishedYearLines(entries)) console.log(line);
   printDivider();
   console.log(chalk.cyan(`Total: ${entries.length.toLocaleString()}\n`));
-}
-
-function missingLetters(counts: Map<string, number>): string[] {
-  return ALPHABET.filter(letter => !counts.get(letter));
 }
 
 function runMissing(library: LibraryExport, year: string): void {
@@ -127,27 +189,7 @@ function runMissing(library: LibraryExport, year: string): void {
   console.log(chalk.gray('   Definition: read shelf + review text, year from Date Read'));
   printDivider();
 
-  for (const field of FIELDS) {
-    const missing = missingLetters(charCounts(entries, field));
-    const value = missing.length ? missing.join(', ') : '—';
-    console.log(`   ${chalk.white(CHAR_LABELS[field])} (${missing.length} missing): ${chalk.yellow(value)}`);
-  }
-
-  const counts = publishedCounts(entries);
-  let maxPub = 0;
-  for (const key of counts.keys()) {
-    if (key !== 'Unknown') {
-      const n = parseInt(key, 10);
-      if (n > maxPub) maxPub = n;
-    }
-  }
-  const upper = Math.max(parseInt(year, 10), maxPub);
-  const missingYears: string[] = [];
-  for (let y = 1961; y <= upper; y++) {
-    if (!counts.get(String(y))) missingYears.push(String(y));
-  }
-  const yearsText = missingYears.length ? missingYears.join(', ') : '—';
-  console.log(`   ${chalk.white(`Publication years 1961-${upper}`)} (${missingYears.length} missing): ${chalk.yellow(yearsText)}`);
+  for (const line of renderMissingLines(entries, year)) console.log(line);
 
   printDivider();
   console.log('');

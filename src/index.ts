@@ -22,6 +22,9 @@ import { runAuthorOne } from './authorOne.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
 import { runBooks } from './books.js';
 import { runLibraryQuery } from './library.js';
+import { runYearInBooks } from './yearInBooks.js';
+import { runTagGaps } from './tagGaps.js';
+import { runNextBooks } from './nextBooks.js';
 import { loadState, saveState, loadConfig } from './storage.js';
 
 const program = new Command();
@@ -250,6 +253,67 @@ Examples:
       await runLibraryQuery(query, { ...options, export: options.export || options.import });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run library query:'), (error as any).message);
+    }
+  });
+
+program
+  .command('year-in-books [year]')
+  .description('Show a text "Year in Books" summary for a year (default: most recent review year): reading stats, ratings, distribution, and the five-star list. Uses the cached library import; pass --export/--import to refresh.')
+  .addHelpText('after', `
+Examples:
+  $ npm run year-in-books -- 2026
+  $ npm run year-in-books -- 2026 --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
+  $ ./year-in-books.sh 2026`)
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (year, options) => {
+    try {
+      await runYearInBooks({ ...options, year, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run year in books:'), (error as any).message);
+    }
+  });
+
+program
+  .command('tag-gaps <tag>')
+  .description('Scan a Goodreads shelf (e.g. picture-books) and list up to N books per "missing" review gap (title / author first name / author last name letters + publication years) for a year')
+  .addHelpText('after', `
+Examples:
+  $ npm run tag-gaps -- picture-books
+  $ npm run tag-gaps -- picture-books --year 2026 --pages 25 --limit 3
+  $ ./tag-gaps.sh picture-books --year 2026`)
+  .option('--pages <number>', 'Number of shelf pages to scan (default 25)', '25')
+  .option('--year <year>', 'Review year for the missing audit (default: most recent year with reviews)')
+  .option('--limit <number>', 'How many books to report per missing bucket (default 3)', '3')
+  .option('--minTags <number>', 'Minimum shelf tag count to include (default 0)', '0')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache first (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (tag, options) => {
+    try {
+      await runTagGaps(tag, { ...options, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to find tag gaps:'), (error as any).message);
+    }
+  });
+
+program
+  .command('next-books <tag>')
+  .description('Scan a Goodreads shelf (e.g. picture-books) and list the next N books you haven\'t reviewed yet')
+  .addHelpText('after', `
+Examples:
+  $ npm run next-books -- picture-books --limit 10
+  $ npm run next-books -- picture-books --pages 25 --limit 10
+  $ ./next-books.sh picture-books --limit 10`)
+  .option('--pages <number>', 'Number of shelf pages to scan (default 25)', '25')
+  .option('--limit <number>', 'How many unreviewed books to list (default 10)', '10')
+  .option('--minTags <number>', 'Minimum shelf tag count to include (default 0)', '0')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache first (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (tag, options) => {
+    try {
+      await runNextBooks(tag, { ...options, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to find next books:'), (error as any).message);
     }
   });
 

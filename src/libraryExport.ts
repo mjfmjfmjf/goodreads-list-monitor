@@ -3,10 +3,10 @@ import path from 'path';
 import chalk from 'chalk';
 import { normalizeTitle, normalizeAuthor } from './utils.js';
 
-const REQUIRED_COLUMNS = ['Book Id', 'Title', 'Author', 'Exclusive Shelf', 'Date Read', 'My Review'];
+const REQUIRED_COLUMNS = ['Book Id', 'Title', 'Author', 'Exclusive Shelf', 'Date Read', 'My Review', 'My Rating', 'Number of Pages'];
 
 const CACHE_PATH = path.join(process.cwd(), 'libraryExportCache.json');
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 export interface LibraryEntry {
   id: string;
@@ -16,6 +16,8 @@ export interface LibraryEntry {
   dateRead: string;
   hasReview: boolean;
   published: string;
+  myRating: string;
+  pages: string;
 }
 
 export interface LibraryExport {
@@ -150,7 +152,9 @@ export async function loadLibraryExport(exportPath: string): Promise<LibraryExpo
       shelf: entry['Exclusive Shelf'],
       dateRead: dateRead.trim(),
       hasReview: !!(entry['My Review'] && entry['My Review'].trim()),
-      published: (entry['Year Published'] || '').trim()
+      published: (entry['Year Published'] || '').trim(),
+      myRating: (entry['My Rating'] || '').trim(),
+      pages: (entry['Number of Pages'] || '').trim()
     });
 
     if (isReviewedEntry(entry)) {
