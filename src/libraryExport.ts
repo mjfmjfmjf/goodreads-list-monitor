@@ -3,10 +3,17 @@ import path from 'path';
 import chalk from 'chalk';
 import { normalizeTitle, normalizeAuthor } from './utils.js';
 
-const REQUIRED_COLUMNS = ['Book Id', 'Title', 'Author', 'Exclusive Shelf', 'Date Read', 'My Review', 'My Rating', 'Number of Pages'];
+const REQUIRED_COLUMNS = ['Book Id', 'Title', 'Author', 'Exclusive Shelf', 'Date Read', 'My Review', 'My Rating', 'Number of Pages', 'Publisher', 'Bookshelves'];
 
-const CACHE_PATH = path.join(process.cwd(), 'libraryExportCache.json');
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 7;
+
+function cachePath(libraryName?: string): string {
+  if (!libraryName) return path.join(process.cwd(), 'libraryExportCache.json');
+  if (!/^[A-Za-z0-9._-]+$/.test(libraryName)) {
+    throw new Error(`Invalid --library name "${libraryName}". Use only letters, numbers, dots, dashes, and underscores.`);
+  }
+  return path.join(process.cwd(), `libraryExportCache.${libraryName}.json`);
+}
 
 export interface LibraryEntry {
   id: string;
@@ -15,9 +22,12 @@ export interface LibraryEntry {
   shelf: string;
   dateRead: string;
   hasReview: boolean;
+  review: string;
   published: string;
   myRating: string;
   pages: string;
+  publisher: string;
+  bookshelves: string;
 }
 
 export interface LibraryExport {
@@ -95,7 +105,7 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-export async function loadLibraryExport(exportPath: string): Promise<LibraryExport> {
+export async function loadLibraryExport(exportPath: string, libraryName?: string): Promise<LibraryExport> {
   const resolved = path.resolve(process.cwd(), exportPath);
   if (!(await fs.pathExists(resolved))) {
     throw new Error(`Library export file not found at: ${resolved}`);
@@ -145,16 +155,20 @@ export async function loadLibraryExport(exportPath: string): Promise<LibraryExpo
       }
     }
 
+    const review = (entry['My Review'] || '').trim();
     entries.push({
       id: entry['Book Id'],
       title: entry['Title'],
       author: entry['Author'],
       shelf: entry['Exclusive Shelf'],
       dateRead: dateRead.trim(),
-      hasReview: !!(entry['My Review'] && entry['My Review'].trim()),
+      hasReview: !!review,
+      review,
       published: (entry['Year Published'] || '').trim(),
       myRating: (entry['My Rating'] || '').trim(),
-      pages: (entry['Number of Pages'] || '').trim()
+      pages: (entry['Number of Pages'] || '').trim(),
+      publisher: (entry['Publisher'] || '').trim(),
+      bookshelves: (entry['Bookshelves'] || '').trim()
     });
 
     if (isReviewedEntry(entry)) {
@@ -179,11 +193,12 @@ export async function loadLibraryExport(exportPath: string): Promise<LibraryExpo
     reviewedByTitleAuthor,
     entries
   };
-  await saveLibraryExportCache(library);
+  await saveLibraryExportCache(library, libraryName);
   return library;
 }
 
-export async function saveLibraryExportCache(library: LibraryExport): Promise<void> {
+export async function saveLibraryExportCache(library: LibraryExport, libraryName?: string): Promise<void> {
+  const cacheFile = cachePath(libraryName);
   const payload = {
     version: CACHE_VERSION,
     sourcePath: library.sourcePath,
@@ -194,14 +209,16 @@ export async function saveLibraryExportCache(library: LibraryExport): Promise<vo
     reviewedByTitleAuthor: Array.from(library.reviewedByTitleAuthor),
     entries: library.entries
   };
-  await fs.writeJson(CACHE_PATH, payload, { spaces: 2 });
-  console.log(chalk.gray(`   Library export cached: ${path.basename(library.sourcePath)} (future --excludeReviewed runs won't need --export/--import)`));
+  await fs.writeJson(cacheFile, payload, { spaces: 2 });
+  const cachedName = path.basename(cacheFile);
+  console.log(chalk.gray(`   Library export cached: ${path.basename(library.sourcePath)} (${cachedName} — future --excludeReviewed runs won't need --export/--import)`));
 }
 
-export async function loadLibraryExportCache(): Promise<LibraryExport | null> {
-  if (!(await fs.pathExists(CACHE_PATH))) return null;
+export async function loadLibraryExportCache(libraryName?: string): Promise<LibraryExport | null> {
+  const cacheFile = cachePath(libraryName);
+  if (!(await fs.pathExists(cacheFile))) return null;
   try {
-    const payload = await fs.readJson(CACHE_PATH);
+    const payload = await fs.readJson(cacheFile);
     if (
       payload?.version !== CACHE_VERSION ||
       !payload.sourcePath ||
@@ -221,7 +238,7 @@ export async function loadLibraryExportCache(): Promise<LibraryExport | null> {
       cachedAt: payload.importedAt
     };
   } catch (error: any) {
-    console.log(chalk.yellow(`   ⚠️  Library export cache at ${CACHE_PATH} is ${error.message}. Run once with --export to rebuild it.`));
+    console.log(chalk.yellow(`   ⚠️  Library export cache at ${cacheFile} is ${error.message}. Run once with --export to rebuild it.`));
     return null;
   }
 }

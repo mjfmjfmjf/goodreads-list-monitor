@@ -6,6 +6,7 @@ export interface LibraryQueryOptions {
   year?: string;
   field?: string;
   export?: string;
+  library?: string;
 }
 
 const QUERIES = ['by-char', 'published-year', 'missing'];
@@ -51,6 +52,10 @@ export function parseYear(value: string): string | null {
 export function reviewedInYear(library: LibraryExport, year: string): LibraryEntry[] {
   const prefix = `${year}/`;
   return library.entries.filter(e => e.shelf === 'read' && e.hasReview && e.dateRead.startsWith(prefix));
+}
+
+export function reviewedAll(library: LibraryExport): LibraryEntry[] {
+  return library.entries.filter(e => e.shelf === 'read' && e.hasReview);
 }
 
 export function charCounts(entries: LibraryEntry[], field: CharField): Map<string, number> {
@@ -151,9 +156,9 @@ function printDivider(): void {
   console.log(chalk.gray('------------------------------------------'));
 }
 
-export async function getLibrary(options: { export?: string }): Promise<LibraryExport> {
-  if (options.export) return loadLibraryExport(options.export);
-  const library = await loadLibraryExportCache();
+export async function getLibrary(options: { export?: string; library?: string }): Promise<LibraryExport> {
+  if (options.export) return loadLibraryExport(options.export, options.library);
+  const library = await loadLibraryExportCache(options.library);
   if (!library) {
     throw new Error('No library export cache found. Run once with --export <path> (or --import <path>) to import + cache your Goodreads library export.');
   }

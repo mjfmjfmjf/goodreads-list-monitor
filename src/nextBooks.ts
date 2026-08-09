@@ -9,6 +9,7 @@ export interface NextBooksOptions {
   limit?: string;
   minTags?: string;
   export?: string;
+  library?: string;
 }
 
 export async function runNextBooks(tag: string, options: NextBooksOptions = {}): Promise<void> {

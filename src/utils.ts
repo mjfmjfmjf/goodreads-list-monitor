@@ -9,6 +9,8 @@ export async function delay(min = 100, max = 2000): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const STRICT_THROTTLE_MODE = (): boolean => process.env.GOODREADS_STRICT_THROTTLE === '1';
+
 export async function fetchWithRetry(url: string, config: AxiosRequestConfig, retries = 5): Promise<AxiosResponse> {
   let lastError: any;
   
@@ -26,6 +28,11 @@ export async function fetchWithRetry(url: string, config: AxiosRequestConfig, re
       
       // Treat 202 as a retryable error
       if (response.status === 202) {
+        // Strict mode (used by integration tests): give up immediately on
+        // throttling instead of burning time on backoff retries.
+        if (STRICT_THROTTLE_MODE()) {
+          throw new Error('Goodreads throttled (HTTP 202 interstitial) — strict mode, giving up immediately. Retry the suite after a cooldown.');
+        }
         throw { 
           response: response, 
           message: 'Received 202 (Accepted) interstitial',
@@ -41,6 +48,11 @@ export async function fetchWithRetry(url: string, config: AxiosRequestConfig, re
       if (status === 429) {
         console.log(chalk.red.bold(`   🛑 Rate limited (Status 429). Giving up to avoid further blocking.`));
         throw error;
+      }
+
+      // Anti-bot throttling (403) or 429 in strict mode: hard give up, no retry.
+      if (STRICT_THROTTLE_MODE() && (status === 403 || status === 429)) {
+        throw new Error(`Goodreads throttled (HTTP ${status}) — strict mode, giving up immediately. Retry the suite after a cooldown.`);
       }
 
       // Retry on 5xx (Server Errors), 202 interstitials, or timeouts

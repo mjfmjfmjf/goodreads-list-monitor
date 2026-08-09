@@ -11,6 +11,7 @@ export interface TagGapsOptions {
   limit?: string;
   minTags?: string;
   export?: string;
+  library?: string;
 }
 
 interface Candidate {

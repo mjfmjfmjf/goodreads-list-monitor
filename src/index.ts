@@ -23,6 +23,10 @@ import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
 import { runBooks } from './books.js';
 import { runLibraryQuery } from './library.js';
 import { runYearInBooks } from './yearInBooks.js';
+import { runLifeInBooks } from './lifeInBooks.js';
+import { runFavoriteAuthors } from './favoriteAuthors.js';
+import { runPublisherStats } from './publisherStats.js';
+import { runShelfStats } from './shelfStats.js';
 import { runTagGaps } from './tagGaps.js';
 import { runNextBooks } from './nextBooks.js';
 import { loadState, saveState, loadConfig } from './storage.js';
@@ -222,6 +226,7 @@ Examples:
   .option('--desc', 'Sort descending')
   .option('--includeBad', 'Include books previously marked as bad (repeated fetch failures)')
   .option('--excludeReviewed', 'Exclude books already reviewed in your Goodreads library export (uses cached import; pass --export/--import to refresh)')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
   .action(async (pattern, options) => {
@@ -243,9 +248,11 @@ Examples:
   $ npm run library -- published-year --year 2024
   $ npm run library -- missing --year 2024
   $ npm run library -- by-char --year 2024 --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
+  $ npm run year-in-books -- 2026 --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export
   $ ./library.sh by-char --year 2024 --field authorLast`)
   .option('--year <year>', 'Year to filter by (e.g. 2024)')
   .option('--field <field>', 'Character to bucket by: title (default), authorLast, authorFirst')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
   .action(async (query, options) => {
@@ -263,7 +270,9 @@ program
 Examples:
   $ npm run year-in-books -- 2026
   $ npm run year-in-books -- 2026 --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
+  $ npm run year-in-books -- 2026 --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export
   $ ./year-in-books.sh 2026`)
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
   .action(async (year, options) => {
@@ -271,6 +280,101 @@ Examples:
       await runYearInBooks({ ...options, year, export: options.export || options.import });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run year in books:'), (error as any).message);
+    }
+  });
+
+program
+  .command('life-in-books')
+  .description('Show a lifetime "Life in Books" summary across all your reviewed years: reading stats, ratings, year-by-year, favorite authors, publishers, and bookshelves. Uses the cached library import; pass --export/--import to refresh.')
+  .addHelpText('after', `
+Examples:
+  $ npm run life-in-books
+  $ npm run life-in-books --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
+  $ ./life-in-books.sh
+  $ npm run life-in-books -- --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export`)
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (options) => {
+    try {
+      await runLifeInBooks({ ...options, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run life in books:'), (error as any).message);
+    }
+  });
+
+program
+  .command('favorite-authors')
+  .description('Rank your favorite authors by your own star rating, from your read + rated books in the library export (grouped by first author, min book count + top N)')
+  .addHelpText('after', `
+Examples:
+  $ npm run favorite-authors -- --limit 10 --minBooks 3
+  $ npm run favorite-authors -- --sortBy books --limit 10
+  $ npm run favorite-authors -- --minBooks 5 --limit 20
+  $ ./favorite-authors.sh --limit 10 --minBooks 3
+  $ npm run favorite-authors -- --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
+  $ npm run favorite-authors -- --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export`)
+  .option('--limit <number>', 'Number of top authors to show (default 10)', '10')
+  .option('--minBooks <number>', 'Minimum number of rated books an author must have (default 3)', '3')
+  .option('--sortBy <field>', 'Sort by: avgRating (default) or books', 'avgRating')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (options) => {
+    try {
+      await runFavoriteAuthors({ ...options, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run favorite authors:'), (error as any).message);
+    }
+  });
+
+program
+  .command('publisher-stats')
+  .description('Rank your favorite publishers by your own star rating, from your read + rated books in the library export (grouped by publisher, min book count + top N)')
+  .addHelpText('after', `
+Examples:
+  $ npm run publisher-stats -- --limit 10 --minBooks 3
+  $ npm run publisher-stats -- --sortBy books --limit 10
+  $ npm run publisher-stats -- --minBooks 5 --limit 20
+  $ ./publisher-stats.sh --limit 10 --minBooks 3
+  $ npm run publisher-stats -- --books --sortBy avgRating --limit 3 --minBooks 10  # also list each publisher's books by your rating
+  $ npm run publisher-stats -- --export ~/Downloads/goodreads_library_export.csv  # refresh cache first`)
+  .option('--limit <number>', 'Number of top publishers to show (default 10)', '10')
+  .option('--minBooks <number>', 'Minimum number of rated books a publisher must have (default 3)', '3')
+  .option('--sortBy <field>', 'Sort by: avgRating (default) or books', 'avgRating')
+  .option('--books', 'Also list each publisher\'s books, ordered by your rating (descending)')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (options) => {
+    try {
+      await runPublisherStats({ ...options, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run publisher stats:'), (error as any).message);
+    }
+  });
+
+program
+  .command('shelf-stats')
+  .description('Show usage of your Bookshelves tags from the library export: per-shelf count and percentage of books, sorted by count (descending) or by shelf name')
+  .addHelpText('after', `
+Examples:
+  $ npm run shelf-stats -- --limit 20
+  $ npm run shelf-stats -- --sortBy name --limit 50
+  $ npm run shelf-stats -- --minCount 5 --limit 10
+  $ ./shelf-stats.sh --limit 20
+  $ npm run shelf-stats -- --export ~/Downloads/goodreads_library_export.csv  # refresh cache first`)
+  .option('--limit <number>', 'Number of top shelves to show (default 20)', '20')
+  .option('--sortBy <field>', 'Sort by: count (default, descending) or name', 'count')
+  .option('--minCount <number>', 'Minimum number of books a shelf must have to be shown (default 0)', '0')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (options) => {
+    try {
+      await runShelfStats({ ...options, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run shelf stats:'), (error as any).message);
     }
   });
 
@@ -286,6 +390,7 @@ Examples:
   .option('--year <year>', 'Review year for the missing audit (default: most recent year with reviews)')
   .option('--limit <number>', 'How many books to report per missing bucket (default 3)', '3')
   .option('--minTags <number>', 'Minimum shelf tag count to include (default 0)', '0')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache first (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
   .action(async (tag, options) => {
@@ -307,6 +412,7 @@ Examples:
   .option('--pages <number>', 'Number of shelf pages to scan (default 25)', '25')
   .option('--limit <number>', 'How many unreviewed books to list (default 10)', '10')
   .option('--minTags <number>', 'Minimum shelf tag count to include (default 0)', '0')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache first (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
   .action(async (tag, options) => {

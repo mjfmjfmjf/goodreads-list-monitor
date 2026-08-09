@@ -25,6 +25,10 @@
     "books": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts books",
     "library": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts library",
     "year-in-books": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts year-in-books",
+    "life-in-books": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts life-in-books",
+    "favorite-authors": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts favorite-authors",
+    "publisher-stats": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts publisher-stats",
+    "shelf-stats": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts shelf-stats",
     "tag-gaps": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-gaps",
     "next-books": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts next-books",
     "tag-audit": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-audit",
@@ -35,7 +39,9 @@
     "gen-bulk-config": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts gen-bulk-config",
     "bulk-audit": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts bulk-audit",
     "set-user": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts set-user",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run --config vitest.config.mjs",
+    "test:coverage": "vitest run --config vitest.config.mjs --coverage",
+    "test:integration": "vitest run --config vitest.config.integration.mjs"
   },
   "keywords": [],
   "author": "",
@@ -53,7 +59,9 @@
     "@types/cheerio": "^0.22.35",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^25.6.2",
+    "@vitest/coverage-v8": "^3.2.7",
     "ts-node": "^10.9.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.7"
   }
 }

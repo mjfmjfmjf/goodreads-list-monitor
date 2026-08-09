@@ -17,10 +17,12 @@ import {
 } from './library.js';
 import { loadBookCache, BookCache } from './storage.js';
 import { getYear, formatBookLink } from './utils.js';
+import { groupFavoriteAuthors } from './favoriteAuthors.js';
 
 export interface YearInBooksOptions {
   year?: string;
   export?: string;
+  library?: string;
 }
 
 const CHAR_FIELDS: CharField[] = ['title', 'authorLast', 'authorFirst'];
@@ -39,15 +41,15 @@ const STAR_LABELS: Record<number, string> = {
   1: 'one-star'
 };
 
-const DIVIDER = '------------------------------------------';
+export const DIVIDER = '------------------------------------------';
 
-interface SectionContext {
-  library: LibraryExport;
-  year: string;
+export interface SectionContext {
+  entries: LibraryEntry[];
   bookCache: BookCache;
+  reviewYear: number;
 }
 
-interface Section {
+export interface Section {
   key: string;
   title: string;
   render(ctx: SectionContext): Promise<string[]> | string[];
@@ -55,10 +57,10 @@ interface Section {
 
 function parsePages(entry: LibraryEntry): number | undefined {
   const n = parseInt(entry.pages, 10);
-  return isNaN(n) ? undefined : n;
+  return isNaN(n) || n <= 0 ? undefined : n;
 }
 
-function parseRating(entry: LibraryEntry): number | undefined {
+export function parseRating(entry: LibraryEntry): number | undefined {
   const v = parseFloat(entry.myRating);
   if (isNaN(v) || v === 0) return undefined;
   return v;
@@ -74,7 +76,7 @@ function exampleText(entries: LibraryEntry[], bucketOf: (entry: LibraryEntry) =>
   return map;
 }
 
-function renderStats(entries: LibraryEntry[]): string[] {
+export function renderStats(entries: LibraryEntry[]): string[] {
   const lines: string[] = [];
   lines.push(`   Books read: ${chalk.white(entries.length.toLocaleString())}`);
 
@@ -108,7 +110,7 @@ function renderStats(entries: LibraryEntry[]): string[] {
   return lines;
 }
 
-function renderRatings(entries: LibraryEntry[]): string[] {
+export function renderRatings(entries: LibraryEntry[]): string[] {
   const lines: string[] = [];
   const hist = new Map<number, number>();
   const ratings: number[] = [];
@@ -121,27 +123,47 @@ function renderRatings(entries: LibraryEntry[]): string[] {
 
   if (ratings.length === 0) {
     lines.push(chalk.gray('   (no rated books)'));
+  } else {
+    const buckets = Array.from(hist.keys()).sort((a, b) => b - a);
+    const starText = buckets
+      .map(star => {
+        const n = hist.get(star) || 0;
+        const label = STAR_LABELS[star] ?? `${star}-star`;
+        return `${n.toLocaleString()} ${label}${n === 1 ? '' : 's'}`;
+      })
+      .join(', ');
+    lines.push(`   ${chalk.white(starText)}`);
+
+    const average = ratings.reduce((sum, r) => sum + r, 0) / ratings.length;
+    lines.push(`   Average rating: ${chalk.white(average.toFixed(2))} (${ratings.length.toLocaleString()} rated)`);
+  }
+
+  lines.push(chalk.gray(DIVIDER));
+
+  const reviewLens = entries.map(entry => entry.review.length).filter(n => n > 0);
+  if (reviewLens.length === 0) {
+    lines.push(chalk.gray('   (no reviews)'));
     return lines;
   }
 
-  const buckets = Array.from(hist.keys()).sort((a, b) => b - a);
-  const starText = buckets
-    .map(star => {
-      const n = hist.get(star) || 0;
-      const label = STAR_LABELS[star] ?? `${star}-star`;
-      return `${n.toLocaleString()} ${label}${n === 1 ? '' : 's'}`;
-    })
-    .join(', ');
-  lines.push(`   ${chalk.white(starText)}`);
+  const sorted = [...reviewLens].sort((a, b) => a - b);
+  const min = sorted[0];
+  const max = sorted[sorted.length - 1];
+  const mean = Math.round(sorted.reduce((sum, n) => sum + n, 0) / sorted.length);
+  const mid = Math.floor(sorted.length / 2);
+  const median = sorted.length % 2 === 0
+    ? Math.round((sorted[mid - 1] + sorted[mid]) / 2)
+    : sorted[mid];
 
-  const average = ratings.reduce((sum, r) => sum + r, 0) / ratings.length;
-  lines.push(`   Average rating: ${chalk.white(average.toFixed(2))} (${ratings.length.toLocaleString()} rated)`);
+  lines.push(chalk.white.bold('   Review length (characters, trimmed):'));
+  lines.push(`   Min: ${chalk.white(min.toLocaleString())}  |  Max: ${chalk.white(max.toLocaleString())}`);
+  lines.push(`   Mean: ${chalk.white(mean.toLocaleString())}  |  Median: ${chalk.white(median.toLocaleString())} (from ${sorted.length.toLocaleString()} reviews)`);
 
   return lines;
 }
 
 function renderDistribution(ctx: SectionContext): string[] {
-  const entries = reviewedInYear(ctx.library, ctx.year);
+  const entries = ctx.entries;
   const lines: string[] = [];
 
   CHAR_FIELDS.forEach((field, i) => {
@@ -158,15 +180,15 @@ function renderDistribution(ctx: SectionContext): string[] {
   const pubExamples = exampleText(entries, entry => parseYear(entry.published) ?? 'Unknown');
   lines.push(...renderPublishedYearLines(entries, bucket => pubExamples.get(bucket) || ''));
   const counts = publishedCounts(entries);
-  const upper = pubYearUpper(counts, parseInt(ctx.year, 10));
-  const missingYears = missingPubYears(counts, parseInt(ctx.year, 10));
+  const upper = pubYearUpper(counts, ctx.reviewYear);
+  const missingYears = missingPubYears(counts, ctx.reviewYear);
   if (missingYears.length) lines.push(chalk.yellow(`      Missing publication years 1961-${upper} (${missingYears.length}): ${missingYears.join(', ')}`));
 
   return lines;
 }
 
 async function renderFiveStar(ctx: SectionContext): Promise<string[]> {
-  const entries = reviewedInYear(ctx.library, ctx.year);
+  const entries = ctx.entries;
   const fives = entries.filter(entry => parseRating(entry) === 5);
   if (fives.length === 0) return [chalk.gray('   (none)')];
 
@@ -184,12 +206,129 @@ async function renderFiveStar(ctx: SectionContext): Promise<string[]> {
   });
 }
 
-const SECTIONS: Section[] = [
-  { key: 'stats', title: '📊 Reading stats', render: (ctx) => renderStats(reviewedInYear(ctx.library, ctx.year)) },
-  { key: 'ratings', title: '⭐ Ratings', render: (ctx) => renderRatings(reviewedInYear(ctx.library, ctx.year)) },
+export function renderFavoriteAuthors(ctx: SectionContext): string[] {
+  const entries = ctx.entries;
+  const { rows } = groupFavoriteAuthors(entries);
+  const qualified = rows.filter(r => r.books >= 3);
+  const lines: string[] = [];
+
+  const byBooks = [...qualified]
+    .sort((a, b) => b.books - a.books || b.avg - a.avg || a.name.localeCompare(b.name))
+    .slice(0, 10);
+  const byAvg = [...qualified]
+    .sort((a, b) => b.avg - a.avg || b.books - a.books || a.name.localeCompare(b.name))
+    .slice(0, 10);
+
+  lines.push(chalk.white.bold('   Top 10 by number of books (min 3):'));
+  if (byBooks.length === 0) {
+    lines.push(chalk.gray('      (none)'));
+  } else {
+    byBooks.forEach((row, i) => {
+      lines.push(
+        `${(i + 1).toString().padStart(6, ' ')}. ${chalk.white(row.name)} — Books: ${chalk.yellow(row.books.toLocaleString())}, Avg my rating: ${chalk.green.bold(row.avg.toFixed(2))}`
+      );
+    });
+  }
+
+  lines.push(chalk.gray(DIVIDER));
+
+  lines.push(chalk.white.bold('   Top 10 by average rating (min 3):'));
+  if (byAvg.length === 0) {
+    lines.push(chalk.gray('      (none)'));
+  } else {
+    byAvg.forEach((row, i) => {
+      lines.push(
+        `${(i + 1).toString().padStart(6, ' ')}. ${chalk.white(row.name)} — Books: ${chalk.yellow(row.books.toLocaleString())}, Avg my rating: ${chalk.green.bold(row.avg.toFixed(2))}`
+      );
+    });
+  }
+
+  return lines;
+}
+
+export function renderBookshelves(ctx: SectionContext): string[] {
+  const entries = ctx.entries;
+  const counts = new Map<string, number>();
+  let noShelfBooks = 0;
+
+  for (const entry of entries) {
+    const shelves = entry.bookshelves
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    if (shelves.length === 0) {
+      noShelfBooks++;
+      continue;
+    }
+    for (const shelf of shelves) counts.set(shelf, (counts.get(shelf) || 0) + 1);
+  }
+
+  if (counts.size === 0) return [chalk.gray('   (no bookshelves)')];
+
+  const lines: string[] = [];
+  const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  for (const [shelf, count] of sorted) {
+    const pct = (count / entries.length) * 100;
+    lines.push(`   ${chalk.white(shelf)}: ${chalk.yellow(count.toLocaleString())} (${pct.toFixed(1)}%)`);
+  }
+  if (noShelfBooks > 0) lines.push(chalk.gray(`   (${noShelfBooks.toLocaleString()} book${noShelfBooks === 1 ? '' : 's'} had no bookshelves)`));
+
+  return lines;
+}
+
+export function renderPublishers(ctx: SectionContext): string[] {
+  const entries = ctx.entries;
+  const counts = new Map<string, number>();
+  let noPublisherBooks = 0;
+
+  for (const entry of entries) {
+    const publisher = entry.publisher.replace(/\s+/g, ' ').trim();
+    if (!publisher) {
+      noPublisherBooks++;
+      continue;
+    }
+    counts.set(publisher, (counts.get(publisher) || 0) + 1);
+  }
+
+  if (counts.size === 0) return [chalk.gray('   (no publishers)')];
+
+  const lines: string[] = [];
+  lines.push(`   Distinct publishers: ${chalk.white(counts.size.toLocaleString())}`);
+
+  const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const top = sorted.slice(0, 10);
+
+  lines.push(chalk.gray(DIVIDER));
+  lines.push(chalk.white.bold('   Top 10 by number of books:'));
+  for (const [publisher, count] of top) {
+    const pct = (count / entries.length) * 100;
+    lines.push(`      ${chalk.white(publisher)}: ${chalk.yellow(count.toLocaleString())} (${pct.toFixed(1)}%)`);
+  }
+  if (noPublisherBooks > 0) lines.push(chalk.gray(`   (${noPublisherBooks.toLocaleString()} book${noPublisherBooks === 1 ? '' : 's'} had no publisher)`));
+
+  return lines;
+}
+
+export const SECTIONS: Section[] = [
+  { key: 'stats', title: '📊 Reading stats', render: (ctx) => renderStats(ctx.entries) },
+  { key: 'ratings', title: '⭐ Ratings and reviews', render: (ctx) => renderRatings(ctx.entries) },
   { key: 'distribution', title: '📊 Distribution', render: renderDistribution },
-  { key: 'five-star', title: '⭐ Five-star books', render: renderFiveStar }
+  { key: 'five-star', title: '⭐ Five-star books', render: renderFiveStar },
+  { key: 'favorite-authors', title: '🏆 Favorite authors', render: renderFavoriteAuthors },
+  { key: 'bookshelves', title: '🏷️ Bookshelves', render: renderBookshelves },
+  { key: 'publishers', title: '🏢 Publishers', render: renderPublishers }
 ];
+
+export async function renderSections(sections: Section[], ctx: SectionContext): Promise<void> {
+  for (const section of sections) {
+    console.log(chalk.white.bold(`\n${section.title}`));
+    console.log(chalk.gray(DIVIDER));
+    for (const line of await section.render(ctx)) console.log(line);
+  }
+
+  console.log(chalk.gray(DIVIDER));
+  console.log('');
+}
 
 export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<void> {
   const library = await getLibrary(options);
@@ -211,18 +350,11 @@ export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<
   }
 
   const bookCache = await loadBookCache();
-  const ctx: SectionContext = { library, year, bookCache };
+  const ctx: SectionContext = { entries, bookCache, reviewYear: parseInt(year, 10) };
 
   console.log(chalk.cyan.bold(`\n📚 Year in Books — ${year}`));
   console.log(chalk.gray(`   ${entries.length.toLocaleString()} books read + reviewed (read shelf + review text, year from Date Read)`));
   console.log(chalk.gray(DIVIDER));
 
-  for (const section of SECTIONS) {
-    console.log(chalk.white.bold(`\n${section.title}`));
-    console.log(chalk.gray(DIVIDER));
-    for (const line of await section.render(ctx)) console.log(line);
-  }
-
-  console.log(chalk.gray(DIVIDER));
-  console.log('');
+  await renderSections(SECTIONS, ctx);
 }

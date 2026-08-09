@@ -5,14 +5,19 @@ node_modules/
 *.log
 npm-debug.log*
 .DS_Store
+coverage/
 
 # Large data/cache files
 authorsCache.json
 booksCache.json
 libraryExportCache.json
+libraryExportCache.*.json
 auditReport.txt
 state.json*
 shelf.html
+
+# Saved Goodreads reference pages
+mjf.year.in.books.*.txt
 
 # Configuration (contains private cookies/tokens)
 config.json*

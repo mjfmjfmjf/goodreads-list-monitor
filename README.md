@@ -133,6 +133,16 @@ npm run books -- '^j' --excludeReviewed --export ~/Downloads/goodreads_library_e
 ```
 The export is imported **once** and cached to `libraryExportCache.json`, so subsequent runs just need `--excludeReviewed` (no `--export`) — re-pass `--export`/`--import` only when you download a new CSV. `--import <path>` is an alias for `--export <path>` (Goodreads calls it an export, but we're importing it). A book counts as reviewed if any export entry for it is on the `read` shelf, has a `Date Read`, or has review text — id matches first, falling back to normalized title+author (so a different edition of a book you read is still excluded). The export loader validates the expected columns and `YYYY/MM/DD` dates and warns if the Goodreads format has changed.
 
+To run a query against **someone else's export without overwriting yours**, pass `--library <name>` (e.g. `--library friend`) — the cache becomes `libraryExportCache.friend.json`, leaving your default `libraryExportCache.json` untouched:
+
+```bash
+npm run year-in-books -- 2026 --library friend --export ~/Downloads/friends_library_export.csv  # imports theirs
+npm run year-in-books -- 2026 --library friend    # loads their cached library (no --export needed again)
+npm run year-in-books -- 2026                     # still yours (default cache)
+```
+
+`--library` works on `library`, `year-in-books`, `life-in-books`, `favorite-authors`, `publisher-stats`, `shelf-stats`, `tag-gaps`, `next-books`, and `books --excludeReviewed`, each with its own `--export`/`--import`.
+
 ### 7. Author Statistics
 Capture and rank authors by popularity. All author data lives in `authorsCache.json`.
 
@@ -194,7 +204,41 @@ Scans the same shelf and lists the first `--limit` (default 10) books in shelf o
 ./year-in-books.sh 2026            # a specific year
 ./year-in-books.sh 2026 --export ~/Downloads/goodreads_library_export.csv   # refresh the cache first
 ```
-Same book set as the queries above (read shelf + review text, year from `Date Read`). Sections: **Reading stats** (books read, pages read with a note if any books lack page counts, shortest & longest book, mean & median page length), **Ratings** (non-zero star histogram + average rating, from the export's `My Rating`), **Distribution** (first-letter A–Z counts for title / author last name / author first name plus publication-year counts — each letter and publication year also shows the first book that met it that year, and each block lists its missing letters/years), and **Five-star books** (every book rated 5, as an id link with `Year`, `Ratings`, `Avg` pulled from `booksCache.json` when present, else `N/A` — no live fetching; Goodreads locks the API down after a few lookups, so missing cache entries are just left blank). Page counts come from the export's `Number of Pages`; books without page counts are excluded from shortest/longest/mean/median and noted in the stats.
+Same book set as the queries above (read shelf + review text, year from `Date Read`). Sections: **Reading stats** (books read, pages read with a note if any books lack page counts, shortest & longest book, mean & median page length), **Ratings and reviews** (non-zero star histogram + average rating from the export's `My Rating`, plus review-length stats — min, max, mean, median in characters — from the review text), **Distribution** (first-letter A–Z counts for title / author last name / author first name plus publication-year counts — each letter and publication year also shows the first book that met it that year, and each block lists its missing letters/years), **Five-star books** (every book rated 5, as an id link with `Year`, `Ratings`, `Avg` pulled from `booksCache.json` when present, else `N/A` — no live fetching; Goodreads locks the API down after a few lookups, so missing cache entries are just left blank), and **Favorite authors** (authors of that year's read + rated books ranked two ways — top 10 by number of books and top 10 by average of your rating, both requiring at least 3 rated books that year), **Bookshelves** (usage of your `Bookshelves` tags across that year's books — count and percentage of books, sorted descending; a note lists how many books had no shelf tags), and **Publishers** (distinct publisher count + top 10 publishers by number of books with percentage; a note lists how many books had no publisher). Page counts come from the export's `Number of Pages`; books without page counts are excluded from shortest/longest/mean/median and noted in the stats.
+
+**Life in Books** (the lifetime version — same sections, all years at once; no five-star list since it would be huge):
+```bash
+./life-in-books.sh                       # all your reviewed years
+./life-in-books.sh --export ~/Downloads/goodreads_library_export.csv   # refresh the cache first
+./life-in-books.sh --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export
+```
+Sections: **Reading stats** (lifetime books/pages, shortest & longest ever, active span with your first + most recent book), **Ratings and reviews** (lifetime star histogram + review lengths), **Year by year** (one row per year — books read, pages read, mean of your ratings, with notes for missing page counts/ratings), **Favorite authors** (lifetime top 10 by books and by avg rating, min 3), **Publishers** (lifetime distinct count + top 10), and **Bookshelves** (lifetime shelf usage with percentages).
+
+
+**Favorite authors** (ranked by *your* star rating):
+```bash
+./favorite-authors.sh                     # top 10, min 3 books, by avg rating
+./favorite-authors.sh --limit 20 --minBooks 5
+./favorite-authors.sh --sortBy books --limit 10   # or --sortBy avgRating (default)
+./favorite-authors.sh --export ~/Downloads/goodreads_library_export.csv   # refresh the cache first
+```
+Groups every read + rated book (on the `read` shelf with `My Rating` 1–5) by first author, computes the average of your rating per author, and lists the top `--limit` authors (default 10) that have at least `--minBooks` (default 3) rated books — sorted by `--sortBy` (`avgRating` default: average rating desc, then book count; `books`: book count desc, then average rating), then name. Each row shows book count, average of your rating, and the star breakdown; the footer reports total reviewed books and distinct authors.
+
+**Favorite publishers** (same shape, grouped by publisher instead of author):
+```bash
+./publisher-stats.sh                     # top 10, min 3 books, by avg rating
+./publisher-stats.sh --sortBy books --limit 10
+./publisher-stats.sh --books --sortBy avgRating --limit 3 --minBooks 10  # also list each publisher's books, by your rating (desc)
+./publisher-stats.sh --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export
+```
+
+**Shelf usage** (Bookshelves tags across all books, count + percentage, sorted by count desc or name):
+```bash
+./shelf-stats.sh                                   # top 20 shelves by count
+./shelf-stats.sh --sortBy name --limit 50          # alphabetical
+./shelf-stats.sh --minCount 5 --limit 10           # only shelves with 5+ books
+```
+The footer reports the total distinct shelves and how many books had none.
 
 ## Files
 - `state.json`: Stores your monitored lists and their book counts.

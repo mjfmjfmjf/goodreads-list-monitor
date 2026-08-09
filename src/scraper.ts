@@ -615,7 +615,7 @@ export async function scrapeBookBySearch(id: string, title: string, author: stri
 
     let foundDetails: Partial<BookMetadata> = { id };
 
-    $('.bookTable tr').each((_, el) => {
+    $('.tableList tr').each((_, el) => {
       const $el = $(el);
       const $title = $el.find('.bookTitle');
       const href = $title.attr('href') || '';
@@ -623,8 +623,8 @@ export async function scrapeBookBySearch(id: string, title: string, author: stri
       const entryId = match ? match[1] : '';
 
       if (entryId === id) {
-        const entryTitle = $title.text().trim();
-        const entryAuthor = $el.find('.authorName').text().trim();
+        const entryTitle = $title.find('span[itemprop="name"]').text().trim() || $title.text().trim();
+        const entryAuthor = $el.find('.authorName span[itemprop="name"]').text().trim() || $el.find('.authorName').text().trim();
         const metaText = $el.find('.greyText.smallText').first().text().trim();
 
         const ratingsMatch = metaText.match(/([\d,]+) rating/);

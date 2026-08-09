@@ -21,6 +21,7 @@ export interface BooksOptions {
   includeBad?: boolean;
   excludeReviewed?: boolean;
   export?: string;
+  library?: string;
 }
 
 type SortField = 'ratings' | 'avgRating' | 'year' | 'title' | 'author';
@@ -46,9 +47,9 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
 
   let library: LibraryExport | null = null;
   if (options.export) {
-    library = await loadLibraryExport(options.export);
+    library = await loadLibraryExport(options.export, options.library);
   } else if (options.excludeReviewed) {
-    library = await loadLibraryExportCache();
+    library = await loadLibraryExportCache(options.library);
     if (!library) {
       console.error(chalk.red.bold('Error: No library export cache found. Run once with --export <path> (or --import <path>) to import + cache your Goodreads library export.'));
       process.exit(1);
