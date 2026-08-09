@@ -271,10 +271,12 @@ Examples:
   $ npm run year-in-books -- 2026
   $ npm run year-in-books -- 2026 --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
   $ npm run year-in-books -- 2026 --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export
+  $ npm run year-in-books -- 2026 --requireReviews  # only books with review text
   $ ./year-in-books.sh 2026`)
   .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .option('--requireReviews', 'Only count books that also have review text (default: any book with a Date Read in the year)')
   .action(async (year, options) => {
     try {
       await runYearInBooks({ ...options, year, export: options.export || options.import });
@@ -285,16 +287,18 @@ Examples:
 
 program
   .command('life-in-books')
-  .description('Show a lifetime "Life in Books" summary across all your reviewed years: reading stats, ratings, year-by-year, favorite authors, publishers, and bookshelves. Uses the cached library import; pass --export/--import to refresh.')
+  .description('Show a lifetime "Life in Books" summary across all your reviewed years: reading stats, ratings, year-by-year, distribution (letters + publication years), favorite authors, publishers, and bookshelves. Uses the cached library import; pass --export/--import to refresh.')
   .addHelpText('after', `
 Examples:
   $ npm run life-in-books
   $ npm run life-in-books --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
+  $ npm run life-in-books --requireReviews  # only books with review text
   $ ./life-in-books.sh
   $ npm run life-in-books -- --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export`)
   .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .option('--requireReviews', 'Only count books that also have review text (default: any book with a Date Read)')
   .action(async (options) => {
     try {
       await runLifeInBooks({ ...options, export: options.export || options.import });

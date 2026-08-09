@@ -3,6 +3,8 @@ import {
   parseYear,
   firstCharBucket,
   charBucket,
+  readInYear,
+  readAll,
   reviewedInYear,
   reviewedAll,
   charCounts,
@@ -90,6 +92,46 @@ describe('reviewedInYear / reviewedAll', () => {
   it('filters read + reviewed books across all years', () => {
     const ids = reviewedAll(lib).map(e => e.id);
     expect(ids).toEqual(['1', '2']);
+  });
+});
+
+describe('readInYear / readAll (review text optional)', () => {
+  const lib = library([
+    entry({ id: '1', dateRead: '2026/03/15', hasReview: true, review: 'Great' }),
+    entry({ id: '2', dateRead: '2025/12/01', hasReview: true, review: 'Nice' }),
+    entry({ id: '3', dateRead: '2026/01/01', hasReview: false, review: '' }),
+    entry({ id: '4', dateRead: '2026/02/01', shelf: 'to-read' }),
+    entry({ id: '5', dateRead: '', hasReview: false, review: '' })
+  ]);
+
+  it('includes un-reviewed books by default (just read in the year)', () => {
+    const ids = readInYear(lib, '2026').map(e => e.id);
+    expect(ids).toEqual(['1', '3']);
+  });
+
+  it('requires review text when requested', () => {
+    const ids = readInYear(lib, '2026', true).map(e => e.id);
+    expect(ids).toEqual(['1']);
+  });
+
+  it('readAll includes read books without reviews by default', () => {
+    const ids = readAll(lib).map(e => e.id);
+    expect(ids).toEqual(['1', '2', '3', '5']);
+  });
+
+  it('readAll requires review text when requested', () => {
+    const ids = readAll(lib, true).map(e => e.id);
+    expect(ids).toEqual(['1', '2']);
+  });
+
+  it('readAll ignores Date Read (all read-shelf books)', () => {
+    const ids = readAll(lib, false).map(e => e.id);
+    expect(ids).toContain('5');
+  });
+
+  it('matches the strict helpers: reviewedInYear === readInYear(requireReviews=true)', () => {
+    expect(readInYear(lib, '2026', true).map(e => e.id)).toEqual(reviewedInYear(lib, '2026').map(e => e.id));
+    expect(readAll(lib, true).map(e => e.id)).toEqual(reviewedAll(lib).map(e => e.id));
   });
 });
 

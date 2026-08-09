@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { getLibrary, reviewedAll } from './library.js';
+import { getLibrary, readAll } from './library.js';
 import { loadBookCache } from './storage.js';
 import {
   DIVIDER,
@@ -8,6 +8,7 @@ import {
   renderSections,
   renderStats,
   renderRatings,
+  renderDistribution,
   renderFavoriteAuthors,
   renderPublishers,
   renderBookshelves,
@@ -18,6 +19,7 @@ import { LibraryEntry } from './libraryExport.js';
 export interface LifeInBooksOptions {
   export?: string;
   library?: string;
+  requireReviews?: boolean;
 }
 
 function renderLifeStats(ctx: SectionContext): string[] {
@@ -82,6 +84,7 @@ const SECTIONS: Section[] = [
   { key: 'stats', title: '📊 Reading stats', render: renderLifeStats },
   { key: 'ratings', title: '⭐ Ratings and reviews', render: (ctx) => renderRatings(ctx.entries) },
   { key: 'year-by-year', title: '📅 Year by year', render: renderYearByYear },
+  { key: 'distribution', title: '📊 Distribution', render: renderDistribution },
   { key: 'favorite-authors', title: '🏆 Favorite authors', render: renderFavoriteAuthors },
   { key: 'publishers', title: '🏢 Publishers', render: renderPublishers },
   { key: 'bookshelves', title: '🏷️ Bookshelves', render: renderBookshelves }
@@ -90,9 +93,14 @@ const SECTIONS: Section[] = [
 export async function runLifeInBooks(options: LifeInBooksOptions = {}): Promise<void> {
   const library = await getLibrary(options);
 
-  const entries = reviewedAll(library);
+  const requireReviews = options.requireReviews === true;
+  const readEntries = readAll(library, false);
+  const reviewedEntries = readAll(library, true);
+  const entries = requireReviews ? reviewedEntries : readEntries;
   if (entries.length === 0) {
-    console.log(chalk.yellow('   No books read + reviewed in the library export.'));
+    console.log(chalk.yellow(requireReviews
+      ? '   No books read + reviewed in the library export.'
+      : '   No books read in the library export.'));
     return;
   }
 
@@ -105,7 +113,9 @@ export async function runLifeInBooks(options: LifeInBooksOptions = {}): Promise<
   const ctx: SectionContext = { entries, bookCache, reviewYear };
 
   console.log(chalk.cyan.bold('\n📚 Life in Books'));
-  console.log(chalk.gray(`   ${entries.length.toLocaleString()} books read + reviewed across all years (read shelf + review text, year from Date Read)`));
+  console.log(chalk.gray(requireReviews
+    ? `   ${readEntries.length.toLocaleString()} books read (${reviewedEntries.length.toLocaleString()} reviewed) — read shelf + review text required, year from Date Read`
+    : `   ${readEntries.length.toLocaleString()} books read (${reviewedEntries.length.toLocaleString()} reviewed) — read shelf, year from Date Read`));
   console.log(chalk.gray(DIVIDER));
 
   await renderSections(SECTIONS, ctx);

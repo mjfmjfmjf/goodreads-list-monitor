@@ -49,13 +49,23 @@ export function parseYear(value: string): string | null {
   return m ? m[1] : null;
 }
 
-export function reviewedInYear(library: LibraryExport, year: string): LibraryEntry[] {
+export function readInYear(library: LibraryExport, year: string, requireReviews = false): LibraryEntry[] {
   const prefix = `${year}/`;
-  return library.entries.filter(e => e.shelf === 'read' && e.hasReview && e.dateRead.startsWith(prefix));
+  return library.entries.filter(e =>
+    e.dateRead.startsWith(prefix) && e.shelf === 'read' && (!requireReviews || e.hasReview)
+  );
+}
+
+export function reviewedInYear(library: LibraryExport, year: string): LibraryEntry[] {
+  return readInYear(library, year, true);
+}
+
+export function readAll(library: LibraryExport, requireReviews = false): LibraryEntry[] {
+  return library.entries.filter(e => e.shelf === 'read' && (!requireReviews || e.hasReview));
 }
 
 export function reviewedAll(library: LibraryExport): LibraryEntry[] {
-  return library.entries.filter(e => e.shelf === 'read' && e.hasReview);
+  return readAll(library, true);
 }
 
 export function charCounts(entries: LibraryEntry[], field: CharField): Map<string, number> {

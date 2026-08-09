@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { LibraryExport, LibraryEntry } from './libraryExport.js';
 import {
   getLibrary,
-  reviewedInYear,
+  readInYear,
   charCounts,
   charBucket,
   publishedCounts,
@@ -23,6 +23,7 @@ export interface YearInBooksOptions {
   year?: string;
   export?: string;
   library?: string;
+  requireReviews?: boolean;
 }
 
 const CHAR_FIELDS: CharField[] = ['title', 'authorLast', 'authorFirst'];
@@ -51,7 +52,7 @@ export interface SectionContext {
 
 export interface Section {
   key: string;
-  title: string;
+  title: string | ((ctx: SectionContext) => string);
   render(ctx: SectionContext): Promise<string[]> | string[];
 }
 
@@ -162,7 +163,7 @@ export function renderRatings(entries: LibraryEntry[]): string[] {
   return lines;
 }
 
-function renderDistribution(ctx: SectionContext): string[] {
+export function renderDistribution(ctx: SectionContext): string[] {
   const entries = ctx.entries;
   const lines: string[] = [];
 
@@ -187,23 +188,44 @@ function renderDistribution(ctx: SectionContext): string[] {
   return lines;
 }
 
-async function renderFiveStar(ctx: SectionContext): Promise<string[]> {
-  const entries = ctx.entries;
-  const fives = entries.filter(entry => parseRating(entry) === 5);
-  if (fives.length === 0) return [chalk.gray('   (none)')];
+export function topStarLevel(entries: LibraryEntry[]): number {
+  for (let star = 5; star >= 1; star--) {
+    if (entries.some(entry => parseRating(entry) === star)) return star;
+  }
+  return 0;
+}
 
-  return fives.map((entry, i) => {
+function topRatedTitle(entries: LibraryEntry[]): string {
+  const star = topStarLevel(entries);
+  if (star === 0) return '⭐ Five-star books';
+  return `⭐ ${STAR_LABELS[star] ?? `${star}-star`} books`;
+}
+
+async function renderTopRated(ctx: SectionContext): Promise<string[]> {
+  const entries = ctx.entries;
+  const star = topStarLevel(entries);
+  if (star === 0) return [chalk.gray('   (no rated books)')];
+
+  const rated = entries.filter(entry => parseRating(entry) === star);
+  const lines: string[] = [];
+  if (star < 5) {
+    lines.push(chalk.gray(`   (no five-star ratings — showing your top-rated ${star}-star books instead)`));
+  }
+
+  rated.forEach((entry, i) => {
     const book = ctx.bookCache[entry.id];
     const ratings = book && book.ratings && book.ratings !== '0' ? `Ratings: ${chalk.yellow(book.ratings)}` : 'Ratings: N/A';
     const avg = book?.avgRating ? `Avg: ${chalk.green.bold(book.avgRating)}` : 'Avg: N/A';
     const pubStr = book?.published || entry.published || '';
     const year = getYear(pubStr);
     const yearStr = year !== null ? `Year: ${year}` : 'Year: N/A';
-    return (
+    lines.push(
       `${(i + 1).toString().padStart(4, ' ')}. ${chalk.white(formatBookLink(entry.title, entry.id))}\n` +
       `      by ${entry.author} | ${yearStr}, ${ratings}, ${avg}`
     );
   });
+
+  return lines;
 }
 
 export function renderFavoriteAuthors(ctx: SectionContext): string[] {
@@ -313,7 +335,7 @@ export const SECTIONS: Section[] = [
   { key: 'stats', title: '📊 Reading stats', render: (ctx) => renderStats(ctx.entries) },
   { key: 'ratings', title: '⭐ Ratings and reviews', render: (ctx) => renderRatings(ctx.entries) },
   { key: 'distribution', title: '📊 Distribution', render: renderDistribution },
-  { key: 'five-star', title: '⭐ Five-star books', render: renderFiveStar },
+  { key: 'five-star', title: (ctx) => topRatedTitle(ctx.entries), render: renderTopRated },
   { key: 'favorite-authors', title: '🏆 Favorite authors', render: renderFavoriteAuthors },
   { key: 'bookshelves', title: '🏷️ Bookshelves', render: renderBookshelves },
   { key: 'publishers', title: '🏢 Publishers', render: renderPublishers }
@@ -321,7 +343,8 @@ export const SECTIONS: Section[] = [
 
 export async function renderSections(sections: Section[], ctx: SectionContext): Promise<void> {
   for (const section of sections) {
-    console.log(chalk.white.bold(`\n${section.title}`));
+    const title = typeof section.title === 'function' ? section.title(ctx) : section.title;
+    console.log(chalk.white.bold(`\n${title}`));
     console.log(chalk.gray(DIVIDER));
     for (const line of await section.render(ctx)) console.log(line);
   }
@@ -343,9 +366,14 @@ export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<
     process.exit(1);
   }
 
-  const entries = reviewedInYear(library, year);
+  const requireReviews = options.requireReviews === true;
+  const readEntries = readInYear(library, year, false);
+  const reviewedEntries = readInYear(library, year, true);
+  const entries = requireReviews ? reviewedEntries : readEntries;
   if (entries.length === 0) {
-    console.log(chalk.yellow(`   No books read + reviewed in ${year}.`));
+    console.log(chalk.yellow(requireReviews
+      ? `   No books read + reviewed in ${year}.`
+      : `   No books read in ${year}.`));
     return;
   }
 
@@ -353,7 +381,9 @@ export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<
   const ctx: SectionContext = { entries, bookCache, reviewYear: parseInt(year, 10) };
 
   console.log(chalk.cyan.bold(`\n📚 Year in Books — ${year}`));
-  console.log(chalk.gray(`   ${entries.length.toLocaleString()} books read + reviewed (read shelf + review text, year from Date Read)`));
+  console.log(chalk.gray(requireReviews
+    ? `   ${readEntries.length.toLocaleString()} books read (${reviewedEntries.length.toLocaleString()} reviewed) — read shelf + review text required, year from Date Read`
+    : `   ${readEntries.length.toLocaleString()} books read (${reviewedEntries.length.toLocaleString()} reviewed) — read shelf, year from Date Read`));
   console.log(chalk.gray(DIVIDER));
 
   await renderSections(SECTIONS, ctx);
