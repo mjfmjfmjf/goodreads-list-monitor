@@ -6,27 +6,88 @@ A production-grade CLI tool to monitor, audit, and discover books on Goodreads L
 - **Smart Monitoring**: Detect additions and removals across hundreds of lists in seconds.
 - **Rich Metadata**: Automatically tracks book positions, rating counts, average ratings, and publication years.
 - **Automated Audits**: Identify books that violate rating, average rating, or year criteria.
+- **Year in Books & Life in Books**: text summaries of your own reading — stats, star ratings, letter/published-year distributions, favorite authors, publishers, and bookshelves — generated from your Goodreads library export. No login or cookies required.
 - **Tag Discovery**: Cross-reference entire Goodreads shelves with your lists to find missing popular books.
 - **Persistent Caching**: Saves book details locally in `booksCache.json` to minimize network calls and respect rate limits, now including average ratings.
 
-## Prerequisites
-- Node.js v18.20.8 or later
+## Year in Books & Life in Books (no account needed)
 
-## Setup
-1. **Clone the repository.**
-2. **Install dependencies**: `npm install`
-3. **Set your User ID**:
+The signature features: a full **text-only** "Year in Books" for any year, plus a
+lifetime **Life in Books**. Each report covers reading stats (pages, shortest/longest,
+mean/median), a star-rating histogram and average, a distribution of titles by
+first letter and by publication year (with the first book for each), five-star
+books, favorite authors, publishers, and bookshelves. No book covers, no Goodreads
+login, no cookies — they read **your own library export file**.
+
+**3 steps to your own Year in Books:**
+
+1. **Install once** (Node 18.20.8+; see "Install & Run" below for macOS and Windows):
    ```bash
-   npm run set-user [YOUR_USER_ID]
+   git clone https://github.com/mjfmjfmjf/goodreads-list-monitor.git
+   cd goodreads-list-monitor
+   npm install
    ```
-4. **Configure Authentication** (Optional but recommended for large audits):
-   Create a `config.json` file in the root directory:
-   ```json
-   {
-     "cookie": "your_browser_session_cookie"
-   }
+2. **Get your library export**: Goodreads → *My Books* → *Import and Export*
+   (https://www.goodreads.com/review/import) → **Export Library** → grab
+   `goodreads_library_export.csv` when it's emailed to you.
+3. **Run it** (first run uses `--export` to import the CSV; it's cached after that):
+   ```bash
+   ./year-in-books.sh 2026                          # or without a year for the most recent
+   ./year-in-books.sh 2026 --export ~/Downloads/goodreads_library_export.csv
+   ./life-in-books.sh                                # your whole reading life at once
    ```
-   
+
+You can also generate someone else's (with their CSV): `./year-in-books.sh 2026 --library friend --export ~/Downloads/friends_library_export.csv`.
+
+## Install & Run (macOS & Windows)
+
+**1. Install Node.js (18.20.8 or later — the current LTS works).**
+- **macOS**: download from https://nodejs.org, or `brew install node`.
+- **Windows**: download the LTS installer from https://nodejs.org (or
+  `winget install OpenJS.NodeJS.LTS`), then open PowerShell.
+
+**2. Clone and install dependencies:**
+```bash
+git clone https://github.com/mjfmjfmjf/goodreads-list-monitor.git
+cd goodreads-list-monitor
+npm install
+```
+There's no build step — it runs TypeScript directly.
+
+**3. Run a command.**
+- **macOS / Linux**: use the wrapper scripts (`./year-in-books.sh`, `./life-in-books.sh`, …):
+  ```bash
+  ./year-in-books.sh 2026
+  ```
+- **Windows**: the `*.sh` wrappers need bash, so either use **Git Bash** (installed
+  with Git for Windows) to run the same commands, or use the equivalent `npm run`
+  commands in PowerShell/CMD:
+
+  | `./<cmd>.sh` wrapper | PowerShell equivalent |
+  |---|---|
+  | `./year-in-books.sh 2026` | `npm run year-in-books -- 2026` |
+  | `./life-in-books.sh` | `npm run life-in-books` |
+  | `./favorite-authors.sh` | `npm run favorite-authors` |
+  | `./publisher-stats.sh` | `npm run publisher-stats` |
+  | `./shelf-stats.sh` | `npm run shelf-stats` |
+  | `./books.sh '^j'` | `npm run books -- '^j'` |
+  | `./library.sh by-char --year 2024` | `npm run library -- by-char --year 2024` |
+
+**Optional — account features.** The monitoring, auditing, and discovery commands
+scrape Goodreads, so they need your User ID and a session cookie:
+```bash
+npm run set-user [YOUR_USER_ID]
+```
+plus a `config.json` in the repo root holding your browser session cookie:
+```json
+{
+  "cookie": "your_browser_session_cookie"
+}
+```
+**You do NOT need any of this for `year-in-books`, `life-in-books`,
+`favorite-authors`, `publisher-stats`, or `shelf-stats`** — those read only your
+export CSV (and your local `booksCache.json` when present).
+
 ## Usage
 
 ### 1. Daily Monitoring
@@ -240,6 +301,11 @@ Groups every read + rated book (on the `read` shelf with `My Rating` 1–5) by f
 ```
 The footer reports the total distinct shelves and how many books had none.
 
+## Testing
+- `./runUnitTests.sh` — fast, offline unit tests with code coverage (Vitest). Run after every change.
+- `./runIntegrationTests.sh` — live Goodreads lookups (~a dozen requests; run deliberately, needs `config.json` + cached export). Runs in strict-throttle mode: if Goodreads throttles, it gives up immediately — wait ~60s and retry before suspecting a parser bug.
+- See `AGENTS.md` for the test cadence and throttling policy, and `GOODREADS_CHANGES.md` for the history of Goodreads page changes that forced fixes.
+
 ## Files
 - `state.json`: Stores your monitored lists and their book counts.
 - `booksCache.json`: Global cache of book metadata (titles, years, ratings, average ratings, tags).
@@ -249,4 +315,6 @@ The footer reports the total distinct shelves and how many books had none.
 - `auditReport.txt`: Record of all audit outliers and discovery findings.
 - `bulkAuditConfig.json`: Default configuration for bulk audits.
 - `tags/`: Directory containing tag-specific discovery configurations.
+- `AGENTS.md`: Contributor notes — when to run unit vs. integration tests, and Goodreads throttling policy.
+- `GOODREADS_CHANGES.md`: Log of Goodreads page changes that required code fixes (newest first).
 
