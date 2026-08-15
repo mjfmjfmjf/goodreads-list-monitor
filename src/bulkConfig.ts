@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { loadState, loadBookCache } from './storage.js';
 import { TagConfig, ListEntry, AuditCriteria } from './tagConfig.js';
+import { SERIES_POS_STANDALONE } from './seriesPos.js';
 
 const BULK_CONFIG_FILE = path.join(process.cwd(), 'bulkAuditConfig.json');
 
@@ -112,6 +113,17 @@ function parseCriteriaFromName(title: string): AuditCriteria {
     const century = parseInt(centuryMatch[1], 10);
     criteria.minYear = (century - 1) * 100;
     criteria.maxYear = criteria.minYear + 99;
+    return criteria;
+  }
+
+  // 3. Series Position (e.g., "Series Position 1", "Position 3.5", "Standalone")
+  const positionMatch = cleanTitle.match(/position\s+([\d.]+)/);
+  if (positionMatch) {
+    criteria.seriesPos = parseFloat(positionMatch[1]);
+    return criteria;
+  }
+  if (/stand\s*-?\s*alone/.test(cleanTitle)) {
+    criteria.seriesPos = SERIES_POS_STANDALONE;
     return criteria;
   }
 

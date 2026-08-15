@@ -51,6 +51,7 @@ export interface BookMetadata {
   ratings: string;
   avgRating?: string;
   published: string;
+  pages?: string;
   tagCount?: number;
   page?: number;
   requiresAuth?: boolean;
@@ -530,10 +531,19 @@ async function extractBookFromCheerio(id: string, $: cheerio.CheerioAPI): Promis
         if (published === 'Unknown' && bookData.details?.publicationTime) {
           const date = new Date(bookData.details.publicationTime);
           published = `${date.getFullYear()}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getDate().toString().padStart(2, '0')}`;
-        } 
+        }
+
+        // 3. Page count from the specific book's details (ref or inline)
+        let pages: string | undefined;
+        const detailsRef = bookData.details?.__ref;
+        const detailsObj = detailsRef ? apolloState[detailsRef] : bookData.details;
+        if (detailsObj) {
+          const numPages = detailsObj.numPages ?? detailsObj.pageCount;
+          if (numPages !== undefined && numPages !== null) pages = String(numPages);
+        }
 
         // If we found everything including a valid date, return it
-        if (title && published !== 'Unknown') return { id, title, author, ratings, avgRating, published };
+        if (title && published !== 'Unknown') return { id, title, author, ratings, avgRating, published, pages };
         
         // If date is still unknown but we have a JSON title, keep note of it and proceed to DOM fallback
         if (title) {
@@ -591,13 +601,26 @@ async function extractBookFromCheerio(id: string, $: cheerio.CheerioAPI): Promis
 
   const domPublished = formatDate(publishedRaw, domTitle);
 
+  // Page count from the details section (e.g. "Hardcover, 849 pages")
+  let domPages: string | undefined;
+  const detailsEl = $('[data-testid="details"], .FeaturedDetails, #details .row');
+  detailsEl.each((_, el) => {
+    const cleanText = $(el).text().trim();
+    const pagesMatch = cleanText.match(/(\d[\d,]*)\s+pages?/);
+    if (pagesMatch) {
+      domPages = pagesMatch[1];
+      return false; // break
+    }
+  });
+
   return { 
     id, 
     title: domTitle, 
     author: domAuthor, 
     ratings: domRatings, 
     avgRating: domAvgRating,
-    published: domPublished 
+    published: domPublished,
+    pages: domPages
   };
 }
 

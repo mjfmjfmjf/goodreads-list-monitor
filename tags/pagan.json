@@ -1,0 +1,15 @@
+{
+  "tag": "pagan",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "pagan > 500 ratings and 20 shelves",
+      "id": "151553",
+      "url": "https://www.goodreads.com/list/show/151553",
+      "criteria": {
+        "min": 500,
+        "minTags": 20
+      }
+    }
+  ]
+}

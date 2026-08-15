@@ -1,0 +1,52 @@
+[
+  {
+    "nickname": "standalone",
+    "officialTitle": "Standalone Books with 100000+ Ratings",
+    "url": "https://www.goodreads.com/list/show/420595",
+    "id": "420595",
+    "criteria": {
+      "min": 1000000,
+      "seriesPos": -1
+    }
+  },
+  {
+    "nickname": "boxed set",
+    "officialTitle": "Boxed Sets / Multi-Volume Collections with 100000+ Ratings",
+    "url": "https://www.goodreads.com/list/show/420595",
+    "id": "420595",
+    "criteria": {
+      "min": 20000,
+      "seriesPos": 99.99
+    }
+  },
+  {
+    "nickname": "1st book",
+    "officialTitle": "1st Books of Series with 100000+ Ratings",
+    "url": "https://www.goodreads.com/list/show/420595",
+    "id": "420595",
+    "criteria": {
+      "min": 1000000,
+      "seriesPos": 1
+    }
+  },
+  {
+    "nickname": "2nd book",
+    "officialTitle": "2nd Books of Series with 100000+ Ratings",
+    "url": "https://www.goodreads.com/list/show/420595",
+    "id": "420595",
+    "criteria": {
+      "min": 300000,
+      "seriesPos": 2
+    }
+  },
+  {
+    "nickname": "3rd book",
+    "officialTitle": "3rd Books of Series with 100000+ Ratings",
+    "url": "https://www.goodreads.com/list/show/420595",
+    "id": "35080",
+    "criteria": {
+      "min": 200000,
+      "seriesPos": 3
+    }
+  }
+]

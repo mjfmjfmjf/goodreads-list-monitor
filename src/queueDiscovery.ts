@@ -6,6 +6,7 @@ import { loadBookCache, CachedBook } from './storage.js';
 import { ListEntry } from './tagConfig.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
 import { matchesRegex } from './bookMatch.js';
+import { parseSeriesPos, matchesSeriesPos, SERIES_POS_STANDALONE, SERIES_POS_MULTI } from './seriesPos.js';
 
 const AUDIT_REPORT = path.join(process.cwd(), 'auditReport.txt');
 const DEFAULT_BULK_CONFIG_FILE = path.join(process.cwd(), 'bulkAuditConfig.json');
@@ -83,6 +84,7 @@ export async function runQueueDiscovery(
   console.log(chalk.gray(`   Total cached books: ${allCachedBooks.length}\n`));
 
   const finalResults: DiscoveryResult[] = [];
+  let totalMissing = 0;
 
   for (let i = 0; i < lists.length; i++) {
     const listEntry = lists[i];
@@ -97,6 +99,24 @@ export async function runQueueDiscovery(
     const maxYear = criteria.maxYear || Infinity;
     const minAvg = Math.max(criteria.minAvg || 0, globalMinAvg);
     const maxAvg = Math.min(criteria.maxAvg || Infinity, globalMaxAvg);
+
+    // Show the active filter conditions, mirroring the audit command output
+    if (minVal > 0 || maxVal < Infinity) console.log(chalk.gray(`   - Ratings Criteria: ${minVal} to ${maxVal === Infinity ? 'Any' : maxVal}`));
+    if (minYear > 0 || maxYear < Infinity) console.log(chalk.gray(`   - Year Criteria: ${minYear} to ${maxYear === Infinity ? 'Any' : maxYear}`));
+    if (minAvg > 0 || maxAvg < Infinity) console.log(chalk.gray(`   - Avg Rating Criteria: ${minAvg} to ${maxAvg === Infinity ? 'Any' : maxAvg}`));
+    if (criteria.seriesPos !== undefined) {
+      const seriesPosLabel = criteria.seriesPos === SERIES_POS_STANDALONE
+        ? 'standalone'
+        : criteria.seriesPos === SERIES_POS_MULTI
+          ? 'multi-volume (boxed set)'
+          : `pos ${criteria.seriesPos}`;
+      console.log(chalk.gray(`   - Series Position: ${seriesPosLabel} (equals)`));
+    }
+    const regexParts: string[] = [];
+    if (criteria.titleRegex) regexParts.push(`Title: /${criteria.titleRegex}/`);
+    if (criteria.authorLastRegex) regexParts.push(`Author Last: /${criteria.authorLastRegex}/`);
+    if (criteria.authorFirstRegex) regexParts.push(`Author First: /${criteria.authorFirstRegex}/`);
+    if (regexParts.length > 0) console.log(chalk.gray(`   - Regex Criteria: ${regexParts.join(', ')}`));
 
     // Filter cached books for this list's criteria
     const candidates = allCachedBooks.filter(book => {
@@ -128,6 +148,12 @@ export async function runQueueDiscovery(
         authorFirstRegex: criteria.authorFirstRegex
       };
       if (!matchesRegex(book, regexCriterion)) return false;
+
+      // Series position check
+      if (criteria.seriesPos !== undefined) {
+        const bookSeriesPos = parseSeriesPos(book.title) ?? book.seriesPos;
+        if (!matchesSeriesPos(criteria.seriesPos, bookSeriesPos)) return false;
+      }
 
       return true;
     });
@@ -161,6 +187,10 @@ export async function runQueueDiscovery(
 
     if (toAdd.length > 0) {
       finalResults.push({ list: listEntry, toAdd });
+      totalMissing += toAdd.length;
+      console.log(chalk.green.bold(`   🔍 Found ${toAdd.length} missing entr${toAdd.length === 1 ? 'y' : 'ies'} for this list.`));
+    } else {
+      console.log(chalk.gray(`   ✅ No missing entries for this list.`));
     }
 
     await delay(1000, 3000);
@@ -169,6 +199,7 @@ export async function runQueueDiscovery(
   // FINAL GLOBAL SUMMARY
   console.log(chalk.cyan.bold(`\n\n==================================================`));
   console.log(chalk.cyan.bold(`🏁 FINAL QUEUE DISCOVERY SUMMARY`));
+  console.log(chalk.cyan.bold(`   Total missing entries found: ${totalMissing}`));
   console.log(chalk.cyan.bold(`==================================================`));
 
   if (finalResults.length === 0) {

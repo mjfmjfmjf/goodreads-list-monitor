@@ -5,6 +5,7 @@ import { scrapeListBooks, scrapeBookDetails, scrapeShelfBooks } from './scraper.
 import { loadState, saveState, loadBookCache, saveBookCache, syncBooksToCache } from './storage.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
 import { RegexCriterion, matchesRegex } from './bookMatch.js';
+import { parseSeriesPos, matchesSeriesPos, SERIES_POS_STANDALONE } from './seriesPos.js';
 
 const AUDIT_REPORT = path.join(process.cwd(), 'auditReport.txt');
 
@@ -20,6 +21,23 @@ export interface AuditOptions {
   titleRegex?: string;
   authorLastRegex?: string;
   authorFirstRegex?: string;
+  seriesPos?: string;
+}
+
+export interface AuditResult {
+  listId: string;
+  listTitle: string;
+  totalBooks: number;
+  outliers: number;
+  tooManyRatings: number;
+  tooFewRatings: number;
+  tooEarly: number;
+  tooLate: number;
+  tooLowAvg: number;
+  tooHighAvg: number;
+  regexMismatch: number;
+  seriesPosMismatch: number;
+  failed?: boolean;
 }
 
 /**
@@ -104,7 +122,7 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
         const msg = `[MISSING] "${shelfBook.title}" by ${shelfBook.author} [ID: ${shelfBook.id}] (Tags: ${shelfBook.tagCount}, Ratings: ${shelfBook.ratings}${avgStr})`;
         console.log(chalk.green.bold(`   ➕ ${msg}`));
         await appendToAuditReport(listTitle, msg);
-        toAdd.push(`[book:${shelfBook.title}|${shelfBook.id}]`);
+        toAdd.push(formatBookLink(shelfBook.title, shelfBook.id));
         updateCache(shelfBook, tag, bookCache);
       }
     }
@@ -129,7 +147,7 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
         const msg = `[REMOVE] "${listBook.title}" by ${listBook.author} [ID: ${listBook.id}] (Reason: ${reason}${avgStr})`;
         console.log(chalk.red.bold(`   ❌ ${msg}`));
         await appendToAuditReport(listTitle, msg);
-        toRemove.push(`[book:${listBook.title}|${listBook.id}]`);
+        toRemove.push(formatBookLink(listBook.title, listBook.id));
       }
     }
 
@@ -164,6 +182,7 @@ function updateCache(book: any, tag: string, bookCache: any) {
       ratings: book.ratings,
       avgRating: book.avgRating,
       published: book.published || 'Unknown',
+      seriesPos: parseSeriesPos(book.title),
       lastUpdated: new Date().toISOString(),
       tags: {}
     };
@@ -175,6 +194,9 @@ function updateCache(book: any, tag: string, bookCache: any) {
     if (bookCache[book.id].title === 'Unknown' && book.title !== 'Unknown') {
       bookCache[book.id].title = book.title;
     }
+    if (bookCache[book.id].seriesPos === undefined || parseSeriesPos(book.title) !== bookCache[book.id].seriesPos) {
+      bookCache[book.id].seriesPos = parseSeriesPos(book.title);
+    }
     if (book.avgRating && bookCache[book.id].avgRating !== book.avgRating) {
       bookCache[book.id].avgRating = book.avgRating;
     }
@@ -183,7 +205,7 @@ function updateCache(book: any, tag: string, bookCache: any) {
   bookCache[book.id].tags[tag] = book.tagCount;
 }
 
-export async function runAudit(listId: string, options: AuditOptions): Promise<void> {
+export async function runAudit(listId: string, options: AuditOptions): Promise<AuditResult> {
   const state = await loadState();
   const bookCache = await loadBookCache();
   const listTitle = state.lists[listId]?.title || `List ${listId}`;
@@ -208,11 +230,14 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
   const isYearAudit = minYear > 0 || maxYear < Infinity;
   const isRatingsAudit = minRatings > 0 || maxRatings < Infinity;
   const isAvgAudit = minAvg > 0 || maxAvg < Infinity;
+  const isSeriesPosAudit = options.seriesPos !== undefined && options.seriesPos !== '';
+  const seriesPosTarget = isSeriesPosAudit ? parseFloat(options.seriesPos as string) : NaN;
 
   console.log(chalk.cyan.bold(`\n🔍 Starting Audit for: "${listTitle}"`));
   if (isYearAudit) console.log(chalk.gray(`   - Year Criteria: ${minYear} to ${maxYear === Infinity ? 'Any' : maxYear}`));
   if (isRatingsAudit) console.log(chalk.gray(`   - Ratings Criteria: ${minRatings} to ${maxRatings === Infinity ? 'Any' : maxRatings}`));
   if (isAvgAudit) console.log(chalk.gray(`   - Avg Rating Criteria: ${minAvg} to ${maxAvg === Infinity ? 'Any' : maxAvg}`));
+  if (isSeriesPosAudit) console.log(chalk.gray(`   - Series Position: ${options.seriesPos} (equals)`));
   if (isRegexAudit) {
     const parts: string[] = [];
     if (regexCriterion.titleRegex) parts.push(`Title: /${regexCriterion.titleRegex}/`);
@@ -220,11 +245,27 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
     if (regexCriterion.authorFirstRegex) parts.push(`Author First: /${regexCriterion.authorFirstRegex}/`);
     console.log(chalk.gray(`   - Regex Criteria: ${parts.join(', ')}`));
   }
-  if (!isYearAudit && !isRatingsAudit && !isAvgAudit && !isRegexAudit) console.log(chalk.gray(`   - Mode: Harvesting metadata only`));
+  if (!isYearAudit && !isRatingsAudit && !isAvgAudit && !isRegexAudit && !isSeriesPosAudit) console.log(chalk.gray(`   - Mode: Harvesting metadata only`));
+
+  const result: AuditResult = {
+    listId,
+    listTitle,
+    totalBooks: 0,
+    outliers: 0,
+    tooManyRatings: 0,
+    tooFewRatings: 0,
+    tooEarly: 0,
+    tooLate: 0,
+    tooLowAvg: 0,
+    tooHighAvg: 0,
+    regexMismatch: 0,
+    seriesPosMismatch: 0
+  };
 
   try {
     const listBooks = await scrapeListBooks(listId);
     await syncBooksToCache(listBooks, bookCache);
+    result.totalBooks = listBooks.length;
     
     let outliersFound = 0;
     const tooFewRatings: string[] = [];
@@ -234,6 +275,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
     const tooLowAvg: string[] = [];
     const tooHighAvg: string[] = [];
     const regexMismatch: string[] = [];
+    const seriesPosMismatch: string[] = [];
 
     // Pre-index cache by normalized title for year lookups
     const titleCache: Record<string, string> = {};
@@ -284,6 +326,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
                         author: book.author,
                         ratings: book.ratings,
                         published: resolvedYear,
+                        seriesPos: parseSeriesPos(book.title),
                         lastUpdated: new Date().toISOString()
                     };
                 } else {
@@ -303,6 +346,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
                 author: book.author,
                 ratings: book.ratings,
                 published: details.published || 'Unknown',
+                seriesPos: parseSeriesPos(book.title),
                 lastUpdated: new Date().toISOString(),
                 requiresAuth: details.requiresAuth
              };
@@ -364,6 +408,22 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
         outliersFound++;
         regexMismatch.push(bookLink);
       }
+
+      // 5. SERIES POSITION CHECK (equality only)
+      if (isSeriesPosAudit && !isNaN(seriesPosTarget)) {
+        const bookSeriesPos = parseSeriesPos(book.title);
+        if (!matchesSeriesPos(seriesPosTarget, bookSeriesPos)) {
+          const actual = bookSeriesPos !== undefined ? `pos ${bookSeriesPos}` : 'standalone';
+          const expected = seriesPosTarget === SERIES_POS_STANDALONE ? 'standalone' : `pos ${seriesPosTarget}`;
+          const reason = `Expected ${expected}, got ${actual}`;
+          const bookLink = formatBookLink(book.title, book.id);
+          const authorStr = book.author ? ` by ${book.author}` : '';
+          console.log(chalk.red.bold(`   ❌ OUTLIER: [SERIES POSITION] ${bookLink}${authorStr} (${reason}, Pos: ${book.position})`));
+          await appendToAuditReport(listTitle, `[SERIES POSITION] ${book.title}${authorStr} [ID: ${book.id}] (${reason})`);
+          outliersFound++;
+          seriesPosMismatch.push(bookLink);
+        }
+      }
     }
 
     await saveBookCache(bookCache);
@@ -376,10 +436,25 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<v
     if (tooLowAvg.length > 0) console.log(chalk.red.bold(`\n❌ Below avg rating threshold: ${tooLowAvg.join(' and ')}`));
     if (tooHighAvg.length > 0) console.log(chalk.red.bold(`\n❌ Above avg rating threshold: ${tooHighAvg.join(' and ')}`));
     if (regexMismatch.length > 0) console.log(chalk.red.bold(`\n❌ Regex mismatch: ${regexMismatch.join(' and ')}`));
+    if (seriesPosMismatch.length > 0) console.log(chalk.red.bold(`\n❌ Wrong series position: ${seriesPosMismatch.join(' and ')}`));
 
     reportAuditSummary(outliersFound, listBooks.length);
+
+    result.outliers = outliersFound;
+    result.tooManyRatings = tooManyRatings.length;
+    result.tooFewRatings = tooFewRatings.length;
+    result.tooEarly = tooEarlyYears.length;
+    result.tooLate = tooLateYears.length;
+    result.tooLowAvg = tooLowAvg.length;
+    result.tooHighAvg = tooHighAvg.length;
+    result.regexMismatch = regexMismatch.length;
+    result.seriesPosMismatch = seriesPosMismatch.length;
+
+    return result;
   } catch (error) {
     console.error(chalk.red.bold(`\n❌ Audit failed:`), (error as any).message);
+    result.failed = true;
+    return result;
   }
 }
 

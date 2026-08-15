@@ -2,6 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
 import { normalizeTitle, normalizeAuthor } from './utils.js';
+import { loadBookCache, saveBookCache, BookCache } from './storage.js';
 
 const REQUIRED_COLUMNS = ['Book Id', 'Title', 'Author', 'Exclusive Shelf', 'Date Read', 'My Review', 'My Rating', 'Number of Pages', 'Publisher', 'Bookshelves'];
 
@@ -59,6 +60,66 @@ export function matchesReviewed(
     if (library.reviewedByTitleAuthor.has(key)) return true;
   }
   return false;
+}
+
+export interface BookPagesBackfillResult {
+  updates: { id: string; pages: string }[];
+  skippedExisting: number;
+  skippedNoCache: number;
+}
+
+function parsePages(value: string | undefined): number {
+  const n = parseInt((value || '').replace(/[^\d]/g, ''), 10);
+  return isNaN(n) ? 0 : n;
+}
+
+// Fill page counts from the library export into the book cache, but only for
+// books the cache already knows about AND that have no valid page count yet.
+// Never overwrite an existing value: the export is a snapshot that may be older
+// than whatever the scraper captured live. For duplicate book IDs (e.g. a book
+// on both read and to-read shelves), the largest valid count wins.
+export function computeBookPagesBackfill(entries: LibraryEntry[], bookCache: BookCache): BookPagesBackfillResult {
+  const bestPages = new Map<string, number>();
+  for (const entry of entries) {
+    if (!entry.id) continue;
+    const pages = parsePages(entry.pages);
+    if (pages <= 0) continue;
+    const existing = bestPages.get(entry.id) || 0;
+    if (pages > existing) bestPages.set(entry.id, pages);
+  }
+
+  const updates: { id: string; pages: string }[] = [];
+  let skippedExisting = 0;
+  let skippedNoCache = 0;
+
+  for (const [id, pages] of bestPages) {
+    const book = bookCache[id];
+    if (!book) {
+      skippedNoCache++;
+      continue;
+    }
+    if (parsePages(book.pages) > 0) {
+      skippedExisting++;
+      continue;
+    }
+    updates.push({ id, pages: String(pages) });
+  }
+
+  return { updates, skippedExisting, skippedNoCache };
+}
+
+export async function backfillBookPagesFromLibrary(entries: LibraryEntry[]): Promise<BookPagesBackfillResult> {
+  const bookCache = await loadBookCache();
+  const result = computeBookPagesBackfill(entries, bookCache);
+  if (result.updates.length === 0) return result;
+
+  const now = new Date().toISOString();
+  for (const { id, pages } of result.updates) {
+    bookCache[id].pages = pages;
+    bookCache[id].lastUpdated = now;
+  }
+  await saveBookCache(bookCache);
+  return result;
 }
 
 function parseCsv(text: string): string[][] {
@@ -194,6 +255,19 @@ export async function loadLibraryExport(exportPath: string, libraryName?: string
     entries
   };
   await saveLibraryExportCache(library, libraryName);
+
+  // Named libraries (e.g. --library friend) are someone else's export and must
+  // never write into the shared book cache. Only your own (default) export can
+  // backfill page counts, and only where the cache has no valid count yet.
+  if (!libraryName) {
+    const backfill = await backfillBookPagesFromLibrary(entries);
+    if (backfill.updates.length > 0) {
+      console.log(chalk.gray(
+        `   Book cache pages backfilled: ${backfill.updates.length} (kept existing: ${backfill.skippedExisting}, no cache entry: ${backfill.skippedNoCache})`
+      ));
+    }
+  }
+
   return library;
 }
 

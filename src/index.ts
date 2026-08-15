@@ -14,6 +14,9 @@ import { runCheckQueue } from './checkQueue.js';
 import { runSummaryByYear } from './summary.js';
 import { runSummaryRatings } from './summaryRatings.js';
 import { runRatingsHistogram } from './summaryHistogram.js';
+import { runSummarySeriesPos } from './summarySeriesPos.js';
+import { runBackfillSeriesPos } from './backfillSeriesPos.js';
+import { runBackfillPages } from './backfillPages.js';
 import { runAvgHistogram } from './summaryAvgHistogram.js';
 import { runAuthorTopBooks } from './authorTopBooks.js';
 import { runAuthorTopStats } from './authorTopStats.js';
@@ -27,7 +30,9 @@ import { runLifeInBooks } from './lifeInBooks.js';
 import { runFavoriteAuthors } from './favoriteAuthors.js';
 import { runPublisherStats } from './publisherStats.js';
 import { runShelfStats } from './shelfStats.js';
-import { runTagGaps } from './tagGaps.js';
+import { runCommonMonitoredBooks } from './commonMonitoredBooks.js';
+import { runCommonUnreviewedMonitoredBooks } from './commonUnreviewedMonitoredBooks.js';
+import { runTagGaps, runCacheGaps } from './tagGaps.js';
 import { runNextBooks } from './nextBooks.js';
 import { loadState, saveState, loadConfig } from './storage.js';
 
@@ -100,6 +105,40 @@ program
       await runRatingsHistogram();
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate ratings histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('series-pos-histogram')
+  .description('Show a histogram of the number of books in the cache by series position')
+  .action(async () => {
+    try {
+      await runSummarySeriesPos();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate series position histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('backfill-series-pos')
+  .description('Recompute seriesPos for every cached book from its title and save the cache (fixes stale/incorrect values)')
+  .action(async () => {
+    try {
+      await runBackfillSeriesPos();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to backfill series positions:'), (error as any).message);
+    }
+  });
+
+program
+  .command('backfill-pages')
+  .description('Copy page counts from the cached library export into booksCache.json where the cache has none')
+  .option('--library <name>', 'Named libraries are skipped — only your own export can backfill the shared book cache')
+  .action(async (options) => {
+    try {
+      await runBackfillPages(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to backfill book pages:'), (error as any).message);
     }
   });
 
@@ -383,6 +422,45 @@ Examples:
   });
 
 program
+  .command('common-monitored-books')
+  .description('Find books that appear in the most monitored lists (from state.json) and print their cached book info')
+  .addHelpText('after', `
+Examples:
+  $ npm run common-monitored-books -- --limit 20
+  $ npm run common-monitored-books -- --limit 50`)
+  .option('--limit <number>', 'Number of top books to show (default 20)', '20')
+  .action(async (options) => {
+    try {
+      await runCommonMonitoredBooks(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to find common monitored books:'), (error as any).message);
+    }
+  });
+
+program
+  .command('common-unreviewed-monitored-books')
+  .description('Find books that appear in the most monitored lists (from state.json) that you have NOT reviewed, and print their cached book info. Uses the cached library import; pass --export/--import to refresh.')
+  .addHelpText('after', `
+Examples:
+  $ npm run common-unreviewed-monitored-books -- --limit 20
+  $ npm run common-unreviewed-monitored-books -- --limit 50
+  $ npm run common-unreviewed-monitored-books -- --terse --limit 50  # one line per book
+  $ npm run common-unreviewed-monitored-books -- --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export
+  $ ./commonUnreviewedMonitoredBooks.sh --limit 20`)
+  .option('--limit <number>', 'Number of top books to show (default 20)', '20')
+  .option('--terse', 'One line per book (book link, author, publish year, list count)')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (options) => {
+    try {
+      await runCommonUnreviewedMonitoredBooks(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to find common unreviewed monitored books:'), (error as any).message);
+    }
+  });
+
+program
   .command('tag-gaps <tag>')
   .description('Scan a Goodreads shelf (e.g. picture-books) and list up to N books per "missing" review gap (title / author first name / author last name letters + publication years) for a year')
   .addHelpText('after', `
@@ -402,6 +480,27 @@ Examples:
       await runTagGaps(tag, { ...options, export: options.export || options.import });
     } catch (error) {
       console.error(chalk.red.bold('Failed to find tag gaps:'), (error as any).message);
+    }
+  });
+
+program
+  .command('cache-gaps')
+  .description('Like tag-gaps but scans the book cache (sorted by ratings) instead of a shelf: list up to N books per "missing" review gap (title / author first name / author last name letters + publication years) for a year')
+  .addHelpText('after', `
+Examples:
+  $ npm run cache-gaps -- --year 2026
+  $ npm run cache-gaps -- --year 2026 --limit 3
+  $ ./cacheGaps.sh --year 2026`)
+  .option('--year <year>', 'Review year for the missing audit (default: most recent year with reviews)')
+  .option('--limit <number>', 'How many books to report per missing bucket (default 3)', '3')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache first (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (options) => {
+    try {
+      await runCacheGaps({ ...options, export: options.export || options.import });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to find cache gaps:'), (error as any).message);
     }
   });
 
@@ -534,6 +633,8 @@ Examples:
   $ npm run audit -- 1234 --min 1000
   $ npm run audit -- 1234 --titleRegex '^j'
   $ npm run audit -- 1234 --authorLastRegex '^sanderson' --maxYear 1999
+  $ npm run audit -- 1234 --seriesPos 1       # flag books not in series position 1
+  $ npm run audit -- 1234 --seriesPos -1      # flag any book that is NOT standalone
   $ ./bulkAudit.sh  # reads regex criteria from bulkAuditConfig.json`)
   .option('--min <number>', 'Minimum number of ratings allowed (e.g., 1000)')
   .option('--max <number>', 'Maximum number of ratings allowed (e.g., 50000)')
@@ -541,6 +642,7 @@ Examples:
   .option('--maxYear <year>', 'Maximum publishing year allowed (e.g., 2024)')
   .option('--minAvg <number>', 'Minimum average rating (e.g., 4.0)')
   .option('--maxAvg <number>', 'Maximum average rating (e.g., 5.0)')
+  .option('--seriesPos <number>', 'Require books at this exact series position (e.g. 1, 2, 0.5); use -1 to require standalone books')
   .option('--titleRegex <regex>', 'Flag books whose title does NOT match this regex (case-insensitive)')
   .option('--authorLastRegex <regex>', 'Flag books whose first author\'s last name does NOT match this regex')
   .option('--authorFirstRegex <regex>', 'Flag books whose first author\'s first name does NOT match this regex')
@@ -549,14 +651,20 @@ Examples:
     const hasYear = options.minYear !== undefined || options.maxYear !== undefined;
     const hasAvg = options.minAvg !== undefined || options.maxAvg !== undefined;
     const hasRegex = options.titleRegex !== undefined || options.authorLastRegex !== undefined || options.authorFirstRegex !== undefined;
+    const hasSeriesPos = options.seriesPos !== undefined;
 
     if (hasRatings && hasYear) {
       console.error(chalk.red.bold('Error: You can audit by ratings OR publishing year, but not both at the same time.'));
       process.exit(1);
     }
 
-    if (!hasRatings && !hasYear && !hasAvg && !hasRegex) {
-      console.error(chalk.red.bold('Error: You must provide at least one criteria (e.g., --min, --minYear, --minAvg, or --titleRegex).'));
+    if (hasSeriesPos && isNaN(parseFloat(options.seriesPos))) {
+      console.error(chalk.red.bold(`Error: Invalid --seriesPos "${options.seriesPos}". Use a number (e.g. 1, 0.5) or -1 for standalone.`));
+      process.exit(1);
+    }
+
+    if (!hasRatings && !hasYear && !hasAvg && !hasRegex && !hasSeriesPos) {
+      console.error(chalk.red.bold('Error: You must provide at least one criteria (e.g., --min, --minYear, --minAvg, --titleRegex, or --seriesPos).'));
       process.exit(1);
     }
 

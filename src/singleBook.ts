@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { scrapeBookDetails } from './scraper.js';
 import { loadBookCache, saveBookCache, BookCache, CachedBook } from './storage.js';
+import { parseSeriesPos } from './seriesPos.js';
 
 export async function scrapeAndCacheBook(bookId: string, force = false, passedCache?: BookCache): Promise<CachedBook | null> {
   try {
@@ -26,6 +27,8 @@ export async function scrapeAndCacheBook(bookId: string, force = false, passedCa
     const newRatings = (details.ratings && details.ratings !== '0') ? details.ratings : (existing?.ratings || '0');
     const newAvgRating = details.avgRating || existing?.avgRating;
     const newPublished = (details.published && details.published !== 'Unknown') ? details.published : (existing?.published || 'Unknown');
+    const newPages = details.pages || existing?.pages;
+    const newSeriesPos = parseSeriesPos(newTitle) ?? existing?.seriesPos;
 
     const failCount = details.isFailed ? (existing?.failCount || 0) + 1 : 0;
     const isBad = failCount >= 3;
@@ -38,6 +41,8 @@ export async function scrapeAndCacheBook(bookId: string, force = false, passedCa
       ratings: newRatings,
       avgRating: newAvgRating,
       published: newPublished,
+      pages: newPages,
+      seriesPos: newSeriesPos,
       lastUpdated: new Date().toISOString(),
       tags: existing?.tags || {},
       requiresAuth: details.requiresAuth || existing?.requiresAuth || false,
@@ -63,8 +68,10 @@ export async function scrapeAndCacheBook(bookId: string, force = false, passedCa
     const avgChanged = existing?.avgRating !== updated.avgRating;
     const titleChanged = existing?.title !== updated.title;
     const authChanged = existing?.author !== updated.author;
+    const pagesChanged = existing?.pages !== updated.pages;
+    const seriesPosChanged = existing?.seriesPos !== updated.seriesPos;
     
-    const hasChanges = pubChanged || ratingsChanged || avgChanged || titleChanged || authChanged;
+    const hasChanges = pubChanged || ratingsChanged || avgChanged || titleChanged || authChanged || pagesChanged || seriesPosChanged;
 
     if (!hasChanges) {
       console.log(chalk.gray(`   ✅ No change: "${updated.title}"`));
@@ -77,6 +84,8 @@ export async function scrapeAndCacheBook(bookId: string, force = false, passedCa
       if (pubChanged)   console.log(chalk.yellow(`      Published: ${existing?.published} -> ${updated.published}`));
       if (ratingsChanged) console.log(chalk.yellow(`      Ratings:   ${existing?.ratings} -> ${updated.ratings}`));
       if (avgChanged) console.log(chalk.yellow(`      Avg Rating: ${existing?.avgRating || 'None'} -> ${updated.avgRating}`));
+      if (pagesChanged) console.log(chalk.yellow(`      Pages:     ${existing?.pages || 'None'} -> ${updated.pages}`));
+      if (seriesPosChanged) console.log(chalk.yellow(`      Series Pos: ${existing?.seriesPos ?? 'None'} -> ${updated.seriesPos ?? 'None'}`));
     }
     
     if (updated.requiresAuth) {

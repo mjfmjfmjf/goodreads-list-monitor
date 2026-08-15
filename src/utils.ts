@@ -170,18 +170,17 @@ export function normalizeAuthor(author: string): string {
 }
 
 export function formatBookLink(title: string, id: string): string {
-  // If title contains CJK (Chinese, Japanese, Korean) characters, 
-  // or if it's a known Asian-origin title like Naruto, 
-  // we use the [book:Title|ID] format which Goodreads handles better.
-  const hasAsianChars = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/.test(title);
-  
-  // We'll also use it for everything in the log/reports for better Goodreads compatibility
-  // as it creates clickable links if pasted into Goodreads.
-  if (hasAsianChars || title.toLowerCase().includes('naruto') || title.toLowerCase().includes('jujutsu') || title.toLowerCase().includes('spy×family')) {
-     return `[book:${title}|${id}]`;
-  }
-  
-  // Default to a quoted title but return the link format if we want to be safe across the board.
-  // Let's use the link format for ALL books in messages to be safe and helpful.
-  return `[book:${title}|${id}]`;
+  // The [book:Title|ID] link format uses [ ], and | as syntax, so strip any of
+  // those from the title itself. Otherwise titles like "約束のネバーランド 19
+  // [Yakusoku no Neverland 19]" produce a broken-looking nested-bracket link.
+  const cleanTitle = title.replace(/[\[\]|]/g, ' ').replace(/\s+/g, ' ').trim();
+  return `[book:${cleanTitle}|${id}]`;
+}
+
+export function formatDuration(ms: number): string {
+  const totalMinutes = Math.floor(ms / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
 }

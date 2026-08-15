@@ -1,0 +1,15 @@
+{
+  "tag": "politics",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "politics > 1000 ratings and 200 shelves",
+      "id": "97141",
+      "url": "https://www.goodreads.com/list/show/97141",
+      "criteria": {
+        "min": 1000,
+        "minTags": 200
+      }
+    }
+  ]
+}

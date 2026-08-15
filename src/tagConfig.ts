@@ -15,6 +15,7 @@ export interface AuditCriteria {
   minTags?: number;
   minAvg?: number;
   maxAvg?: number;
+  seriesPos?: number;
   titleRegex?: string;
   authorLastRegex?: string;
   authorFirstRegex?: string;

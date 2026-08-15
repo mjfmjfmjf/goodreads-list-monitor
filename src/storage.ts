@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
+import { parseSeriesPos } from './seriesPos.js';
 
 export interface ListState {
   title: string;
@@ -18,6 +19,8 @@ export interface CachedBook {
   ratings: string;
   avgRating?: string;
   published: string;
+  pages?: string;
+  seriesPos?: number;
   lastUpdated: string;
   tags?: { [tagName: string]: number };
   requiresAuth?: boolean;
@@ -175,10 +178,14 @@ export async function syncBooksToCache(books: any[], bookCache: BookCache) {
     const hasBetterAuthor = existing?.author === 'Unknown' && book.author !== 'Unknown';
     const hasBetterAuthorId = !existing?.authorId && book.authorId;
     const hasBetterDate = (existing?.published === 'Unknown' || !existing?.published) && (book.published && book.published !== 'Unknown');
+    const hasBetterPages = !existing?.pages && book.pages;
     const hasBetterRatings = newRatingsNum > existingRatingsNum;
     const hasBetterAvgRating = book.avgRating && book.avgRating !== existing?.avgRating;
+    const newSeriesPos = book.title !== 'Unknown' ? parseSeriesPos(book.title) : undefined;
+    const hasBetterSeriesPos = existing?.seriesPos === undefined && newSeriesPos !== undefined;
+    const hasChangedSeriesPos = existing?.seriesPos !== undefined && newSeriesPos !== undefined && newSeriesPos !== existing.seriesPos;
 
-    if (isNew || hasBetterTitle || hasBetterAuthor || hasBetterAuthorId || hasBetterDate || hasBetterRatings || hasBetterAvgRating) {
+    if (isNew || hasBetterTitle || hasBetterAuthor || hasBetterAuthorId || hasBetterDate || hasBetterPages || hasBetterRatings || hasBetterAvgRating || hasBetterSeriesPos || hasChangedSeriesPos) {
       bookCache[book.id] = {
         id: book.id,
         title: book.title !== 'Unknown' ? book.title : (existing?.title || 'Unknown'),
@@ -187,6 +194,8 @@ export async function syncBooksToCache(books: any[], bookCache: BookCache) {
         ratings: hasBetterRatings ? book.ratings : (existing?.ratings || '0'),
         avgRating: book.avgRating || existing?.avgRating,
         published: (book.published && book.published !== 'Unknown') ? book.published : (existing?.published || 'Unknown'),
+        pages: book.pages || existing?.pages,
+        seriesPos: newSeriesPos !== undefined ? newSeriesPos : existing?.seriesPos,
         lastUpdated: new Date().toISOString(),
         tags: existing?.tags || (book.tagCount !== undefined ? {} : undefined)
       };
