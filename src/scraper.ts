@@ -116,9 +116,9 @@ export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]
   return allLists;
 }
 
-export async function scrapeTopShelves(): Promise<string[]> {
+export async function scrapeTopShelves(page = 1): Promise<string[]> {
   const configData = await loadConfig();
-  const url = 'https://www.goodreads.com/shelf';
+  const url = `https://www.goodreads.com/shelf${page > 1 ? `?page=${page}` : ''}`;
   const headers: any = { 'User-Agent': USER_AGENT };
   if (configData.cookie) headers['Cookie'] = configData.cookie;
 

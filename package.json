@@ -18,6 +18,7 @@
     "summary-bottom": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts summary-bottom",
     "ratings-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts ratings-histogram",
     "series-pos-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts series-pos-histogram",
+    "title-char-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts title-char-histogram",
     "backfill-series-pos": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts backfill-series-pos",
     "backfill-pages": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts backfill-pages",
     "avg-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts avg-histogram",

@@ -15,6 +15,7 @@ import { runSummaryByYear } from './summary.js';
 import { runSummaryRatings } from './summaryRatings.js';
 import { runRatingsHistogram } from './summaryHistogram.js';
 import { runSummarySeriesPos } from './summarySeriesPos.js';
+import { runTitleCharHistogram } from './titleCharHistogram.js';
 import { runBackfillSeriesPos } from './backfillSeriesPos.js';
 import { runBackfillPages } from './backfillPages.js';
 import { runAvgHistogram } from './summaryAvgHistogram.js';
@@ -116,6 +117,17 @@ program
       await runSummarySeriesPos();
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate series position histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('title-char-histogram')
+  .description('Show a histogram of the first and last character of book titles in the cache (including punctuation like ? ! . ,)')
+  .action(async () => {
+    try {
+      await runTitleCharHistogram();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate title character histogram:'), (error as any).message);
     }
   });
 
@@ -724,6 +736,7 @@ program
   .description('Run tag discovery for top shelves discovered on Goodreads (https://www.goodreads.com/shelf)')
   .option('--start <number>', 'Starting shelf index (1-based, default 1)', '1')
   .option('--count <number>', 'Number of shelves to process (default 10)', '10')
+  .option('--page <number>', 'Top shelves page to read (e.g. 2 for https://www.goodreads.com/shelf?page=2, default 1)', '1')
   .option('--minTags <number>', 'Minimum tag count (applied to all audits in the batch)', '0')
   .option('--minAvg <number>', 'Global minimum average rating')
   .option('--maxAvg <number>', 'Global maximum average rating')

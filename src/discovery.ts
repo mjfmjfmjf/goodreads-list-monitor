@@ -113,7 +113,11 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
     if (globalOptions.cacheOnly && config) {
       console.log(chalk.gray(`   ⏩ Skipping list audits for "${tagName}" (cache-only mode enabled).`));
     }
-    console.log(chalk.cyan.bold(`✨ Discovery run complete for tag "${tagName}". Book cache updated${countMsg}.`));
+    const completeMsg = `Discovery run complete for tag "${tagName}". Book cache updated${countMsg}.`;
+    console.log(chalk.cyan.bold(`✨ ${completeMsg}`));
+    if (newBooksCount > 0) {
+      await appendToAuditReport('SUMMARY', completeMsg);
+    }
     return;
   }
 
@@ -216,13 +220,18 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   await saveBookCache(bookCache);
   const endCacheSize = Object.keys(bookCache).length;
   const netAdded = endCacheSize - initialCacheSize;
+  if (netAdded > 0) {
+    const completeMsg = `Discovery run complete for tag "${tagName}". Book cache updated (${initialCacheSize.toLocaleString()} → ${endCacheSize.toLocaleString()} books, +${netAdded.toLocaleString()} new books added).`;
+    await appendToAuditReport('SUMMARY', completeMsg);
+  }
   console.log(chalk.cyan.bold(`\nDiscovery run complete. All results saved to auditReport.txt.`));
   console.log(chalk.green.bold(`   Book cache updated: ${initialCacheSize.toLocaleString()} → ${endCacheSize.toLocaleString()} books (+${netAdded.toLocaleString()} new books added).`));
 }
 
-export async function runBulkTagDiscovery(options: { start?: string, count?: string, minTags?: string, minAvg?: string, maxAvg?: string, audits?: boolean, cacheOnly?: boolean }): Promise<void> {
+export async function runBulkTagDiscovery(options: { start?: string, count?: string, minTags?: string, minAvg?: string, maxAvg?: string, audits?: boolean, cacheOnly?: boolean, page?: string }): Promise<void> {
   const startNum = parseInt(options.start || '1', 10);
   const countNum = parseInt(options.count || '10', 10);
+  const pageNum = parseInt(options.page || '1', 10);
   const cacheOnly = options.audits ? false : (options.cacheOnly !== undefined ? options.cacheOnly : true);
 
   if (isNaN(startNum) || startNum < 1) {
@@ -231,9 +240,12 @@ export async function runBulkTagDiscovery(options: { start?: string, count?: str
   if (isNaN(countNum) || countNum < 1) {
     throw new Error(`Invalid count/number of shelves: ${options.count}`);
   }
+  if (isNaN(pageNum) || pageNum < 1) {
+    throw new Error(`Invalid page number: ${options.page}`);
+  }
 
-  console.log(chalk.cyan.bold(`\n🌐 Fetching top shelves list from https://www.goodreads.com/shelf...`));
-  const allShelves = await scrapeTopShelves();
+  console.log(chalk.cyan.bold(`\n🌐 Fetching top shelves list from https://www.goodreads.com/shelf${pageNum > 1 ? `?page=${pageNum}` : ''}...`));
+  const allShelves = await scrapeTopShelves(pageNum);
 
   if (allShelves.length === 0) {
     throw new Error('No shelves discovered on https://www.goodreads.com/shelf');
