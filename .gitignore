@@ -18,6 +18,7 @@ shelf.html
 
 # Saved Goodreads reference pages
 mjf.year.in.books.*.txt
+summaryYear.*.txt
 
 # Configuration (contains private cookies/tokens)
 config.json*
