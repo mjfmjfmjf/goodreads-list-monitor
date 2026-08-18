@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { loadBookCache, CachedBook } from './storage.js';
+import { stripTitleSuffix } from './utils.js';
 
 export interface TitleCharRow {
   char: string;
@@ -19,7 +20,7 @@ export function computeTitleCharHistogram(
   const lastCounts = new Map<string, number>();
 
   for (const book of books) {
-    const title = book.title;
+    const title = stripTitleSuffix(book.title);
     if (!title) continue;
 
     const first = title.charAt(0);

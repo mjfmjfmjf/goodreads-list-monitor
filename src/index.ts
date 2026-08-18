@@ -722,10 +722,22 @@ program
   .option('--minTags <number>', 'Minimum tag count (applied to all audits in the batch)', '0')
   .option('--minAvg <number>', 'Global minimum average rating')
   .option('--maxAvg <number>', 'Global maximum average rating')
+  .option('--shelfPages <range>', 'Pages of the shelf to scan (default 1-25; e.g. "7-11", "1-10")', '1-25')
   .option('--cacheOnly', 'Only parse shelf books into book cache and skip list audits')
   .action(async (tagName, options) => {
     try {
-      await runTagDiscovery(tagName, options);
+      let shelfPageStart = '1';
+      let shelfPageEnd = '25';
+      if (options.shelfPages) {
+        const rangeMatch = options.shelfPages.match(/^(\d+)(?:-(\d+))?$/);
+        if (!rangeMatch) {
+          console.error(chalk.red.bold(`Invalid shelf pages range: "${options.shelfPages}". Use "N" or "N-M" (e.g. "7-11", "1-10").`));
+          process.exit(1);
+        }
+        shelfPageStart = rangeMatch[1];
+        shelfPageEnd = rangeMatch[2] || rangeMatch[1];
+      }
+      await runTagDiscovery(tagName, { ...options, shelfPageStart, shelfPageEnd });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run tag discovery:'), (error as any).message);
     }
@@ -736,7 +748,8 @@ program
   .description('Run tag discovery for top shelves discovered on Goodreads (https://www.goodreads.com/shelf)')
   .option('--start <number>', 'Starting shelf index (1-based, default 1)', '1')
   .option('--count <number>', 'Number of shelves to process (default 10)', '10')
-  .option('--page <number>', 'Top shelves page to read (e.g. 2 for https://www.goodreads.com/shelf?page=2, default 1)', '1')
+  .option('--pages <range>', 'Pages of the top shelves list to fetch (default 1-25; e.g. "1-25", "24-25", "24")', '1-25')
+  .option('--shelfPages <range>', 'Pages of each shelf to scan (default 1-25; e.g. "7-11", "1-10")', '1-25')
   .option('--minTags <number>', 'Minimum tag count (applied to all audits in the batch)', '0')
   .option('--minAvg <number>', 'Global minimum average rating')
   .option('--maxAvg <number>', 'Global maximum average rating')

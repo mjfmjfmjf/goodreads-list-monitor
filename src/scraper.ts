@@ -140,13 +140,13 @@ export async function scrapeTopShelves(page = 1): Promise<string[]> {
   return tags;
 }
 
-export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25): Promise<BookMetadata[]> {
+export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, startPage = 1): Promise<BookMetadata[]> {
   const configData = await loadConfig();
   let allBooks: BookMetadata[] = [];
   let thresholdReached = false;
   let lastPageFirstId = '';
 
-  for (let page = 1; page <= maxPages; page++) {
+  for (let page = startPage; page <= maxPages; page++) {
     if (thresholdReached) break;
 
     console.log(chalk.cyan.bold(`🌐 Scraping shelf "${tag}" page ${page}...`));

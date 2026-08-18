@@ -38,4 +38,12 @@ describe('compileRegex / matchesRegex', () => {
   it('compiles case-insensitively', () => {
     expect(compileRegex('dune').test('DUNE')).toBe(true);
   });
+  it('strips trailing series suffixes before testing title regex', () => {
+    expect(matchesRegex({ title: 'Yukon Ho! (Calvin and Hobbes, #3)', author: 'Bill Watterson' }, { titleRegex: '!$' })).toBe(true);
+    expect(matchesRegex({ title: 'Oops! (Oops!, #1)', author: 'Alexandra Warren' }, { titleRegex: '!$' })).toBe(true);
+    expect(matchesRegex({ title: 'The Way of Kings (The Stormlight Archive, #1)', author: 'Brandon Sanderson' }, { titleRegex: '^the' })).toBe(true);
+  });
+  it('does not strip mid-title parentheses', () => {
+    expect(matchesRegex({ title: 'This Is (Not) a Title', author: 'Author' }, { titleRegex: 'title$' })).toBe(true);
+  });
 });

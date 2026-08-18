@@ -1,36 +1,63 @@
 import { describe, expect, it } from 'vitest';
 import { computeTitleCharHistogram } from './titleCharHistogram.js';
+import { stripTitleSuffix } from './utils.js';
+
+describe('stripTitleSuffix', () => {
+  it('strips trailing series info with number', () => {
+    expect(stripTitleSuffix('Yukon Ho! (Calvin and Hobbes, #3)')).toBe('Yukon Ho!');
+    expect(stripTitleSuffix('Harry Potter and the Half-Blood Prince (Harry Potter, #6)')).toBe('Harry Potter and the Half-Blood Prince');
+  });
+
+  it('strips trailing format tags', () => {
+    expect(stripTitleSuffix('The Heidi Chronicles (Paperback)')).toBe('The Heidi Chronicles');
+    expect(stripTitleSuffix('Sand and Foam (Hardcover)')).toBe('Sand and Foam');
+  });
+
+  it('strips trailing series ranges', () => {
+    expect(stripTitleSuffix('Harry Potter Boxed Set, Books 1-5 (Harry Potter, #1-5)')).toBe('Harry Potter Boxed Set, Books 1-5');
+  });
+
+  it('strips trailing series without #', () => {
+    expect(stripTitleSuffix('Rising from the Plains (Annals of the Former World, 3)')).toBe('Rising from the Plains');
+  });
+
+  it('leaves titles without trailing parens unchanged', () => {
+    expect(stripTitleSuffix('Dune')).toBe('Dune');
+    expect(stripTitleSuffix('The Way of Kings')).toBe('The Way of Kings');
+  });
+
+  it('handles empty title', () => {
+    expect(stripTitleSuffix('')).toBe('');
+  });
+});
 
 describe('computeTitleCharHistogram', () => {
   const book = (title: string) => ({ title });
 
-  it('counts first characters, sorted by count then char', () => {
+  it('counts first characters after stripping series suffixes', () => {
     const hist = computeTitleCharHistogram([
-      book('The Way of Kings'),
+      book('Yukon Ho! (Calvin and Hobbes, #3)'),
+      book('The Way of Kings (The Stormlight Archive, #1)'),
       book('The Hobbit'),
       book('Dune'),
-      book('Dune Messiah'),
     ]);
     expect(hist.first).toEqual([
-      { char: 'D', count: 2 },
       { char: 'T', count: 2 },
+      { char: 'D', count: 1 },
+      { char: 'Y', count: 1 },
     ]);
   });
 
-  it('counts last characters, including punctuation', () => {
+  it('counts last characters after stripping series suffixes', () => {
     const hist = computeTitleCharHistogram([
-      book('Who Goes There?'),
-      book('Is it you?'),
-      book('The End!'),
-      book('Yes!'),
+      book('Yukon Ho! (Calvin and Hobbes, #3)'),
+      book('Weirdos from Another Planet! (Calvin and Hobbes, #4)'),
+      book('The End.'),
       book('Help.'),
-      book('Ready, Player One'),
     ]);
     expect(hist.last).toEqual([
       { char: '!', count: 2 },
-      { char: '?', count: 2 },
-      { char: '.', count: 1 },
-      { char: 'e', count: 1 },
+      { char: '.', count: 2 },
     ]);
   });
 

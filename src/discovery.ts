@@ -33,7 +33,7 @@ async function appendToAuditReport(listTitle: string, message: string): Promise<
   await fs.appendFile(AUDIT_REPORT, entry);
 }
 
-export async function runTagDiscovery(tagName: string, globalOptions: { minTags?: string, minAvg?: string, maxAvg?: string, cacheOnly?: boolean }): Promise<void> {
+export async function runTagDiscovery(tagName: string, globalOptions: { minTags?: string, minAvg?: string, maxAvg?: string, cacheOnly?: boolean, shelfPageStart?: string, shelfPageEnd?: string }): Promise<void> {
   const configPath = path.join(process.cwd(), 'tags', `${tagName}.json`);
   let config: TagConfig | null = null;
   if (await fs.pathExists(configPath)) {
@@ -56,8 +56,10 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   console.log(chalk.gray(`   Book cache starting size: ${initialCacheSize.toLocaleString()} books\n`));
 
   // 1. GLOBAL SHELF SCAN
-  console.log(chalk.cyan.bold(`🔎 Step 1: Scanning global shelf "${tagName}" (Top 25 pages)...`));
-  const rawShelfBooks = await scrapeShelfBooks(tagName, minTags, 25);
+  const shelfPageStart = parseInt(globalOptions.shelfPageStart || '1', 10);
+  const shelfPageEnd = parseInt(globalOptions.shelfPageEnd || '25', 10);
+  console.log(chalk.cyan.bold(`🔎 Step 1: Scanning global shelf "${tagName}" (pages ${shelfPageStart}-${shelfPageEnd})...`));
+  const rawShelfBooks = await scrapeShelfBooks(tagName, minTags, shelfPageEnd, shelfPageStart);
   await syncBooksToCache(rawShelfBooks, bookCache);
   
   // Smart Deduplication: Treat different editions as the same book
@@ -228,10 +230,9 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   console.log(chalk.green.bold(`   Book cache updated: ${initialCacheSize.toLocaleString()} → ${endCacheSize.toLocaleString()} books (+${netAdded.toLocaleString()} new books added).`));
 }
 
-export async function runBulkTagDiscovery(options: { start?: string, count?: string, minTags?: string, minAvg?: string, maxAvg?: string, audits?: boolean, cacheOnly?: boolean, page?: string }): Promise<void> {
+export async function runBulkTagDiscovery(options: { start?: string, count?: string, minTags?: string, minAvg?: string, maxAvg?: string, audits?: boolean, cacheOnly?: boolean, pages?: string, shelfPages?: string }): Promise<void> {
   const startNum = parseInt(options.start || '1', 10);
   const countNum = parseInt(options.count || '10', 10);
-  const pageNum = parseInt(options.page || '1', 10);
   const cacheOnly = options.audits ? false : (options.cacheOnly !== undefined ? options.cacheOnly : true);
 
   if (isNaN(startNum) || startNum < 1) {
@@ -240,21 +241,70 @@ export async function runBulkTagDiscovery(options: { start?: string, count?: str
   if (isNaN(countNum) || countNum < 1) {
     throw new Error(`Invalid count/number of shelves: ${options.count}`);
   }
-  if (isNaN(pageNum) || pageNum < 1) {
-    throw new Error(`Invalid page number: ${options.page}`);
+
+  // Parse --pages range (default 1-25)
+  let pageStart = 1;
+  let pageEnd = 25;
+  if (options.pages) {
+    const rangeMatch = options.pages.match(/^(\d+)(?:-(\d+))?$/);
+    if (!rangeMatch) {
+      throw new Error(`Invalid pages range: "${options.pages}". Use "N" or "N-M" (e.g. "1-25", "24-25", "24").`);
+    }
+    pageStart = parseInt(rangeMatch[1], 10);
+    pageEnd = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : pageStart;
+    if (isNaN(pageStart) || pageStart < 1 || isNaN(pageEnd) || pageEnd < pageStart) {
+      throw new Error(`Invalid pages range: "${options.pages}". Start must be >= 1 and <= end.`);
+    }
   }
 
-  console.log(chalk.cyan.bold(`\n🌐 Fetching top shelves list from https://www.goodreads.com/shelf${pageNum > 1 ? `?page=${pageNum}` : ''}...`));
-  const allShelves = await scrapeTopShelves(pageNum);
+  // Parse --shelfPages range (default 1-25) for each shelf's book pages
+  let shelfPageStart = '1';
+  let shelfPageEnd = '25';
+  if (options.shelfPages) {
+    const rangeMatch = options.shelfPages.match(/^(\d+)(?:-(\d+))?$/);
+    if (!rangeMatch) {
+      throw new Error(`Invalid shelf pages range: "${options.shelfPages}". Use "N" or "N-M" (e.g. "7-11", "1-10").`);
+    }
+    shelfPageStart = rangeMatch[1];
+    shelfPageEnd = rangeMatch[2] || rangeMatch[1];
+    const s = parseInt(shelfPageStart, 10);
+    const e = parseInt(shelfPageEnd, 10);
+    if (isNaN(s) || s < 1 || isNaN(e) || e < s) {
+      throw new Error(`Invalid shelf pages range: "${options.shelfPages}". Start must be >= 1 and <= end.`);
+    }
+  }
+
+  console.log(chalk.cyan.bold(`\n🌐 Fetching top shelves from pages ${pageStart}-${pageEnd} of https://www.goodreads.com/shelf...`));
+  const allShelves: string[] = [];
+  const seenShelves = new Set<string>();
+
+  for (let page = pageStart; page <= pageEnd; page++) {
+    console.log(chalk.gray(`   📄 Page ${page}...`));
+    try {
+      const pageShelves = await scrapeTopShelves(page);
+      for (const shelf of pageShelves) {
+        if (!seenShelves.has(shelf)) {
+          seenShelves.add(shelf);
+          allShelves.push(shelf);
+        }
+      }
+      console.log(chalk.gray(`      Found ${pageShelves.length} shelves (${allShelves.length} unique total)`));
+    } catch (err: any) {
+      console.error(chalk.red.bold(`   ❌ Error fetching page ${page}:`), err.message);
+    }
+    if (page < pageEnd) {
+      await delay(500, 1500);
+    }
+  }
 
   if (allShelves.length === 0) {
-    throw new Error('No shelves discovered on https://www.goodreads.com/shelf');
+    throw new Error('No shelves discovered on any of the requested pages');
   }
 
   const startIndex = startNum - 1;
   const selectedShelves = allShelves.slice(startIndex, startIndex + countNum);
 
-  console.log(chalk.green.bold(`\n📚 Discovered ${allShelves.length} total shelves on Goodreads top shelves page.`));
+  console.log(chalk.green.bold(`\n📚 Discovered ${allShelves.length} total shelves across pages ${pageStart}-${pageEnd}.`));
   console.log(chalk.cyan.bold(`🎯 Processing ${selectedShelves.length} shelf/shelves (starting at shelf #${startNum}):`));
   selectedShelves.forEach((s, idx) => {
     console.log(chalk.gray(`   ${startNum + idx}. ${s}`));
@@ -269,7 +319,7 @@ export async function runBulkTagDiscovery(options: { start?: string, count?: str
     console.log(chalk.yellow.bold(`==================================================`));
 
     try {
-      await runTagDiscovery(shelfTag, { ...options, cacheOnly });
+      await runTagDiscovery(shelfTag, { ...options, cacheOnly, shelfPageStart, shelfPageEnd });
     } catch (err: any) {
       console.error(chalk.red.bold(`❌ Error running tag discovery for "${shelfTag}":`), err.message);
     }

@@ -1,4 +1,5 @@
 import { CachedBook } from './storage.js';
+import { stripTitleSuffix } from './utils.js';
 
 export type MatchField = 'title' | 'authorLast' | 'authorFirst';
 
@@ -38,7 +39,8 @@ export function authorFirstAndLast(name: string): { first: string; last: string 
 
 export function matchesRegex(book: Pick<CachedBook, 'title' | 'author'>, criterion: RegexCriterion): boolean {
   if (criterion.titleRegex) {
-    if (!compileRegex(criterion.titleRegex).test(book.title || '')) return false;
+    const cleanTitle = stripTitleSuffix(book.title || '');
+    if (!compileRegex(criterion.titleRegex).test(cleanTitle)) return false;
   }
 
   if (criterion.authorLastRegex || criterion.authorFirstRegex) {

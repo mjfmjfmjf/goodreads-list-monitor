@@ -160,6 +160,10 @@ export function normalizeTitle(title: string): string {
     .trim();
 }
 
+export function stripTitleSuffix(title: string): string {
+  return title.replace(/\s*\([^)]*\)\s*$/, '').trim();
+}
+
 export function normalizeAuthor(author: string): string {
   return author
     .toLowerCase()
