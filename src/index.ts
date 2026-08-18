@@ -35,6 +35,7 @@ import { runCommonMonitoredBooks } from './commonMonitoredBooks.js';
 import { runCommonUnreviewedMonitoredBooks } from './commonUnreviewedMonitoredBooks.js';
 import { runTagGaps, runCacheGaps } from './tagGaps.js';
 import { runNextBooks } from './nextBooks.js';
+import { runGenreHarvest } from './genreHarvest.js';
 import { loadState, saveState, loadConfig } from './storage.js';
 
 const program = new Command();
@@ -799,6 +800,27 @@ program
       await runBulkAudit(configFile);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run bulk audit:'), (error as any).message);
+    }
+  });
+
+program
+  .command('genre-harvest')
+  .description('Slowly fetch book pages from Goodreads to harvest genres into the book cache. Picks random books with enough ratings and no genres yet. Exits on throttle.')
+  .addHelpText('after', `
+Examples:
+  $ npm run genre-harvest
+  $ npm run genre-harvest -- --limit 20 --minRatings 50000
+  $ npm run genre-harvest -- --delay 60
+  $ ./genreHarvest.sh --limit 50`)
+  .option('--limit <number>', 'Maximum number of books to process (default 100)', '100')
+  .option('--minRatings <number>', 'Minimum number of ratings a book must have (default 1000)', '1000')
+  .option('--delay <number>', 'Seconds to wait between requests (default 30)', '30')
+  .option('--delayJitter <number>', 'Extra seconds of random jitter added to each delay (default 0). E.g. --delay 20 --delayJitter 10 = 20-30s between requests', '0')
+  .action(async (options) => {
+    try {
+      await runGenreHarvest(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run genre harvest:'), (error as any).message);
     }
   });
 

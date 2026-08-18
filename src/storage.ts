@@ -21,6 +21,7 @@ export interface CachedBook {
   published: string;
   pages?: string;
   seriesPos?: number;
+  genres?: string[];
   lastUpdated: string;
   tags?: { [tagName: string]: number };
   requiresAuth?: boolean;

@@ -42,6 +42,7 @@
     "tag-config": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-config",
     "tag-discovery": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-discovery",
     "bulk-tag-discovery": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts bulk-tag-discovery",
+    "genre-harvest": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts genre-harvest",
     "queue-discovery": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts queue-discovery",
     "gen-bulk-config": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts gen-bulk-config",
     "bulk-audit": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts bulk-audit",
