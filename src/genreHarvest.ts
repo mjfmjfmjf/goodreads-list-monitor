@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import * as cheerio from 'cheerio';
 import fs from 'fs';
 import { loadBookCache, saveBookCache, loadConfig, BookCache } from './storage.js';
-import { fetchWithRetry } from './utils.js';
+import { fetchWithRetry, formatBookLink } from './utils.js';
 
 const LOG_FILE = 'genreHarvest.log';
 
@@ -25,25 +25,33 @@ function shuffle<T>(arr: T[]): T[] {
   return arr;
 }
 
-export function extractGenresFromHtml(html: string, bookId: string): string[] {
+export interface ExtractedBookDetails {
+  genres: string[];
+  ratings?: string;
+  avgRating?: string;
+  published?: string;
+  pages?: string;
+}
+
+export function extractBookDetailsFromHtml(html: string, bookId: string): ExtractedBookDetails {
   const $ = cheerio.load(html);
+  const empty: ExtractedBookDetails = { genres: [] };
   const nextDataJson = $('#__NEXT_DATA__').html();
-  if (!nextDataJson) return [];
+  if (!nextDataJson) return empty;
 
   try {
     const nextData = JSON.parse(nextDataJson);
     const apolloState = nextData.props?.pageProps?.apolloState || {};
 
-    // Find the Book key matching this ID
     const bookKey = Object.keys(apolloState).find(k => {
       if (!k.startsWith('Book:')) return false;
       const bookData = apolloState[k];
       return bookData && (bookData.legacyId === parseInt(bookId, 10) || bookData.legacyId === bookId);
     });
     const bookData = bookKey ? apolloState[bookKey] : null;
-    if (!bookData) return [];
+    if (!bookData) return empty;
 
-    // Extract genre names from bookGenres array
+    // Genres
     const genreNames: string[] = [];
     if (bookData.bookGenres && Array.isArray(bookData.bookGenres)) {
       for (const bg of bookData.bookGenres) {
@@ -53,22 +61,79 @@ export function extractGenresFromHtml(html: string, bookId: string): string[] {
         }
       }
     }
+    const genres = [...new Set(genreNames)].filter(g => !NAV_GENRES.has(g));
 
-    return [...new Set(genreNames)].filter(g => !NAV_GENRES.has(g));
+    // Ratings + avg rating from stats
+    let ratings: string | undefined;
+    let avgRating: string | undefined;
+    let statsObj: any = null;
+    if (bookData.stats?.__ref) {
+      statsObj = apolloState[bookData.stats.__ref];
+    } else if (bookData.stats) {
+      statsObj = bookData.stats;
+    }
+    if (!statsObj && bookData.work?.__ref) {
+      const workData = apolloState[bookData.work.__ref];
+      if (workData) {
+        if (workData.stats?.__ref) statsObj = apolloState[workData.stats.__ref];
+        else if (workData.stats) statsObj = workData.stats;
+      }
+    }
+    if (statsObj && statsObj.ratingsCount !== undefined) {
+      ratings = statsObj.ratingsCount.toLocaleString('en-US');
+      if (statsObj.averageRating !== undefined) {
+        avgRating = statsObj.averageRating.toFixed(2);
+      }
+    }
+
+    // Published date
+    let published: string | undefined;
+    if (bookData.work?.__ref) {
+      const workData = apolloState[bookData.work.__ref];
+      if (workData?.details?.publicationTime) {
+        const date = new Date(workData.details.publicationTime);
+        published = `${date.getFullYear()}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getDate().toString().padStart(2, '0')}`;
+      }
+    }
+    if (!published && bookData.details?.publicationTime) {
+      const date = new Date(bookData.details.publicationTime);
+      published = `${date.getFullYear()}.${(date.getMonth() + 1).toString().padStart(2, '0')}.${date.getDate().toString().padStart(2, '0')}`;
+    }
+
+    // Pages
+    let pages: string | undefined;
+    const detailsRef = bookData.details?.__ref;
+    const detailsObj = detailsRef ? apolloState[detailsRef] : bookData.details;
+    if (detailsObj) {
+      const numPages = detailsObj.numPages ?? detailsObj.pageCount;
+      if (numPages !== undefined && numPages !== null) pages = String(numPages);
+    }
+
+    return { genres, ratings, avgRating, published, pages };
   } catch {
-    return [];
+    return empty;
   }
 }
 
 export function extractGenresFromDom(html: string): string[] {
   const $ = cheerio.load(html);
+  // Prefer the book's "Genres" section — only contains this book's genres
+  const genresList = $('[data-testid="genresList"] a');
+  if (genresList.length > 0) {
+    const genres: string[] = [];
+    genresList.each((_, el) => {
+      const text = $(el).text().trim();
+      if (text) genres.push(text);
+    });
+    return [...new Set(genres)];
+  }
+  // Fallback: genre links anywhere, minus nav genres
   const genres: string[] = [];
   $('a[href*="/genres/"]').each((_, el) => {
     const text = $(el).text().trim();
     if (text) genres.push(text);
   });
   return [...new Set(genres)].filter(g => !NAV_GENRES.has(g));
-  return [...new Set(genres)];
 }
 
 export interface GenreHarvestOptions {
@@ -130,9 +195,9 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
   for (const book of toProcess) {
     processed++;
     const url = `https://www.goodreads.com/book/show/${book.id}`;
-    const label = `[${processed}/${toProcess.length}] ${book.title} (ID: ${book.id}, ${book.ratings} ratings)`;
+    const bookLink = formatBookLink(book.title, book.id);
 
-    console.log(chalk.white(`${label}`));
+    console.log(chalk.white(`[${processed}/${toProcess.length}] ${bookLink} by ${book.author}`));
     console.log(chalk.gray(`  Fetching ${url}`));
 
     try {
@@ -140,37 +205,83 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
       const status = response.status;
       const bodyLen = typeof response.data === 'string' ? response.data.length : 0;
 
-      logToFile(`OK  ${status} ${bodyLen}B ${book.id} "${book.title}"`);
+      // Show status code for every response
+      const statusColor = status === 200 ? chalk.green : (status === 202 ? chalk.red : chalk.yellow);
+      console.log(statusColor(`  HTTP ${status} (${bodyLen} bytes)`));
+      logToFile(`${status} ${bodyLen}B ${book.id} "${book.title}"`);
 
+      // Throttle detection: 202/403/429, or 200 with suspiciously small body
+      if (status === 202 || status === 403 || status === 429) {
+        console.log(chalk.red.bold(`\n🛑 Throttled (HTTP ${status}). Exiting.`));
+        logToFile(`THROTTLE EXIT — HTTP ${status} on ${book.id}`);
+        break;
+      }
       if (status !== 200 || bodyLen < 10000) {
-        console.log(chalk.yellow(`  ⚠ Unexpected response: status=${status}, length=${bodyLen}. Skipping.`));
-        logToFile(`SKIP ${status} ${bodyLen}B ${book.id} — too small or non-200`);
-        failed++;
-        // Throttled — log and exit
-        if (status === 202 || status === 403 || status === 429) {
-          console.log(chalk.red.bold(`\n🛑 Throttled (HTTP ${status}). Logging and exiting.`));
-          logToFile(`THROTTLE EXIT — HTTP ${status} on ${book.id}`);
-          break;
-        }
-        continue;
+        console.log(chalk.red.bold(`\n🛑 Suspicious response (HTTP ${status}, ${bodyLen} bytes — likely throttled). Exiting.`));
+        logToFile(`THROTTLE EXIT — small body ${status} ${bodyLen}B on ${book.id}`);
+        break;
       }
 
-      // Try JSON blob first, then DOM fallback
-      let genres = extractGenresFromHtml(response.data, book.id);
+      // Extract all book details from the JSON blob
+      const details = extractBookDetailsFromHtml(response.data, book.id);
+      // Prefer DOM genres (more accurate — avoids nav genre contamination)
+      let genres = extractGenresFromDom(response.data);
       if (genres.length === 0) {
-        genres = extractGenresFromDom(response.data);
+        genres = details.genres;
       }
+
+      // Update cache — only improve, never overwrite good data with bad
+      const entry = cache[book.id];
+      const parseNum = (s?: string) => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
+      let updatedFields: string[] = [];
+
+      // Snapshot old values for comparison
+      const oldRatings = entry.ratings;
+      const oldAvg = entry.avgRating;
+      const oldPub = entry.published;
+      const oldPages = entry.pages;
 
       if (genres.length > 0) {
-        console.log(chalk.green(`  ✓ Genres: ${genres.join(', ')}`));
-        cache[book.id].genres = genres;
-        cache[book.id].lastUpdated = new Date().toISOString();
-        await saveBookCache(cache);
-        logToFile(`GENRES ${book.id} "${book.title}" → ${genres.join('; ')}`);
-      } else {
-        console.log(chalk.yellow(`  ⚠ No genres found on page.`));
-        logToFile(`NOGENRES ${book.id} "${book.title}"`);
+        entry.genres = genres;
+        updatedFields.push('genres');
       }
+      if (details.ratings && parseNum(details.ratings) > parseNum(entry.ratings)) {
+        entry.ratings = details.ratings;
+        updatedFields.push('ratings');
+      }
+      if (details.avgRating && (!entry.avgRating || parseFloat(details.avgRating) > parseFloat(entry.avgRating))) {
+        entry.avgRating = details.avgRating;
+        updatedFields.push('avgRating');
+      }
+      if (details.published && (entry.published === 'Unknown' || !entry.published)) {
+        entry.published = details.published;
+        updatedFields.push('published');
+      }
+      if (details.pages && !entry.pages) {
+        entry.pages = details.pages;
+        updatedFields.push('pages');
+      }
+
+      if (updatedFields.length > 0) {
+        entry.lastUpdated = new Date().toISOString();
+        await saveBookCache(cache);
+      }
+
+      // Show genres
+      const genreStr = genres.length > 0 ? genres.join(', ') : '(none)';
+      console.log(chalk.green(`  Genres: ${genreStr}`));
+
+      // Show cache-vs-scrape comparison for updated fields
+      const changes: string[] = [];
+      if (updatedFields.includes('ratings')) changes.push(`Ratings: ${oldRatings} → ${entry.ratings}`);
+      if (updatedFields.includes('avgRating')) changes.push(`Avg: ${oldAvg || '?'} → ${entry.avgRating}`);
+      if (updatedFields.includes('published')) changes.push(`Pub: ${oldPub || '?'} → ${entry.published}`);
+      if (updatedFields.includes('pages')) changes.push(`Pages: ${oldPages || '?'} → ${entry.pages}`);
+      if (changes.length > 0) {
+        console.log(chalk.cyan(`  Updated: ${changes.join(' | ')}`));
+      }
+
+      logToFile(`BOOK ${book.id} "${book.title}" genres=${genres.join('; ')} updated=${updatedFields.join(',')}`);
     } catch (error: any) {
       const status = error?.response?.status || error?.status;
       console.log(chalk.red(`  ✗ Error: status=${status || 'none'}, msg=${error?.message || error}`));

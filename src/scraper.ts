@@ -74,10 +74,14 @@ export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]
       const headers: any = { 'User-Agent': USER_AGENT };
       if (configData.cookie) headers['Cookie'] = configData.cookie;
 
+      const start = Date.now();
       const response = await fetchWithRetry(url, {
         headers,
         timeout: TIMEOUT
       });
+      const duration = ((Date.now() - start) / 1000).toFixed(2);
+
+      console.log(chalk.gray(`   HTTP ${response.status} (${typeof response.data === 'string' ? response.data.length : 0} bytes, ${duration}s)`));
 
       const $ = cheerio.load(response.data);
       const pageLists: ListMetadata[] = [];
@@ -298,12 +302,28 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
       const headers: any = { 'User-Agent': USER_AGENT };
       if (configData.cookie) headers['Cookie'] = configData.cookie;
 
+      const start = Date.now();
       const response = await fetchWithRetry(url, {
         headers,
         timeout: TIMEOUT
       });
+      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      const bodyLen = typeof response.data === 'string' ? response.data.length : 0;
+
+      console.log(chalk.gray(`   HTTP ${response.status} (${bodyLen} bytes, ${duration}s)`));
 
       const $ = cheerio.load(response.data);
+
+      // Try to show total page count on first page
+      if (page === 1) {
+        // Look for "Page X of Y" or similar pagination text
+        const pageText = $('.pagination a, .pagination span, .listPager').text();
+        const totalPagesMatch = pageText.match(/of\s+(\d+)/);
+        if (totalPagesMatch) {
+          console.log(chalk.gray(`   (${totalPagesMatch[1]} pages total)`));
+        }
+      }
+
       const pageBooks: BookMetadata[] = [];
 
       // Scope to .tableList to avoid "related books" at the bottom of the page
