@@ -141,6 +141,7 @@ export interface GenreHarvestOptions {
   minRatings?: string;
   delay?: string;
   delayJitter?: string;
+  throttleSleep?: string;
 }
 
 export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promise<void> {
@@ -148,6 +149,7 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
   const minRatings = parseInt(options.minRatings || '1000', 10);
   const delaySec = parseInt(options.delay || '30', 10);
   const jitterMs = parseInt(options.delayJitter || '0', 10) * 1000;
+  const throttleSleepSec = parseInt(options.throttleSleep || '300', 10);
 
   const cache = await loadBookCache();
   const config = await loadConfig();
@@ -159,7 +161,7 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
   });
 
   console.log(chalk.cyan(`Found ${candidates.length} books with ≥${minRatings} ratings and no genres.`));
-  logToFile(`Starting genre harvest: limit=${limit}, minRatings=${minRatings}, delay=${delaySec}s, jitter=${jitterMs / 1000}s, candidates=${candidates.length}`);
+  logToFile(`Starting genre harvest: limit=${limit}, minRatings=${minRatings}, delay=${delaySec}s, jitter=${jitterMs / 1000}s, throttleSleep=${throttleSleepSec}s, candidates=${candidates.length}`);
 
   if (candidates.length === 0) {
     console.log(chalk.green('Nothing to do.'));
@@ -191,6 +193,7 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
   let processed = 0;
   let throttled = 0;
   let failed = 0;
+  let consecutiveThrottled = 0;
 
   for (const book of toProcess) {
     processed++;
@@ -211,15 +214,21 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
       logToFile(`${status} ${bodyLen}B ${book.id} "${book.title}"`);
 
       // Throttle detection: 202/403/429, or 200 with suspiciously small body
-      if (status === 202 || status === 403 || status === 429) {
-        console.log(chalk.red.bold(`\n🛑 Throttled (HTTP ${status}). Exiting.`));
-        logToFile(`THROTTLE EXIT — HTTP ${status} on ${book.id}`);
-        break;
-      }
-      if (status !== 200 || bodyLen < 10000) {
-        console.log(chalk.red.bold(`\n🛑 Suspicious response (HTTP ${status}, ${bodyLen} bytes — likely throttled). Exiting.`));
-        logToFile(`THROTTLE EXIT — small body ${status} ${bodyLen}B on ${book.id}`);
-        break;
+      const isThrottled = status === 202 || status === 403 || status === 429;
+      const isSuspicious = status !== 200 || bodyLen < 10000;
+      if (isThrottled || isSuspicious) {
+        throttled++;
+        consecutiveThrottled++;
+        if (consecutiveThrottled >= 2) {
+          console.log(chalk.red.bold(`\n🛑 Throttled twice in a row — exiting.`));
+          logToFile(`THROTTLE EXIT (2nd consecutive) — HTTP ${status} on ${book.id}`);
+          break;
+        }
+        console.log(chalk.yellow.bold(`\n⚠️  Throttled (HTTP ${status}, ${bodyLen} bytes). Sleeping ${throttleSleepSec}s and retrying...`));
+        logToFile(`THROTTLE #${throttled} — HTTP ${status} ${bodyLen}B on ${book.id}, sleeping ${throttleSleepSec}s`);
+        await new Promise(r => setTimeout(r, throttleSleepSec * 1000));
+        processed--;
+        continue;
       }
 
       // Extract all book details from the JSON blob
@@ -282,6 +291,7 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
       }
 
       logToFile(`BOOK ${book.id} "${book.title}" genres=${genres.join('; ')} updated=${updatedFields.join(',')}`);
+      consecutiveThrottled = 0;
     } catch (error: any) {
       const status = error?.response?.status || error?.status;
       console.log(chalk.red(`  ✗ Error: status=${status || 'none'}, msg=${error?.message || error}`));
@@ -290,9 +300,17 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
       // Any throttle-like status: log and exit
       if (status === 202 || status === 403 || status === 429) {
         throttled++;
-        console.log(chalk.red.bold(`\n🛑 Throttled (HTTP ${status}). Logging and exiting.`));
-        logToFile(`THROTTLE EXIT — HTTP ${status} on ${book.id}`);
-        break;
+        consecutiveThrottled++;
+        if (consecutiveThrottled >= 2) {
+          console.log(chalk.red.bold(`\n🛑 Throttled twice in a row — exiting.`));
+          logToFile(`THROTTLE EXIT (2nd consecutive) — HTTP ${status} on ${book.id}`);
+          break;
+        }
+        console.log(chalk.yellow.bold(`\n⚠️  Throttled (HTTP ${status}). Sleeping ${throttleSleepSec}s and retrying...`));
+        logToFile(`THROTTLE #${throttled} — HTTP ${status} on ${book.id}, sleeping ${throttleSleepSec}s`);
+        await new Promise(r => setTimeout(r, throttleSleepSec * 1000));
+        processed--;
+        continue;
       }
       failed++;
     }

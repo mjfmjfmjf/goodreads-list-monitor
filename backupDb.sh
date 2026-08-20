@@ -2,10 +2,5 @@
 cd "$(dirname "$0")"
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-nvm use 22
-echo starting monitor.sh
-date
-npm start
+nvm use 22 > /dev/null
 npm start -- backup
-date
-echo ended monitor.sh

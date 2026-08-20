@@ -1,6 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { parseSeriesPos } from './seriesPos.js';
+import { getDb } from './db.js';
 
 export interface ListState {
   title: string;
@@ -46,7 +47,7 @@ export interface Config {
 
 export interface AuthorCacheEntry {
   id: string;
-  slug: string; // The "1077326.J_K_Rowling" part
+  slug: string;
   lastSeen: string;
   averageRating?: string;
   numRatings?: string;
@@ -67,16 +68,14 @@ export interface AuthorStats {
   slug?: string;
 }
 
-export function updateAuthorStats(entry: AuthorCacheEntry, stats: AuthorStats): boolean {
-  const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
+const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
 
+export function updateAuthorStats(entry: AuthorCacheEntry, stats: AuthorStats): boolean {
   const existingRatings = parseNum(entry.numRatings);
   const existingReviews = parseNum(entry.numReviews);
   const newRatings = parseNum(stats.numRatings);
   const newReviews = parseNum(stats.numReviews);
 
-  // Ratings and reviews only grow over time. If either went down (data error or
-  // page mismatch), keep all four numbers untouched.
   if (newRatings < existingRatings || newReviews < existingReviews) return false;
 
   let changed = false;
@@ -101,118 +100,300 @@ export function updateAuthorStats(entry: AuthorCacheEntry, stats: AuthorStats): 
   return changed;
 }
 
-const STATE_FILE = path.join(process.cwd(), 'state.json');
-const BACKUP_FILE = path.join(process.cwd(), 'state.json.bak');
-const BOOKS_CACHE_FILE = path.join(process.cwd(), 'booksCache.json');
-const AUTHORS_CACHE_FILE = path.join(process.cwd(), 'authorsCache.json');
-const CONFIG_FILE = path.join(process.cwd(), 'config.json');
+// ── Books ──────────────────────────────────────────────────────────
 
-export async function loadAuthorCache(): Promise<AuthorCache> {
-  if (await fs.pathExists(AUTHORS_CACHE_FILE)) {
-    return await fs.readJson(AUTHORS_CACHE_FILE);
-  }
-  return {};
-}
-
-export async function saveAuthorCache(cache: AuthorCache): Promise<void> {
-  await fs.writeJson(AUTHORS_CACHE_FILE, cache, { spaces: 2 });
-}
-
-export async function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {
-  let updated = false;
-  for (const book of books) {
-    if (book.author && book.author !== 'Unknown Author' && book.authorSlug) {
-      const existing = authorCache[book.author];
-      if (!existing || existing.slug !== book.authorSlug) {
-        authorCache[book.author] = {
-          id: book.authorId || book.authorSlug.split('.')[0],
-          slug: book.authorSlug,
-          lastSeen: new Date().toISOString()
-        };
-        updated = true;
-      }
-    }
-  }
-  if (updated) await saveAuthorCache(authorCache);
-}
-
-export async function loadState(): Promise<State> {
-  if (await fs.pathExists(STATE_FILE)) {
-    return await fs.readJson(STATE_FILE);
-  }
+function rowToBook(row: any): CachedBook {
   return {
-    userId: '',
-    lists: {}
+    id: row.id,
+    title: row.title,
+    author: row.author,
+    authorId: row.author_id || undefined,
+    ratings: String(row.ratings ?? 0),
+    avgRating: row.avg_rating != null ? String(row.avg_rating) : undefined,
+    published: row.published,
+    pages: row.pages != null ? String(row.pages) : undefined,
+    seriesPos: row.series_pos ?? undefined,
+    genres: row.genres ? JSON.parse(row.genres) : undefined,
+    lastUpdated: row.last_updated,
+    tags: row.tags ? JSON.parse(row.tags) : undefined,
+    requiresAuth: row.requires_auth === 1,
+    isBad: row.is_bad === 1,
+    failCount: row.fail_count || undefined,
   };
 }
 
-export async function saveState(state: State): Promise<void> {
-  if (await fs.pathExists(STATE_FILE)) {
-    await fs.copy(STATE_FILE, BACKUP_FILE);
+export function loadBookCache(): BookCache {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM books').all();
+  const cache: BookCache = {};
+  for (const row of rows) {
+    const book = rowToBook(row);
+    cache[book.id] = book;
   }
-  await fs.writeJson(STATE_FILE, state, { spaces: 2 });
+  return cache;
 }
 
-export async function loadBookCache(): Promise<BookCache> {
-  if (await fs.pathExists(BOOKS_CACHE_FILE)) {
-    return await fs.readJson(BOOKS_CACHE_FILE);
-  }
-  return {};
-}
-
-export async function saveBookCache(cache: BookCache): Promise<void> {
-  await fs.writeJson(BOOKS_CACHE_FILE, cache, { spaces: 2 });
+export function saveBookCache(cache: BookCache): void {
+  const db = getDb();
+  const upsert = db.prepare(`
+    INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count)
+    VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount)
+    ON CONFLICT(id) DO UPDATE SET
+      title=excluded.title, author=excluded.author, author_id=excluded.author_id,
+      ratings=excluded.ratings, avg_rating=excluded.avg_rating, published=excluded.published,
+      pages=excluded.pages, series_pos=excluded.series_pos, genres=excluded.genres,
+      last_updated=excluded.last_updated, tags=excluded.tags,
+      requires_auth=excluded.requires_auth, is_bad=excluded.is_bad, fail_count=excluded.fail_count
+  `);
+  const tx = db.transaction(() => {
+    for (const book of Object.values(cache)) {
+      upsert.run({
+        id: book.id,
+        title: book.title,
+        author: book.author,
+        authorId: book.authorId || null,
+        ratings: parseNum(book.ratings),
+        avgRating: book.avgRating ? parseFloat(book.avgRating) : null,
+        published: book.published,
+        pages: book.pages ? parseInt(book.pages, 10) : null,
+        seriesPos: book.seriesPos ?? null,
+        genres: book.genres ? JSON.stringify(book.genres) : null,
+        lastUpdated: book.lastUpdated,
+        tags: book.tags ? JSON.stringify(book.tags) : null,
+        requiresAuth: book.requiresAuth ? 1 : 0,
+        isBad: book.isBad ? 1 : 0,
+        failCount: book.failCount ?? null,
+      });
+    }
+  });
+  tx();
 }
 
 export async function syncBooksToCache(books: any[], bookCache: BookCache) {
+  const db = getDb();
   let updated = false;
-  for (const book of books) {
-    const existing = bookCache[book.id];
-    const isNew = !existing;
-    
-    // Helper to parse ratings string into a number for comparison
-    const parseRatings = (r: string | undefined) => parseInt((r || '0').replace(/,/g, ''), 10);
-    const existingRatingsNum = parseRatings(existing?.ratings);
-    const newRatingsNum = parseRatings(book.ratings);
 
-    const hasBetterTitle = existing?.title === 'Unknown' && book.title !== 'Unknown';
-    const hasBetterAuthor = existing?.author === 'Unknown' && book.author !== 'Unknown';
-    const hasBetterAuthorId = !existing?.authorId && book.authorId;
-    const hasBetterDate = (existing?.published === 'Unknown' || !existing?.published) && (book.published && book.published !== 'Unknown');
-    const hasBetterPages = !existing?.pages && book.pages;
-    const hasBetterRatings = newRatingsNum > existingRatingsNum;
-    const hasBetterAvgRating = book.avgRating && book.avgRating !== existing?.avgRating;
-    const newSeriesPos = book.title !== 'Unknown' ? parseSeriesPos(book.title) : undefined;
-    const hasBetterSeriesPos = existing?.seriesPos === undefined && newSeriesPos !== undefined;
-    const hasChangedSeriesPos = existing?.seriesPos !== undefined && newSeriesPos !== undefined && newSeriesPos !== existing.seriesPos;
+  const upsertStmt = db.prepare(`
+    INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count)
+    VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount)
+    ON CONFLICT(id) DO UPDATE SET
+      title=excluded.title, author=excluded.author, author_id=excluded.author_id,
+      ratings=excluded.ratings, avg_rating=excluded.avg_rating, published=excluded.published,
+      pages=excluded.pages, series_pos=excluded.series_pos, genres=excluded.genres,
+      last_updated=excluded.last_updated, tags=excluded.tags,
+      requires_auth=excluded.requires_auth, is_bad=excluded.is_bad, fail_count=excluded.fail_count
+  `);
 
-    if (isNew || hasBetterTitle || hasBetterAuthor || hasBetterAuthorId || hasBetterDate || hasBetterPages || hasBetterRatings || hasBetterAvgRating || hasBetterSeriesPos || hasChangedSeriesPos) {
-      bookCache[book.id] = {
-        id: book.id,
-        title: book.title !== 'Unknown' ? book.title : (existing?.title || 'Unknown'),
-        author: book.author !== 'Unknown' ? book.author : (existing?.author || 'Unknown'),
-        authorId: book.authorId || existing?.authorId,
-        ratings: hasBetterRatings ? book.ratings : (existing?.ratings || '0'),
-        avgRating: book.avgRating || existing?.avgRating,
-        published: (book.published && book.published !== 'Unknown') ? book.published : (existing?.published || 'Unknown'),
-        pages: book.pages || existing?.pages,
-        seriesPos: newSeriesPos !== undefined ? newSeriesPos : existing?.seriesPos,
-        lastUpdated: new Date().toISOString(),
-        tags: existing?.tags || (book.tagCount !== undefined ? {} : undefined)
-      };
-      
-      if (book.tagCount !== undefined) {
-        if (!bookCache[book.id].tags) bookCache[book.id].tags = {};
+  const parseRatings = (r: string | undefined) => parseInt((r || '0').replace(/,/g, ''), 10);
+
+  const tx = db.transaction(() => {
+    for (const book of books) {
+      const existing = bookCache[book.id];
+      const isNew = !existing;
+
+      const existingRatingsNum = parseRatings(existing?.ratings);
+      const newRatingsNum = parseRatings(book.ratings);
+
+      const hasBetterTitle = existing?.title === 'Unknown' && book.title !== 'Unknown';
+      const hasBetterAuthor = existing?.author === 'Unknown' && book.author !== 'Unknown';
+      const hasBetterAuthorId = !existing?.authorId && book.authorId;
+      const hasBetterDate = (existing?.published === 'Unknown' || !existing?.published) && (book.published && book.published !== 'Unknown');
+      const hasBetterPages = !existing?.pages && book.pages;
+      const hasBetterRatings = newRatingsNum > existingRatingsNum;
+      const hasBetterAvgRating = book.avgRating && book.avgRating !== existing?.avgRating;
+      const newSeriesPos = book.title !== 'Unknown' ? parseSeriesPos(book.title) : undefined;
+      const hasBetterSeriesPos = existing?.seriesPos === undefined && newSeriesPos !== undefined;
+      const hasChangedSeriesPos = existing?.seriesPos !== undefined && newSeriesPos !== undefined && newSeriesPos !== existing.seriesPos;
+
+      if (isNew || hasBetterTitle || hasBetterAuthor || hasBetterAuthorId || hasBetterDate || hasBetterPages || hasBetterRatings || hasBetterAvgRating || hasBetterSeriesPos || hasChangedSeriesPos) {
+        const merged: CachedBook = {
+          id: book.id,
+          title: book.title !== 'Unknown' ? book.title : (existing?.title || 'Unknown'),
+          author: book.author !== 'Unknown' ? book.author : (existing?.author || 'Unknown'),
+          authorId: book.authorId || existing?.authorId,
+          ratings: hasBetterRatings ? book.ratings : (existing?.ratings || '0'),
+          avgRating: book.avgRating || existing?.avgRating,
+          published: (book.published && book.published !== 'Unknown') ? book.published : (existing?.published || 'Unknown'),
+          pages: book.pages || existing?.pages,
+          seriesPos: newSeriesPos !== undefined ? newSeriesPos : existing?.seriesPos,
+          lastUpdated: new Date().toISOString(),
+          tags: existing?.tags || (book.tagCount !== undefined ? {} : undefined),
+        };
+
+        if (book.tagCount !== undefined && !merged.tags) merged.tags = {};
+
+        bookCache[book.id] = merged;
+
+        upsertStmt.run({
+          id: merged.id,
+          title: merged.title,
+          author: merged.author,
+          authorId: merged.authorId || null,
+          ratings: parseNum(merged.ratings),
+          avgRating: merged.avgRating ? parseFloat(merged.avgRating) : null,
+          published: merged.published,
+          pages: merged.pages ? parseInt(merged.pages, 10) : null,
+          seriesPos: merged.seriesPos ?? null,
+          genres: merged.genres ? JSON.stringify(merged.genres) : null,
+          lastUpdated: merged.lastUpdated,
+          tags: merged.tags ? JSON.stringify(merged.tags) : null,
+          requiresAuth: merged.requiresAuth ? 1 : 0,
+          isBad: merged.isBad ? 1 : 0,
+          failCount: merged.failCount ?? null,
+        });
+
+        updated = true;
       }
-      updated = true;
     }
-  }
-  if (updated) await saveBookCache(bookCache);
+  });
+  tx();
 }
 
-export async function loadConfig(): Promise<Config> {
-  if (await fs.pathExists(CONFIG_FILE)) {
-    return await fs.readJson(CONFIG_FILE);
+// ── Authors ────────────────────────────────────────────────────────
+
+function rowToAuthor(row: any): AuthorCacheEntry & { name: string } {
+  return {
+    name: row.name,
+    id: row.id,
+    slug: row.slug,
+    lastSeen: row.last_seen,
+    averageRating: row.average_rating != null ? String(row.average_rating) : undefined,
+    numRatings: row.num_ratings ? String(row.num_ratings) : undefined,
+    numReviews: row.num_reviews ? String(row.num_reviews) : undefined,
+    numShelves: row.num_shelves ? String(row.num_shelves) : undefined,
+  };
+}
+
+export function loadAuthorCache(): AuthorCache {
+  const db = getDb();
+  const rows = db.prepare('SELECT * FROM authors').all();
+  const cache: AuthorCache = {};
+  for (const row of rows) {
+    const author = rowToAuthor(row);
+    cache[author.name] = author;
   }
-  return {};
+  return cache;
+}
+
+export function saveAuthorCache(cache: AuthorCache): void {
+  const db = getDb();
+  const upsert = db.prepare(`
+    INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves)
+    VALUES (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves)
+    ON CONFLICT(name) DO UPDATE SET
+      id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
+      average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
+      num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves
+  `);
+  const tx = db.transaction(() => {
+    for (const [name, entry] of Object.entries(cache)) {
+      upsert.run({
+        name,
+        id: entry.id,
+        slug: entry.slug,
+        lastSeen: entry.lastSeen,
+        averageRating: entry.averageRating ? parseFloat(entry.averageRating) : null,
+        numRatings: parseNum(entry.numRatings),
+        numReviews: parseNum(entry.numReviews),
+        numShelves: parseNum(entry.numShelves),
+      });
+    }
+  });
+  tx();
+}
+
+export function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {
+  const db = getDb();
+  let updated = false;
+
+  const upsert = db.prepare(`
+    INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves)
+    VALUES (@name, @id, @slug, @lastSeen, NULL, 0, 0, 0)
+    ON CONFLICT(name) DO UPDATE SET
+      id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen
+  `);
+
+  const tx = db.transaction(() => {
+    for (const book of books) {
+      if (book.author && book.author !== 'Unknown Author' && book.authorSlug) {
+        const existing = authorCache[book.author];
+        if (!existing || existing.slug !== book.authorSlug) {
+          const entry: AuthorCacheEntry = {
+            id: book.authorId || book.authorSlug.split('.')[0],
+            slug: book.authorSlug,
+            lastSeen: new Date().toISOString(),
+          };
+          authorCache[book.author] = entry;
+          upsert.run({
+            name: book.author,
+            id: entry.id,
+            slug: entry.slug,
+            lastSeen: entry.lastSeen,
+          });
+          updated = true;
+        }
+      }
+    }
+  });
+  tx();
+}
+
+// ── State ──────────────────────────────────────────────────────────
+
+export function loadState(): State {
+  const db = getDb();
+
+  const userRow = db.prepare("SELECT value FROM config WHERE key = 'userId'").get() as any;
+  const userId = userRow?.value || '';
+
+  const listRows = db.prepare('SELECT * FROM lists').all() as any[];
+  const lists: { [listId: string]: ListState } = {};
+  for (const row of listRows) {
+    lists[row.list_id] = {
+      title: row.title,
+      lastCount: row.last_count,
+      seenBookIds: row.seen_book_ids ? JSON.parse(row.seen_book_ids) : [],
+      ingested: row.ingested === 1,
+      discoveryPage: row.discovery_page ?? undefined,
+      url: row.url ?? undefined,
+    };
+  }
+
+  return { userId, lists };
+}
+
+export function saveState(state: State): void {
+  const db = getDb();
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO config (key, value) VALUES ('userId', @value)
+      ON CONFLICT(key) DO UPDATE SET value=excluded.value
+    `).run({ value: state.userId });
+
+    db.prepare('DELETE FROM lists').run();
+    const insert = db.prepare(`
+      INSERT INTO lists (list_id, title, last_count, seen_book_ids, ingested, discovery_page, url)
+      VALUES (@listId, @title, @lastCount, @seenBookIds, @ingested, @discoveryPage, @url)
+    `);
+    for (const [listId, list] of Object.entries(state.lists)) {
+      insert.run({
+        listId,
+        title: list.title,
+        lastCount: list.lastCount,
+        seenBookIds: JSON.stringify(list.seenBookIds),
+        ingested: list.ingested ? 1 : 0,
+        discoveryPage: list.discoveryPage ?? null,
+        url: list.url ?? null,
+      });
+    }
+  });
+  tx();
+}
+
+// ── Config ─────────────────────────────────────────────────────────
+
+export function loadConfig(): Config {
+  const db = getDb();
+  const row = db.prepare("SELECT value FROM config WHERE key = 'cookie'").get() as any;
+  return row ? { cookie: row.value } : {};
 }

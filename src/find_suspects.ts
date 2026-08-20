@@ -1,7 +1,7 @@
-import fs from 'fs-extra';
+import { loadBookCache } from './storage.js';
 
 async function analyze() {
-  const cache = await fs.readJson('booksCache.json');
+  const cache = loadBookCache();
   const ids = Object.keys(cache);
   
   let totalSuspects = 0;

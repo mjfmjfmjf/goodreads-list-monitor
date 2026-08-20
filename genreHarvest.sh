@@ -11,6 +11,7 @@
 #   ./genreHarvest.sh --delay 60                   # 60s between requests
 #   ./genreHarvest.sh --delay 20 --delayJitter 10  # 20-30s between requests
 #   ./genreHarvest.sh --limit 20 --minRatings 100000 --delay 45
+#   ./genreHarvest.sh --throttleSleep 600  # 10 min wait on throttle before retry
 set -euo pipefail
 cd "$(dirname "$0")"
 npm run genre-harvest -- "$@"

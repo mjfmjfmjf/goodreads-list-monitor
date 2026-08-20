@@ -37,6 +37,7 @@ import { runTagGaps, runCacheGaps } from './tagGaps.js';
 import { runNextBooks } from './nextBooks.js';
 import { runGenreHarvest } from './genreHarvest.js';
 import { loadState, saveState, loadConfig } from './storage.js';
+import { backupDbSync } from './db.js';
 
 const program = new Command();
 
@@ -195,12 +196,13 @@ Examples:
 
 program
   .command('author-rescan')
-  .description('Re-scrape the author page for each author matching the reader criteria (--limit/--sortBy/--minRatings/--maxRatings) to refresh their stats in the author cache')
+  .description('Re-scrape the author page for each author matching the reader criteria (--limit/--sortBy/--minRatings/--maxRatings) to refresh their stats in the author cache. Use --rescanMissing to target only authors with no stats yet.')
   .addHelpText('after', `
 Examples:
   $ npm run author-rescan -- --limit 50
   $ npm run author-rescan -- --sortBy averageRating --minRatings 100000 --limit 10
-  $ ./authorRescan.sh --limit 10 --sortBy averageRating --minRatings 100000`)
+  $ npm run author-rescan -- --rescanMissing --limit 500
+  $ ./authorRescan.sh --rescanMissing --minAge 30 --limit 500`)
   .option('--limit <number>', 'Number of authors to refresh (default 100)', '100')
   .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default numRatings)', 'numRatings')
   .option('--minRatings <number>', 'Only consider authors with at least this many ratings')
@@ -805,7 +807,7 @@ program
 
 program
   .command('genre-harvest')
-  .description('Slowly fetch book pages from Goodreads to harvest genres into the book cache. Picks random books with enough ratings and no genres yet. Exits on throttle.')
+  .description('Slowly fetch book pages from Goodreads to harvest genres into the book cache. Picks random books with enough ratings and no genres yet. Sleeps on throttle; exits on second consecutive throttle.')
   .addHelpText('after', `
 Examples:
   $ npm run genre-harvest
@@ -816,6 +818,7 @@ Examples:
   .option('--minRatings <number>', 'Minimum number of ratings a book must have (default 1000)', '1000')
   .option('--delay <number>', 'Seconds to wait between requests (default 30)', '30')
   .option('--delayJitter <number>', 'Extra seconds of random jitter added to each delay (default 0). E.g. --delay 20 --delayJitter 10 = 20-30s between requests', '0')
+  .option('--throttleSleep <number>', 'Seconds to sleep on throttle before retrying (default 300). Second consecutive throttle exits.', '300')
   .action(async (options) => {
     try {
       await runGenreHarvest(options);
@@ -833,6 +836,14 @@ program
     state.userId = userId;
     await saveState(state);
     console.log(chalk.green.bold(`Default User ID set to ${userId}`));
+  });
+
+program
+  .command('backup')
+  .description('Backup the SQLite database (keeps last 7 daily backups)')
+  .action(() => {
+    backupDbSync();
+    console.log(chalk.green.bold('✅ Database backed up to backups/'));
   });
 
 async function checkTokenExpiration() {

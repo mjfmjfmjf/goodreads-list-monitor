@@ -7,6 +7,7 @@ import { delay } from './utils.js';
 
 export interface AuthorRescanOptions extends AuthorTopStatsOptions {
   minAge?: string;
+  rescanMissing?: boolean;
 }
 
 const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
@@ -18,9 +19,21 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
   const minAgeDays = options.minAge !== undefined ? parseNum(options.minAge) : 0;
 
-  const { authors, missingField } = selectAuthors(authorCache, options);
+  let authors: SelectedAuthor[];
+  let missingField = 0;
 
-  console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping stats for ${authors.length} authors (Top ${limit} by ${sortBy})`));
+  if (options.rescanMissing) {
+    // Select all authors missing stats, then apply minAge
+    authors = Object.entries(authorCache)
+      .filter(([, entry]) => !entry.numRatings && !entry.averageRating && !entry.numReviews && !entry.numShelves)
+      .map(([name, entry]) => ({ name, entry, value: 0 }));
+    console.log(chalk.cyan.bold(`\n👤 Author Rescan: scanning authors with no stats (limit ${limit})`));
+  } else {
+    const selected = selectAuthors(authorCache, options);
+    authors = selected.authors;
+    missingField = selected.missingField;
+    console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping stats for ${authors.length} authors (Top ${limit} by ${sortBy})`));
+  }
   console.log(chalk.gray(`   Min Age: ${minAgeDays > 0 ? `${minAgeDays} day(s)` : 'none (scrape everything)'}${missingField > 0 ? `, Excluded (no ${sortBy}): ${missingField.toLocaleString()}` : ''}\n`));
 
   if (authors.length === 0) {
@@ -28,12 +41,13 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
     return;
   }
 
-  // Filter out authors updated within minAge days
+  // Filter out authors updated within minAge days (but always keep authors with no stats)
   const cutoff = minAgeDays > 0 ? Date.now() - minAgeDays * 24 * 60 * 60 * 1000 : 0;
   const toScrape: SelectedAuthor[] = [];
   let minAgeSkipped = 0;
   for (const a of authors) {
-    if (a.entry.lastSeen && cutoff > 0 && new Date(a.entry.lastSeen).getTime() >= cutoff) {
+    const hasStats = a.entry.numRatings || a.entry.averageRating || a.entry.numReviews || a.entry.numShelves;
+    if (hasStats && a.entry.lastSeen && cutoff > 0 && new Date(a.entry.lastSeen).getTime() >= cutoff) {
       minAgeSkipped++;
       continue;
     }

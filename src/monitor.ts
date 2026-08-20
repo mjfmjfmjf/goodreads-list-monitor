@@ -153,7 +153,11 @@ export async function checkUpdates(userId: string): Promise<void> {
           if (!details || details.title === 'Unknown') {
             console.log(chalk.gray(`   Fetching missing details for removed book ID ${id}...`));
             const fetched = await scrapeBookDetails(id, details?.title, details?.author);
-            details = {
+            if (fetched.isFailed || !fetched.title) {
+              console.log(chalk.gray(`   Could not resolve details for book ${id}, reporting raw ID.`));
+              await delay();
+            } else {
+              details = {
                 id,
                 title: fetched.title || details?.title || 'Unknown',
                 author: fetched.author || details?.author || 'Unknown',
@@ -162,17 +166,24 @@ export async function checkUpdates(userId: string): Promise<void> {
                 published: fetched.published || details?.published || 'Unknown',
                 lastUpdated: new Date().toISOString(),
                 tags: bookCache[id]?.tags || {}
-            };
-            bookCache[id] = details;
-            await saveBookCache(bookCache);
-            await delay();
+              };
+              bookCache[id] = details;
+              await saveBookCache(bookCache);
+              await delay();
+            }
           }
           
-          const bookLink = formatBookLink(details.title, id);
-          const avgStr = details.avgRating ? `, Avg: ${details.avgRating}` : '';
-          const msg = `REMOVED from "${list.title}": ${bookLink} by ${details.author} (Ratings: ${details.ratings}${avgStr}, Published: ${details.published})`;
-          console.log(chalk.red.bold(`  ❌ ${msg}`));
-          await appendToLog(msg);
+          if (details) {
+            const bookLink = formatBookLink(details.title, id);
+            const avgStr = details.avgRating ? `, Avg: ${details.avgRating}` : '';
+            const msg = `REMOVED from "${list.title}": ${bookLink} by ${details.author} (Ratings: ${details.ratings}${avgStr}, Published: ${details.published})`;
+            console.log(chalk.red.bold(`  ❌ ${msg}`));
+            await appendToLog(msg);
+          } else {
+            const msg = `REMOVED from "${list.title}": book ${id}`;
+            console.log(chalk.red.bold(`  ❌ ${msg}`));
+            await appendToLog(msg);
+          }
         }
       }
 

@@ -1,9 +1,9 @@
-import fs from 'fs-extra';
 import { scrapeBookDetails } from './scraper.js';
 import { delay } from './utils.js';
+import { loadBookCache, saveBookCache } from './storage.js';
 
 async function fixSuspects() {
-  const cache = await fs.readJson('booksCache.json');
+  const cache = loadBookCache();
   const ids = Object.keys(cache);
   
   // Find all books with a full YYYY.MM.DD date in 2001 that were updated recently
@@ -57,7 +57,7 @@ async function fixSuspects() {
   }
 
   // Save changes if any
-  await fs.writeJson('booksCache.json', cache, { spaces: 2 });
+  saveBookCache(cache);
 
   console.log(`\n🏁 Sample Analysis Complete:`);
   console.log(`   - Suspects Checked: ${checkedCount}`);

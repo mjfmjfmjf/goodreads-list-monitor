@@ -31,6 +31,8 @@ process.env.GOODREADS_STRICT_THROTTLE = '1';
 const SHELF_TAG = 'science-fiction';
 const LIST_PAGE_SIZE = 100;
 
+import { loadState } from '../storage.js';
+
 interface ListInfo {
   id: string;
   title: string;
@@ -38,7 +40,7 @@ interface ListInfo {
 }
 
 function loadMonitoredLists(): ListInfo[] {
-  const state = fs.readJsonSync(path.join(process.cwd(), 'state.json'));
+  const state = loadState();
   return Object.entries(state.lists || {}).map(([id, list]) => {
     const l = list as any;
     return { id, title: l.title || '', count: l.lastCount || 0 };
