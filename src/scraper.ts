@@ -5,7 +5,7 @@ import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
 import { delay, fetchWithRetry, formatDate } from './utils.js';
-import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats } from './storage.js';
+import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage } from './storage.js';
 import type { AuthorStats } from './storage.js';
 
 let structuralWarningIssued = false;
@@ -41,6 +41,13 @@ export interface ListMetadata {
   url: string;
 }
 
+// Goodreads list/votes markup embeds line breaks and indentation inside title
+// and author anchors. Browsers collapse that whitespace when rendering; do the
+// same here so extracted text never carries internal whitespace runs.
+export function cleanScrapedText(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim();
+}
+
 export interface BookMetadata {
   id: string;
   title: string;
@@ -55,6 +62,19 @@ export interface BookMetadata {
   tagCount?: number;
   page?: number;
   requiresAuth?: boolean;
+  // Groups all editions of a work under one key (from the book page's
+  // /work/editions/ link). Absent on list/shelf/author-page rows.
+  workId?: string;
+}
+
+// Extract the Goodreads work id from a book page HTML. List/shelf/author
+// pages do not carry it, so this only sees what scrapeBookDetails downloads.
+export function extractWorkId(html: string): string | undefined {
+  if (!html) return undefined;
+  return (
+    html.match(/work\/editions\/(\d+)/)?.[1] ||
+    html.match(/["']workId["']\s*:\s*["']?(\d+)/)?.[1]
+  );
 }
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
@@ -88,7 +108,7 @@ export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]
 
       $('.listTitle').each((_, element) => {
         const $a = $(element);
-        const title = $a.text().trim();
+        const title = cleanScrapedText($a.text());
         const href = $a.attr('href') || '';
         const match = href.match(/\/list\/show\/(\d+)\./);
         const id = match ? match[1] : '';
@@ -187,7 +207,7 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
 
         const $el = $(element);
         const $title = $el.find('.bookTitle');
-        const title = $title.find('span[itemprop="name"]').text().trim() || $title.text().trim();
+        const title = cleanScrapedText($title.find('span[itemprop="name"]').text()) || cleanScrapedText($title.text());
         const href = $title.attr('href') || '';
         const match = href.match(/\/book\/show\/(\d+)/);
         const id = match ? match[1] : '';
@@ -196,7 +216,7 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
           if (i === 0) firstIdOnThisPage = id;
 
           const $authorA = $el.find('.authorName');
-          const author = $authorA.text().trim() || 'Unknown Author';
+          const author = cleanScrapedText($authorA.text()) || 'Unknown Author';
           const authorHref = $authorA.attr('href') || '';
           const authorMatch = authorHref.match(/\/author\/show\/([^?#\s/]+)/);
           const authorSlug = authorMatch ? authorMatch[1] : undefined;
@@ -329,7 +349,7 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
       // Scope to .tableList to avoid "related books" at the bottom of the page
       $('.tableList .bookTitle').each((_, element) => {
         const $a = $(element);
-        const title = $a.find('span[itemprop="name"]').text().trim() || $a.text().trim();
+        const title = cleanScrapedText($a.find('span[itemprop="name"]').text()) || cleanScrapedText($a.text());
         const href = $a.attr('href') || '';
         const match = href.match(/\/book\/show\/(\d+)/);
         const id = match ? match[1] : '';
@@ -337,7 +357,7 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
         if (id) {
           const parentTd = $a.closest('td');
           const $authorA = parentTd.find('.authorName');
-          const author = $authorA.text().trim() || 'Unknown Author';
+          const author = cleanScrapedText($authorA.text()) || 'Unknown Author';
           const authorHref = $authorA.attr('href') || '';
           const authorMatch = authorHref.match(/\/author\/show\/([^?#\s/]+)/);
           const authorSlug = authorMatch ? authorMatch[1] : undefined;
@@ -422,6 +442,96 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
   }
 
   return uniqueBooks;
+}
+
+export interface UserVoteEntry {
+  position: number;
+  bookId: string;
+  title: string;
+  author: string;
+  authorSlug?: string;
+  authorId?: string;
+}
+
+// Scrapes a Listopia "user votes" page, e.g.
+//   https://www.goodreads.com/list/user_vote/10400982
+// Accepts either the trailing id or the full URL. The page renders the same
+// .tableList markup as list/show pages, so the parsing mirrors scrapeListBooks.
+export async function scrapeUserVoteBooks(userVoteRef: string): Promise<UserVoteEntry[]> {
+  const configData = await loadConfig();
+  const baseUrl = /^\d+$/.test(userVoteRef)
+    ? `https://www.goodreads.com/list/user_vote/${userVoteRef}`
+    : userVoteRef;
+
+  const allVotes: UserVoteEntry[] = [];
+  let page = 1;
+  let hasNext = true;
+
+  while (hasNext) {
+    const url = page === 1 ? baseUrl : `${baseUrl}?page=${page}`;
+
+    try {
+      const headers: any = { 'User-Agent': USER_AGENT };
+      if (configData.cookie) headers['Cookie'] = configData.cookie;
+
+      const start = Date.now();
+      const response = await fetchWithRetry(url, {
+        headers,
+        timeout: TIMEOUT
+      });
+      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      const bodyLen = typeof response.data === 'string' ? response.data.length : 0;
+
+      console.log(chalk.gray(`   HTTP ${response.status} (${bodyLen} bytes, ${duration}s)`));
+
+      const $ = cheerio.load(response.data);
+      const pageVotes: UserVoteEntry[] = [];
+
+      $('.tableList tr').each((_, row) => {
+        const $row = $(row);
+        const $a = $row.find('.bookTitle').first();
+        if ($a.length === 0) return;
+
+        const title = cleanScrapedText($a.find('span[itemprop="name"]').text()) || cleanScrapedText($a.text());
+        const hrefMatch = ($a.attr('href') || '').match(/\/book\/show\/(\d+)/);
+        const bookId = hrefMatch ? hrefMatch[1] : '';
+        if (!bookId) return;
+
+        const $authorA = $row.find('.authorName').first();
+        const author = cleanScrapedText($authorA.text()) || 'Unknown Author';
+        const authorSlug = ($authorA.attr('href') || '').match(/\/author\/show\/([^?#\s/]+)/)?.[1];
+        const authorId = authorSlug ? authorSlug.split('.')[0] : undefined;
+
+        const position = parseInt($row.find('td.number').text().trim(), 10) || 0;
+
+        pageVotes.push({ position, bookId, title, author, authorSlug, authorId });
+      });
+
+      if (pageVotes.length === 0) break;
+      allVotes.push(...pageVotes);
+
+      const nextBtn = $('.next_page');
+      if (nextBtn.length > 0 && !nextBtn.hasClass('disabled')) {
+        page++;
+        await delay();
+      } else {
+        hasNext = false;
+      }
+    } catch (error) {
+      console.error(chalk.red.bold(`   ❌ Error fetching user votes page ${page}:`), (error as any).message);
+      throw error;
+    }
+  }
+
+  // Deduplicate by book id, keeping the lowest position seen
+  const byBookId = new Map<string, UserVoteEntry>();
+  for (const vote of allVotes) {
+    const existing = byBookId.get(vote.bookId);
+    if (!existing || vote.position < existing.position) {
+      byBookId.set(vote.bookId, vote);
+    }
+  }
+  return [...byBookId.values()].sort((a, b) => a.position - b.position);
 }
 
 export async function scrapeListDescription(listId: string): Promise<string> {
@@ -701,6 +811,7 @@ export interface AuthorListBook {
   ratings: string;
   avgRating?: string;
   published: string;
+  workId?: string;
 }
 
 function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
@@ -735,7 +846,7 @@ async function updateAuthorStatsFromPage($: cheerio.CheerioAPI, authorSlug: stri
   }
 }
 
-function parseAuthorListBooks($: cheerio.CheerioAPI, authorSlug?: string): AuthorListBook[] {
+export function parseAuthorListBooks($: cheerio.CheerioAPI, authorSlug?: string): AuthorListBook[] {
   const books: AuthorListBook[] = [];
   $('.tableList tr, tr[itemscope][itemtype="http://schema.org/Book"]').each((_, el) => {
     const $el = $(el);
@@ -760,7 +871,10 @@ function parseAuthorListBooks($: cheerio.CheerioAPI, authorSlug?: string): Autho
     const yearMatch = metaText.match(/(?:published|publication).*?(\d{4})/i) || metaText.match(/\b(?:18|19|20)\d{2}\b/);
     const published = yearMatch ? (yearMatch[1] || yearMatch[0]) : 'Unknown';
 
-    books.push({ id: entryId, title: entryTitle, author: entryAuthor, authorId: entryAuthorId, authorSlug, ratings, avgRating, published });
+    const editionsHref = $el.find('a[href*="/work/editions/"]').attr('href') || '';
+    const workIdMatch = editionsHref.match(/\/work\/editions\/(\d+)/);
+
+    books.push({ id: entryId, title: entryTitle, author: entryAuthor, authorId: entryAuthorId, authorSlug, ratings, avgRating, published, workId: workIdMatch?.[1] });
   });
   return books;
 }
@@ -794,7 +908,13 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
   }
 }
 
-export async function scrapeAuthorStats(authorSlug: string): Promise<AuthorStats | undefined> {
+export interface AuthorStatsResult {
+  stats: AuthorStats;
+  booksInserted: number;
+  booksEnriched: number;
+}
+
+export async function scrapeAuthorStats(authorSlug: string): Promise<AuthorStatsResult | undefined> {
   const url = `https://www.goodreads.com/author/list/${authorSlug}`;
   const config = await loadConfig();
 
@@ -806,7 +926,19 @@ export async function scrapeAuthorStats(authorSlug: string): Promise<AuthorStats
     const $ = cheerio.load(response.data);
     const stats = parseAuthorStats($);
     if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) return undefined;
-    return stats;
+
+    const works = parseAuthorListBooks($, authorSlug);
+    let booksInserted = 0;
+    let booksEnriched = 0;
+    if (works.length) {
+      const res = mergeBooksFromAuthorPage(works);
+      booksInserted = res.inserted;
+      booksEnriched = res.updated;
+      const lastPage = Math.max(1, ...[...String(response.data).matchAll(/[?&]page=(\d+)/g)].map(m => parseInt(m[1], 10)));
+      const catalogNote = lastPage > 1 ? `, catalog spans ~${lastPage} pages` : '';
+      console.log(chalk.dim(`   📚 ${authorSlug}: ${booksInserted} new / ${booksEnriched} enriched of ${works.length} on page${catalogNote}`));
+    }
+    return { stats, booksInserted, booksEnriched };
   } catch (error) {
     console.error(chalk.yellow(`   ⚠️ Author stats fetch failed for ${authorSlug}: ${(error as any).code || (error as any).message || error}`));
     return undefined;
@@ -866,7 +998,9 @@ export async function scrapeBookDetails(bookId: string, titleHint?: string, auth
     }
 
     const $ = cheerio.load(response.data);
-    return await extractBookFromCheerio(bookId, $);
+    const parsed = await extractBookFromCheerio(bookId, $);
+    const workId = extractWorkId(typeof response.data === 'string' ? response.data : '');
+    return workId ? { ...parsed, workId } : parsed;
   }
 
   // Determine effective author slug

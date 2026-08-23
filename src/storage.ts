@@ -25,9 +25,11 @@ export interface CachedBook {
   genres?: string[];
   lastUpdated: string;
   tags?: { [tagName: string]: number };
+  tagCount?: number;
   requiresAuth?: boolean;
   isBad?: boolean;
   failCount?: number;
+  workId?: string;
 }
 
 export interface State {
@@ -119,6 +121,7 @@ function rowToBook(row: any): CachedBook {
     requiresAuth: row.requires_auth === 1,
     isBad: row.is_bad === 1,
     failCount: row.fail_count || undefined,
+    workId: row.work_id || undefined,
   };
 }
 
@@ -134,14 +137,15 @@ export function loadBookCache(): BookCache {
 }
 
 const BOOK_UPSERT_SQL = `
-  INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count)
-  VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount)
+  INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count, work_id)
+  VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount, @workId)
   ON CONFLICT(id) DO UPDATE SET
     title=excluded.title, author=excluded.author, author_id=excluded.author_id,
     ratings=excluded.ratings, avg_rating=excluded.avg_rating, published=excluded.published,
     pages=excluded.pages, series_pos=excluded.series_pos, genres=excluded.genres,
     last_updated=excluded.last_updated, tags=excluded.tags,
-    requires_auth=excluded.requires_auth, is_bad=excluded.is_bad, fail_count=excluded.fail_count
+    requires_auth=excluded.requires_auth, is_bad=excluded.is_bad, fail_count=excluded.fail_count,
+    work_id=COALESCE(excluded.work_id, work_id)
 `;
 
 function bindBook(book: CachedBook) {
@@ -161,6 +165,7 @@ function bindBook(book: CachedBook) {
     requiresAuth: book.requiresAuth ? 1 : 0,
     isBad: book.isBad ? 1 : 0,
     failCount: book.failCount ?? null,
+    workId: book.workId || null,
   };
 }
 
@@ -173,9 +178,112 @@ export function getBook(id: string): CachedBook | undefined {
   return row ? rowToBook(row) : undefined;
 }
 
+export function countBooks(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS c FROM books').get() as any;
+  return row?.c ?? 0;
+}
+
 export function deleteBook(id: string): boolean {
   return getDb().prepare('DELETE FROM books WHERE id = ?').run(id).changes > 0;
 }
+
+export interface AuthorPageBookRow {
+  id: string;
+  title: string;
+  author: string;
+  authorId?: string;
+  ratings?: string;
+  avgRating?: string;
+  published?: string;
+  workId?: string;
+}
+
+export type AuthorPageMergeOutcome =
+  | { kind: 'insert'; book: CachedBook }
+  | { kind: 'update'; book: CachedBook }
+  | { kind: 'skip' };
+
+const BLANK_SENTINELS = new Set(['unknown', 'null', 'unknown author', 'n/a']);
+const isBlank = (s?: string | null) => !s || !s.trim() || BLANK_SENTINELS.has(s.trim().toLowerCase());
+
+export function computeAuthorPageMerge(existing: CachedBook | undefined, inc: AuthorPageBookRow): AuthorPageMergeOutcome {
+  const now = new Date().toISOString();
+  if (!existing) {
+    return {
+      kind: 'insert',
+      book: {
+        id: inc.id,
+        title: inc.title,
+        author: inc.author,
+        authorId: inc.authorId,
+        ratings: String(parseNum(inc.ratings)),
+        avgRating: inc.avgRating,
+        published: inc.published ?? 'Unknown',
+        workId: inc.workId,
+        lastUpdated: now,
+        requiresAuth: false,
+        isBad: false,
+      },
+    };
+  }
+  const patch: Partial<CachedBook> = {};
+  if (isBlank(existing.title) && !isBlank(inc.title)) patch.title = inc.title;
+  if (isBlank(existing.author) && !isBlank(inc.author)) patch.author = inc.author;
+  if (!existing.authorId && inc.authorId) patch.authorId = inc.authorId;
+  if ((parseNum(existing.ratings) === 0) && parseNum(inc.ratings) > 0) patch.ratings = String(parseNum(inc.ratings));
+  if (!existing.avgRating && inc.avgRating) patch.avgRating = inc.avgRating;
+  if (isBlank(existing.published) && !isBlank(inc.published)) patch.published = inc.published;
+  if (!existing.workId && inc.workId) patch.workId = inc.workId;
+  if (Object.keys(patch).length === 0) return { kind: 'skip' };
+  return { kind: 'update', book: { ...existing, ...patch, lastUpdated: now } };
+}
+
+export function mergeBooksFromAuthorPage(books: AuthorPageBookRow[]): { inserted: number; updated: number; skipped: number } {
+  const db = getDb();
+  const result = { inserted: 0, updated: 0, skipped: 0 };
+  const updateStmt = db.prepare(`
+    UPDATE books SET
+      title = COALESCE(@title, title),
+      author = COALESCE(@author, author),
+      author_id = COALESCE(@authorId, author_id),
+      ratings = COALESCE(@ratings, ratings),
+      avg_rating = COALESCE(@avgRating, avg_rating),
+      published = COALESCE(@published, published),
+      work_id = COALESCE(@workId, work_id),
+      last_updated = @lastUpdated
+    WHERE id = @id
+  `);
+  const tx = db.transaction(() => {
+    for (const inc of books) {
+      if (!inc.id) continue;
+      const existing = getBook(inc.id);
+      const outcome = computeAuthorPageMerge(existing, inc);
+      if (outcome.kind === 'insert') {
+        upsertBook(outcome.book);
+        result.inserted++;
+      } else if (outcome.kind === 'update') {
+        const b = outcome.book;
+        updateStmt.run({
+          id: b.id,
+          title: b.title ?? null,
+          author: b.author ?? null,
+          authorId: b.authorId || null,
+          ratings: b.ratings ? parseNum(b.ratings) : null,
+          avgRating: b.avgRating ? parseFloat(b.avgRating) : null,
+          published: b.published ?? null,
+          workId: b.workId || null,
+          lastUpdated: b.lastUpdated,
+        });
+        result.updated++;
+      } else {
+        result.skipped++;
+      }
+    }
+  });
+  tx();
+  return result;
+}
+
 
 export async function syncBooksToCache(books: any[], bookCache: BookCache) {
   const db = getDb();
@@ -313,10 +421,19 @@ export function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {
     ON CONFLICT(name) DO UPDATE SET
       id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen
   `);
+  const findById = db.prepare('SELECT name FROM authors WHERE id = ?');
 
   const tx = db.transaction(() => {
     for (const book of books) {
       if (book.author && book.author !== 'Unknown Author' && book.authorSlug) {
+        // Author identity is the id; if this author already exists under some
+        // OTHER name variant (mangled spacing, role suffixes), do NOT create
+        // a duplicate row keyed by the variant.
+        const authorId = String(book.authorId || book.authorSlug.split('.')[0]);
+        const existingById = findById.get(authorId) as any;
+        if (existingById && existingById.name !== book.author) {
+          continue;
+        }
         const existing = authorCache[book.author];
         if (!existing || existing.slug !== book.authorSlug) {
           const entry: AuthorCacheEntry = {

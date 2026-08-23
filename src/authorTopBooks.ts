@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache, loadAuthorCache, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats } from './storage.js';
+import { loadBookCache, loadAuthorCache, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats, countBooks } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { delay } from './utils.js';
 
@@ -7,6 +7,7 @@ export interface AuthorTopBooksOptions {
   minRatings?: string;
   maxRatings?: string;
   skip?: boolean;
+  minAge?: string;
 }
 
 const parseRatingsNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
@@ -55,36 +56,56 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
 
   console.log(chalk.gray(`   Top ${topBooks.length} books → ${authors.length} distinct authors.`));
 
-  // 3. Optionally skip authors that already have captured stats
+  // 3. Optionally skip authors that already have captured stats (--skip)
+  //    or whose stats were refreshed recently (--minAge <days>)
+  const minAgeDays = options.minAge !== undefined ? parseInt(options.minAge, 10) : 0;
+  if (isNaN(minAgeDays) || minAgeDays < 0) {
+    console.error(chalk.red.bold('Error: --minAge must be a non-negative number of days.'));
+    process.exit(1);
+  }
+  const cutoff = minAgeDays > 0 ? Date.now() - minAgeDays * 24 * 60 * 60 * 1000 : 0;
   let toScrape = authors;
-  if (options.skip) {
+  {
     let skipped = 0;
+    let freshSkipped = 0;
     toScrape = authors.filter(a => {
       const entry = authorCache[a.name] || Object.values(authorCache).find(e => e.slug === a.slug);
-      if (entry && entry.numRatings !== undefined) {
+      if (!entry || entry.numRatings === undefined) return true;
+      if (options.skip) {
         skipped++;
+        return false;
+      }
+      if (cutoff > 0 && entry.lastSeen && new Date(entry.lastSeen).getTime() >= cutoff) {
+        freshSkipped++;
         return false;
       }
       return true;
     });
-    console.log(chalk.gray(`   Skipping ${skipped} authors already in the cache (--skip).\n`));
+    if (skipped > 0) console.log(chalk.gray(`   Skipping ${skipped} authors already in the cache (--skip).\n`));
+    if (freshSkipped > 0) console.log(chalk.gray(`   Skipping ${freshSkipped} authors updated within the last ${minAgeDays} day(s) (--minAge).\n`));
   }
 
   console.log(chalk.gray(`   ${toScrape.length} authors to scrape.\n`));
 
   let failed = 0;
   let updated = 0;
+  let totalInserted = 0;
+  let totalEnriched = 0;
+  const booksAtStart = countBooks();
   const start = Date.now();
 
   for (let i = 0; i < toScrape.length; i++) {
     const author = toScrape[i];
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${author.name} (${author.slug})`));
-      const stats = await scrapeAuthorStats(author.slug);
-      if (!stats) {
+      const result = await scrapeAuthorStats(author.slug);
+      if (!result) {
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${author.name}`));
         continue;
       }
+      const stats = result.stats;
+      totalInserted += result.booksInserted;
+      totalEnriched += result.booksEnriched;
       // Resolve the DB row key from the snapshot, then re-read fresh so we
       // merge against current values (another process may have updated it).
       const snapKey = authorCache[author.name]
@@ -131,5 +152,7 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
   }
 
   const duration = ((Date.now() - start) / 1000).toFixed(1);
+  const booksAtEnd = countBooks();
   console.log(chalk.cyan.bold(`\n🏁 Done. Processed ${toScrape.length} authors, updated ${updated} (${failed} failures, ${duration}s).`));
+  console.log(chalk.cyan.bold(`📚 Books harvested: +${totalInserted.toLocaleString()} new · ${totalEnriched.toLocaleString()} enriched · cache ${booksAtStart.toLocaleString()} → ${booksAtEnd.toLocaleString()}`));
 }

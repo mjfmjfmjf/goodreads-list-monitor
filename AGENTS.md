@@ -1,9 +1,12 @@
 # AGENTS.md — Working memory for this repo
 
 ## Testing cadence
-- **Unit tests** (`./runUnitTests.sh`): fast, offline, pure-function tests in
-  `src/*.test.ts`. Runs Vitest WITH v8 coverage (text + json-summary). Run after
-  EVERY feature change or dependency/tool upgrade.
+- **Unit tests** (`./runUnitTests.sh`): fast, offline. Three gates in order:
+  `tsc --noEmit` (full strict typecheck — ts-node typechecks at load time in
+  production, vitest does NOT), Vitest WITH v8 coverage on `src/*.test.ts`,
+  then the offline CLI smoke test which spawns the real CLI under the
+  production ts-node/esm loader. Run after EVERY feature change or dependency/
+  tool upgrade.
 - **Integration tests** (`./runIntegrationTests.sh`): live lookups against real
   Goodreads pages (a dozen+ requests, pagination sweeps, one add-book lookup).
   Run deliberately BEFORE/AFTER risky scraper changes, when Goodreads markup may
@@ -34,6 +37,11 @@
   shifts, URL changes, new anti-bot behavior), ADD AN ENTRY to
   `GOODREADS_CHANGES.md` (newest entry on top, timestamp `YYYY/MM/DD HH:MM`).
   Keep it concise: date, what changed, what was fixed, any throttling notes.
+
+## Future work
+- Longer-horizon plans live in `PLAN-*.md` files (e.g.
+  `PLAN-edition-clustering.md`). Read the relevant one before working on that
+  area; update it when facts on the ground change.
 
 ## Code conventions
 - Scrapers live in `src/scraper.ts` using cheerio. Unit-test pure logic in

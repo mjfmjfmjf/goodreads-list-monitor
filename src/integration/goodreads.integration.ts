@@ -134,10 +134,11 @@ describe('live Goodreads lookups (scraper)', () => {
 
   it('author stats parse for the shelf book author', { timeout: 60_000 }, async () => {
     if (!fixture?.authorSlug) throw new Error('Prerequisite: fixture has no authorSlug');
-    const stats = await scrapeAuthorStats(fixture.authorSlug);
-    expect(stats).toBeDefined();
-    expect(stats!.averageRating || stats!.numRatings || stats!.numReviews || stats!.numShelves).toBeTruthy();
-    console.log(`   Author stats: ${JSON.stringify(stats)}`);
+    const result = await scrapeAuthorStats(fixture.authorSlug);
+    expect(result).toBeDefined();
+    const s = result!.stats;
+    expect(s.averageRating || s.numRatings || s.numReviews || s.numShelves).toBeTruthy();
+    console.log(`   Author stats: ${JSON.stringify(s)}`);
   });
 
   it('tag count for the shelf tag is a number', { timeout: 60_000 }, async () => {

@@ -38,11 +38,12 @@ export async function runAuthorOne(input: string): Promise<void> {
 
   console.log(chalk.cyan.bold(`\n👤 Author Stats: fetching ${parsed.slug}`));
 
-  const stats = await scrapeAuthorStats(parsed.slug);
-  if (!stats) {
+  const result = await scrapeAuthorStats(parsed.slug);
+  if (!result) {
     console.log(chalk.yellow(`   ⚠️ No stats line found for ${parsed.slug}`));
     return;
   }
+  const stats = result.stats;
 
   const slug = stats.slug || parsed.slug;
   const id = slug.split('.')[0];

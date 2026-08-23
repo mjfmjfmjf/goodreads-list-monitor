@@ -21,8 +21,10 @@ import { runBackfillPages } from './backfillPages.js';
 import { runAvgHistogram } from './summaryAvgHistogram.js';
 import { runAuthorTopBooks } from './authorTopBooks.js';
 import { runAuthorTopStats } from './authorTopStats.js';
+import { runAuthorListDiff } from './authorListDiff.js';
 import { runAuthorRescan } from './authorRescan.js';
 import { runAuthorOne } from './authorOne.js';
+import { runAuthorDedupe } from './authorDedupe.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
 import { runBooks } from './books.js';
 import { runLibraryQuery } from './library.js';
@@ -35,7 +37,7 @@ import { runCommonMonitoredBooks } from './commonMonitoredBooks.js';
 import { runCommonUnreviewedMonitoredBooks } from './commonUnreviewedMonitoredBooks.js';
 import { runTagGaps, runCacheGaps } from './tagGaps.js';
 import { runNextBooks } from './nextBooks.js';
-import { runGenreHarvest } from './genreHarvest.js';
+import { runBookSweep } from './bookSweep.js';
 import { loadState, saveState, loadConfig } from './storage.js';
 import { backupDbSync } from './db.js';
 
@@ -181,6 +183,7 @@ Examples:
   .option('--minRatings <number>', 'Only consider books with at least this many ratings')
   .option('--maxRatings <number>', 'Only consider books with at most this many ratings')
   .option('--skip', 'Skip authors whose stats are already captured in the author cache')
+  .option('--minAge <number>', 'Re-scrape only authors whose stats are older than N days (skips fresher ones)')
   .action(async (n, options) => {
     const count = parseInt(n, 10);
     if (isNaN(count) || count <= 0) {
@@ -233,6 +236,23 @@ Examples:
   });
 
 program
+  .command('author-dedupe')
+  .description('Merge duplicate author rows that share an id under different name variants (mangled spacing, role suffixes) and un-mangle remaining names. Dry run unless --apply')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-dedupe
+  $ npm run author-dedupe -- --apply
+  $ ./authorDedupe.sh --apply`)
+  .option('--apply', 'Write changes to the database (backs up first)', false)
+  .action(async (options) => {
+    try {
+      await runAuthorDedupe({ apply: options.apply });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to dedupe authors:'), (error as any).message);
+    }
+  });
+
+program
   .command('author-top-stats')
   .description('List top authors from the author cache by a chosen stat (number of ratings, average rating, number of reviews, or number of shelves)')
   .addHelpText('after', `
@@ -250,6 +270,28 @@ Examples:
       await runAuthorTopStats(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate author stats summary:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-list-diff [userVoteUrl]')
+  .description('Compare a Listopia user-votes page against the current author ranking and report which voted books/authors have fallen out of the top N, plus which qualifying authors/books to add in their place. The suggested book per author is their most-rated book in the book db.')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-list-diff
+  $ npm run author-list-diff -- 10400982
+  $ npm run author-list-diff -- https://www.goodreads.com/list/user_vote/10400982
+  $ npm run author-list-diff -- --sortBy averageRating --minRatings 100000 --limit 100
+  $ ./authorListDiff.sh`)
+  .option('--limit <number>', 'List size / ranking cutoff (default 100)', '100')
+  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default averageRating)', 'averageRating')
+  .option('--minRatings <number>', 'Only include authors with at least this many ratings (default 100000)', '100000')
+  .option('--maxRatings <number>', 'Only include authors with at most this many ratings')
+  .action(async (userVoteUrl, options) => {
+    try {
+      await runAuthorListDiff({ ...options, userVoteUrl });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to diff list vs author stats:'), (error as any).message);
     }
   });
 
@@ -806,14 +848,14 @@ program
   });
 
 program
-  .command('genre-harvest')
-  .description('Slowly fetch book pages from Goodreads to harvest genres into the book cache. Picks random books with enough ratings and no genres yet. Sleeps on throttle; exits on second consecutive throttle.')
+  .command('book-sweep')
+  .description('Slowly fetch book pages from Goodreads, sweeping genres and workIds into the book cache. Picks random books with enough ratings that are missing either. Sleeps on throttle; exits on second consecutive throttle. Sleeps on throttle; exits on second consecutive throttle.')
   .addHelpText('after', `
 Examples:
-  $ npm run genre-harvest
-  $ npm run genre-harvest -- --limit 20 --minRatings 50000
-  $ npm run genre-harvest -- --delay 60
-  $ ./genreHarvest.sh --limit 50`)
+  $ npm run book-sweep
+  $ npm run book-sweep -- --limit 20 --minRatings 50000
+  $ npm run book-sweep -- --delay 60
+  $ ./bookSweep.sh --limit 50`)
   .option('--limit <number>', 'Maximum number of books to process (default 100)', '100')
   .option('--minRatings <number>', 'Minimum number of ratings a book must have (default 1000)', '1000')
   .option('--delay <number>', 'Seconds to wait between requests (default 30)', '30')
@@ -821,9 +863,9 @@ Examples:
   .option('--throttleSleep <number>', 'Seconds to sleep on throttle before retrying (default 300). Second consecutive throttle exits.', '300')
   .action(async (options) => {
     try {
-      await runGenreHarvest(options);
+      await runBookSweep(options);
     } catch (error) {
-      console.error(chalk.red.bold('Failed to run genre harvest:'), (error as any).message);
+      console.error(chalk.red.bold('Failed to run book sweep:'), (error as any).message);
     }
   });
 

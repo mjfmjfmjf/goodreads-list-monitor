@@ -71,6 +71,23 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   }
   console.log(chalk.green.bold(`   ✅ Shelf scan complete. Found ${shelfBooks.length} unique books above threshold.\n`));
 
+  // 1b. Record shelf presence on every discovered book: tags[shelf] = shelving count.
+  // Same data the tag-audit flow persists (auditor.ts), now captured at discovery time too.
+  let taggedCount = 0;
+  for (const sb of shelfBooks) {
+    const existing = getBook(sb.id) ?? bookCache[sb.id];
+    if (!existing) continue;
+    if (!existing.tags) existing.tags = {};
+    if (existing.tags[tagName] !== (sb.tagCount || 0)) {
+      existing.tags[tagName] = sb.tagCount || 0;
+      existing.lastUpdated = new Date().toISOString();
+      bookCache[sb.id] = existing;
+      upsertBook(existing);
+      taggedCount++;
+    }
+  }
+  console.log(chalk.green.bold(`   🏷️ Recorded "${tagName}" presence on ${taggedCount} books.\n`));
+
   // 2. METADATA SYNC (Fill in missing details for books that are still Unknown)
   const booksNeedingMetadata = shelfBooks.filter(sb => bookCache[sb.id]?.published === 'Unknown');
   console.log(chalk.cyan.bold(`🔄 Step 2: Ensuring metadata for ${shelfBooks.length} discovered books...`));

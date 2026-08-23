@@ -231,6 +231,25 @@ npm run author-one -- [url-or-slug]
 ```
 Scrapes the stats for one author, e.g. `https://www.goodreads.com/author/show/14018357.Steve_the_Noob` (or the slug/ID), and updates `authorsCache.json` — creating the entry if it doesn't exist yet.
 
+### 7a. Author/List Membership Check
+Compare your `user_vote` page on a list against the live top-100 author ranking and get paste-ready instructions. Convenient wrapper: `./authorHighestAverageRatingUpdate.sh`.
+
+```bash
+npm run author-list-diff -- --userVote [url-or-id] --limit [n] --sortBy [field] --minRatings [min]
+```
+
+Fetches all books you voted for on a Goodreads list (`--userVote` accepts a full user_vote URL, e.g. `.../list/show/118483/user_vote/10400982`, or just the ID), ranks authors from the cache with the same selection logic as `author-top-stats`, dedupes by id keeping each author's best-ranked book, and reports:
+
+- **Replacements** — voted authors holding a slot whose book isn't their highest-rated one with ≥1000 ratings (swap without moving).
+- **Removed** — voted authors who fell outside the top `n`, with current rank.
+- **Missing** — top-`n` authors you haven't voted for, suggested into freed slots (highest-rated ≥1000-ratings book as candidate).
+- **Out of position** — votes sitting at a slot that no longer matches their live rank.
+- **Can't verify** — voted authors with no cached stats; fetch stats (`./authorOne.sh`) and rerun instead of trusting a removal.
+
+The paste-ready block emits instructions in execution order using the list's link syntax — `removed [author:Name|id] [book:Title|id] - was #x, now #y`, then `add … - to #n`, then `move … - from #a to #b`, then `replace … with …`. Book link text drops series parentheticals and converts square brackets to parens so references never nest.
+
+**Author cache hygiene:** `npm run author-dedupe` merges duplicate author rows that share an id under different name variants (mangled spacing, `(Editor)` suffixes) and un-mangles names. Dry run by default; `--apply` writes after an automatic backup. New book-row syncs no longer create variant rows.
+
 ### 8. Library Queries
 Run custom queries over your imported Goodreads library export (the same cached import used by `books --excludeReviewed`). `libraryExportCache.json` keeps every parsed entry (`id, title, author, shelf, dateRead, hasReview, published, myRating, pages`), so queries never touch the CSV again until you refresh with `--export`. Convenient wrapper: `./library.sh`.
 

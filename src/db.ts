@@ -81,10 +81,11 @@ function initSchema(db: Database.Database) {
       genres TEXT,
       last_updated TEXT NOT NULL,
       tags TEXT,
-      requires_auth INTEGER DEFAULT 0,
-      is_bad INTEGER DEFAULT 0,
-      fail_count INTEGER DEFAULT 0
-    );
+    requires_auth INTEGER DEFAULT 0,
+    is_bad INTEGER DEFAULT 0,
+    fail_count INTEGER DEFAULT 0,
+    work_id TEXT
+  );
 
     CREATE TABLE IF NOT EXISTS authors (
       name TEXT PRIMARY KEY,
@@ -117,6 +118,12 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_authors_num_ratings ON authors(num_ratings DESC);
     CREATE INDEX IF NOT EXISTS idx_authors_num_shelves ON authors(num_shelves DESC);
   `);
+
+  // Migrations for databases created before a column existed.
+  const bookCols = db.prepare('PRAGMA table_info(books)').all() as any[];
+  if (!bookCols.some(c => c.name === 'work_id')) {
+    db.exec('ALTER TABLE books ADD COLUMN work_id TEXT');
+  }
 }
 
 export function closeDb() {

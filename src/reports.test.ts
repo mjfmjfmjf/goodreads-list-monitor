@@ -25,7 +25,7 @@ const CSV_FILE = path.join(TMP_DIR, 'library.csv');
 let captured: string[] = [];
 let captureErr: string[] = [];
 
-function capture(): { out: string; err: string; restore: () => void } {
+function capture(): { out: () => string; err: () => string; restore: () => void } {
   const origLog = console.log;
   const origErr = console.error;
   const strip = (s: string) => String(s).replace(/\x1b\[[0-9;]*m/g, '');

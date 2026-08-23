@@ -27,7 +27,7 @@ const DB_FILE = process.env.GOODREADS_DB_PATH!;
 
 let captured: string[] = [];
 
-function capture(): { out: string; restore: () => void } {
+function capture(): { out: () => string; restore: () => void } {
   const origLog = console.log;
   const origErr = console.error;
   const strip = (s: string) => String(s).replace(/\x1b\[[0-9;]*m/g, '');

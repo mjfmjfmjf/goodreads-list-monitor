@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats } from './storage.js';
+import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks } from './storage.js';
 import { selectAuthors } from './authorTopStats.js';
 import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.js';
 import { scrapeAuthorStats } from './scraper.js';
@@ -61,18 +61,24 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
   let failed = 0;
   let updated = 0;
   let noStats = 0;
+  let totalInserted = 0;
+  let totalEnriched = 0;
+  const booksAtStart = countBooks();
   const start = Date.now();
 
   for (let i = 0; i < toScrape.length; i++) {
     const { name, entry: snapshotEntry } = toScrape[i];
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${snapshotEntry.slug})`));
-      const stats = await scrapeAuthorStats(snapshotEntry.slug);
-      if (!stats) {
+      const result = await scrapeAuthorStats(snapshotEntry.slug);
+      if (!result) {
         noStats++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${name}`));
         continue;
       }
+      const stats = result.stats;
+      totalInserted += result.booksInserted;
+      totalEnriched += result.booksEnriched;
       // Re-read fresh so we merge against current values (another process
       // may have updated this row since the snapshot was taken).
       const entry = getAuthor(name) ?? snapshotEntry;
@@ -106,5 +112,7 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
   }
 
   const duration = ((Date.now() - start) / 1000).toFixed(1);
+  const booksAtEnd = countBooks();
   console.log(chalk.cyan.bold(`\n🏁 Done. Processed ${toScrape.length} authors, updated ${updated} (${noStats} no stats line, ${failed} failures, ${minAgeSkipped} skipped by --minAge, ${duration}s).`));
+  console.log(chalk.cyan.bold(`📚 Books harvested: +${totalInserted.toLocaleString()} new · ${totalEnriched.toLocaleString()} enriched · cache ${booksAtStart.toLocaleString()} → ${booksAtEnd.toLocaleString()}`));
 }
