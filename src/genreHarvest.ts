@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import * as cheerio from 'cheerio';
 import fs from 'fs';
-import { loadBookCache, saveBookCache, loadConfig, BookCache } from './storage.js';
+import { loadBookCache, getBook, upsertBook, loadConfig, BookCache } from './storage.js';
 import { fetchWithRetry, formatBookLink } from './utils.js';
 
 const LOG_FILE = 'genreHarvest.log';
@@ -240,7 +240,8 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
       }
 
       // Update cache — only improve, never overwrite good data with bad
-      const entry = cache[book.id];
+      const entry = getBook(book.id) ?? cache[book.id];
+      cache[book.id] = entry;
       const parseNum = (s?: string) => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
       let updatedFields: string[] = [];
 
@@ -273,7 +274,7 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
 
       if (updatedFields.length > 0) {
         entry.lastUpdated = new Date().toISOString();
-        await saveBookCache(cache);
+        upsertBook(entry);
       }
 
       // Show genres

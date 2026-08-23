@@ -1,5 +1,114 @@
 [
   {
+    "nickname": "Titles that start with d and have a lot of ratings",
+    "officialTitle": "Titles that start with d and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420886",
+    "id": "420886",
+    "criteria": {
+      "titleRegex": "^d",
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "Titles that start with e and have a lot of ratings",
+    "officialTitle": "Titles that start with e and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420872",
+    "id": "420872",
+    "criteria": {
+      "titleRegex": "^e",
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "Titles that start with f and have a lot of ratings",
+    "officialTitle": "Titles that start with f and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420830",
+    "id": "420830",
+    "criteria": {
+      "titleRegex": "^f",
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "Titles that start with g and have a lot of ratings",
+    "officialTitle": "Titles that start with g and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420829",
+    "id": "420829",
+    "criteria": {
+      "titleRegex": "^g",
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "Titles that start with h and have a lot of ratings",
+    "officialTitle": "Titles that start with h and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420640",
+    "id": "420640",
+    "criteria": {
+      "titleRegex": "^h",
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "Titles that start with i and have a lot of ratings",
+    "officialTitle": "Titles that start with i and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420638",
+    "id": "420638",
+    "criteria": {
+      "titleRegex": "^i",
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "Titles that end with a bang",
+    "officialTitle": "Titles that end with a bang",
+    "url": "https://www.goodreads.com/list/show/420629",
+    "id": "420633",
+    "criteria": {
+      "titleRegex": "!$",
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "Titles that end with a ?",
+    "officialTitle": "Titles that end with a ?",
+    "url": "https://www.goodreads.com/list/show/420629",
+    "id": "420629",
+    "criteria": {
+      "titleRegex": "\\?$",
+      "min": 1000
+    }
+  },
+  {
+    "nickname": "Titles that start with the word I",
+    "officialTitle": "Titles that start with the word I",
+    "url": "https://www.goodreads.com/list/show/117402",
+    "id": "117402",
+    "criteria": {
+      "titleRegex": "^i(?![a-z])"
+    }
+  },
+  {
+    "nickname": "Titles that start with j and have a lot of ratings",
+    "officialTitle": "Titles that start with j and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420607",
+    "id": "420607",
+    "criteria": {
+      "titleRegex": "^j",
+      "min": 25000
+    }
+  },
+  {
+    "nickname": "Titles that start with k and have a lot of ratings",
+    "officialTitle": "Titles that start with k and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420606",
+    "id": "420606",
+    "criteria": {
+      "titleRegex": "^k",
+      "min": 50000
+    }
+  },
+  {
     "nickname": "Titles that start with l and have a lot of ratings",
     "officialTitle": "Titles that start with l and have a lot of ratings",
     "url": "https://www.goodreads.com/list/show/420600",

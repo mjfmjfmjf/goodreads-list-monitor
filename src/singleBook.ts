@@ -1,19 +1,21 @@
 import chalk from 'chalk';
 import { scrapeBookDetails } from './scraper.js';
-import { loadBookCache, saveBookCache, BookCache, CachedBook } from './storage.js';
+import { loadBookCache, getBook, upsertBook, BookCache, CachedBook } from './storage.js';
 import { parseSeriesPos } from './seriesPos.js';
 
 export async function scrapeAndCacheBook(bookId: string, force = false, passedCache?: BookCache): Promise<CachedBook | null> {
   try {
     const bookCache = passedCache || await loadBookCache();
-    const existing = bookCache[bookId];
-
-    if (existing?.isBad && !force) {
-      console.log(chalk.yellow(`   ⏩ Skipping "bad" book ID: ${bookId} (Fail count: ${existing.failCount || 0})`));
+    const snapExisting = bookCache[bookId];
+    if (snapExisting?.isBad && !force) {
+      console.log(chalk.yellow(`   ⏩ Skipping "bad" book ID: ${bookId} (Fail count: ${snapExisting.failCount || 0})`));
       return null;
     }
 
     console.log(chalk.cyan.bold(`\n📖 Processing book ID: ${bookId}...`));
+
+    // Merge against the current DB row so concurrent writers can't be regressed.
+    const existing = getBook(bookId) ?? snapExisting;
     if (existing) {
       const avgStr = existing.avgRating ? `, Avg: ${existing.avgRating}` : '';
       console.log(chalk.gray(`   [Before] Published: ${existing.published}, Ratings: ${existing.ratings}${avgStr}`));
@@ -45,17 +47,14 @@ export async function scrapeAndCacheBook(bookId: string, force = false, passedCa
       seriesPos: newSeriesPos,
       lastUpdated: new Date().toISOString(),
       tags: existing?.tags || {},
+      genres: existing?.genres,
       requiresAuth: details.requiresAuth || existing?.requiresAuth || false,
       isBad: isBad,
       failCount: failCount
     };
 
     bookCache[bookId] = updatedBook;
-
-    // Only save immediately if we didn't receive a shared cache
-    if (!passedCache) {
-      await saveBookCache(bookCache);
-    }
+    upsertBook(updatedBook);
 
     if (details.isFailed) {
       console.log(chalk.red(`   ❌ Update failed. Fail count: ${failCount}${isBad ? ' (Marked as BAD)' : ''}`));

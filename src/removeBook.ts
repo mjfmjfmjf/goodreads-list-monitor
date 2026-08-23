@@ -1,19 +1,18 @@
 import chalk from 'chalk';
-import { loadBookCache, saveBookCache } from './storage.js';
+import { getBook, deleteBook } from './storage.js';
 
 export async function removeBookFromCache(bookIds: string[]): Promise<void> {
-  const bookCache = await loadBookCache();
   let removedCount = 0;
 
   for (const bookId of bookIds) {
-    const existing = bookCache[bookId];
+    const existing = getBook(bookId);
     if (!existing) {
       console.log(chalk.yellow(`⚠️  Book ID ${bookId} not found in cache.`));
       continue;
     }
 
     console.log(chalk.red.bold(`🗑️  Removing: "${existing.title}" by ${existing.author} (ID: ${bookId})`));
-    delete bookCache[bookId];
+    deleteBook(bookId);
     removedCount++;
   }
 
@@ -21,6 +20,5 @@ export async function removeBookFromCache(bookIds: string[]): Promise<void> {
     return;
   }
 
-  await saveBookCache(bookCache);
   console.log(chalk.green.bold(`\n✅ Removed ${removedCount} book(s) from cache.`));
 }

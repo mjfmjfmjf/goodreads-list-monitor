@@ -55,6 +55,16 @@ export async function fetchWithRetry(url: string, config: AxiosRequestConfig, re
         throw new Error(`Goodreads throttled (HTTP ${status}) — strict mode, giving up immediately. Retry the suite after a cooldown.`);
       }
 
+      // Redirect loops carry no HTTP status: classic anti-bot deflection.
+      // Never retried; in strict mode treated as throttling.
+      if (error.code === 'ERR_FR_TOO_MANY_REDIRECTS') {
+        console.log(chalk.red.bold(`   🛑 Redirect loop fetching ${url} — looks like anti-bot throttling.`));
+        if (STRICT_THROTTLE_MODE()) {
+          throw new Error('Goodreads throttled (redirect loop) — strict mode, giving up immediately. Retry the suite after a cooldown.');
+        }
+        throw error;
+      }
+
       // Retry on 5xx (Server Errors), 202 interstitials, or timeouts
       const isRetryable = (status >= 500 && status <= 599) || error.code === 'ECONNABORTED' || error.isRetryable;
       

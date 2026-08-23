@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import * as cheerio from 'cheerio';
 import readline from 'readline';
 import { execSync } from 'child_process';
-import { loadBookCache, saveBookCache, CachedBook, loadAuthorCache, syncAuthorsToCache } from './storage.js';
+import { loadBookCache, upsertBook, CachedBook, syncAuthorsToCache } from './storage.js';
 import { formatDate } from './utils.js';
 import { scrapeBookDetails } from './scraper.js';
 import { scrapeAndCacheBook } from './singleBook.js';
@@ -400,20 +400,22 @@ export async function addBookFromBuffer(bookIdOrUrl: string, rawInputArg?: strin
     ratings: finalRatings,
     avgRating: finalAvgRating,
     published: finalPublished,
+    pages: existing?.pages,
+    seriesPos: existing?.seriesPos,
     lastUpdated: new Date().toISOString(),
     tags: existing?.tags || {},
+    genres: existing?.genres,
     requiresAuth: existing?.requiresAuth || false,
     isBad: false,
     failCount: 0
   };
 
   bookCache[bookId] = updatedBook;
-  await saveBookCache(bookCache);
+  upsertBook(updatedBook);
 
   // Sync author cache if author details exist
   if (finalAuthor && finalAuthor !== 'Unknown Author') {
-    const authorCache = await loadAuthorCache();
-    await syncAuthorsToCache([{ author: finalAuthor, authorId: finalAuthorId, authorSlug: finalAuthorId ? `${finalAuthorId}.${finalAuthor.replace(/\s+/g, '_')}` : undefined }], authorCache);
+    syncAuthorsToCache([{ author: finalAuthor, authorId: finalAuthorId, authorSlug: finalAuthorId ? `${finalAuthorId}.${finalAuthor.replace(/\s+/g, '_')}` : undefined }], {});
   }
 
   console.log(chalk.green.bold(`\n✅ Book ${bookId} successfully saved to booksCache.json!`));

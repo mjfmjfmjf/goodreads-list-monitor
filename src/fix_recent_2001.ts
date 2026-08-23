@@ -1,6 +1,6 @@
 import { scrapeBookDetails } from './scraper.js';
 import { delay } from './utils.js';
-import { loadBookCache, saveBookCache } from './storage.js';
+import { loadBookCache, upsertBook } from './storage.js';
 
 async function fixSuspects() {
   const cache = loadBookCache();
@@ -46,6 +46,7 @@ async function fixSuspects() {
           cache[id].ratings = details.ratings;
         }
         cache[id].lastUpdated = new Date().toISOString();
+        upsertBook(cache[id]);
       } else {
         console.log(`   ✅ CORRECT: "${book.title}" is actually from ${book.published}`);
       }
@@ -57,8 +58,6 @@ async function fixSuspects() {
   }
 
   // Save changes if any
-  saveBookCache(cache);
-
   console.log(`\n🏁 Sample Analysis Complete:`);
   console.log(`   - Suspects Checked: ${checkedCount}`);
   console.log(`   - Incorrectly Parsed: ${incorrectCount}`);

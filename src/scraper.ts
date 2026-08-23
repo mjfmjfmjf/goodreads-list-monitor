@@ -5,8 +5,8 @@ import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
 import { delay, fetchWithRetry, formatDate } from './utils.js';
-import { loadConfig, loadAuthorCache, syncAuthorsToCache, saveAuthorCache, updateAuthorStats } from './storage.js';
-import type { AuthorCache, AuthorCacheEntry, AuthorStats } from './storage.js';
+import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats } from './storage.js';
+import type { AuthorStats } from './storage.js';
 
 let structuralWarningIssued = false;
 
@@ -438,6 +438,7 @@ export async function scrapeListDescription(listId: string): Promise<string> {
     const $ = cheerio.load(response.data);
     return $('.listDescription').html() || $('.u-paddingBottomMedium.mediumText').html() || '';
   } catch (error) {
+    console.error(chalk.yellow(`   ⚠️ List description fetch failed: ${(error as any).code || (error as any).message || error}`));
     return '';
   }
 }
@@ -468,6 +469,7 @@ export async function scrapeTagCount(bookId: string, tag: string): Promise<numbe
     });
     return count;
   } catch (error) {
+    console.error(chalk.yellow(`   ⚠️ Shelf count fetch failed for book ${bookId}: ${(error as any).code || (error as any).message || error}`));
     return 0;
   }
 }
@@ -685,6 +687,7 @@ export async function scrapeBookBySearch(id: string, title: string, author: stri
 
     return foundDetails;
   } catch (error) {
+    console.error(chalk.yellow(`   ⚠️ Book search failed for ${id}: ${(error as any).code || (error as any).message || error}`));
     return { id };
   }
 }
@@ -722,20 +725,13 @@ function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
   };
 }
 
-function findAuthorEntryBySlug(authorCache: AuthorCache, slug: string): AuthorCacheEntry | undefined {
-  for (const entry of Object.values(authorCache)) {
-    if (entry.slug === slug) return entry;
-  }
-  return undefined;
-}
-
 async function updateAuthorStatsFromPage($: cheerio.CheerioAPI, authorSlug: string): Promise<void> {
   const stats = parseAuthorStats($);
   if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) return;
-  const authorCache = await loadAuthorCache();
-  const entry = findAuthorEntryBySlug(authorCache, authorSlug);
-  if (entry && updateAuthorStats(entry, stats)) {
-    await saveAuthorCache(authorCache);
+  // Single-row read/merge/write: no full-cache snapshot involved.
+  const found = findAuthorBySlug(authorSlug);
+  if (found && updateAuthorStats(found.entry, stats)) {
+    upsertAuthor(found.key, found.entry);
   }
 }
 
@@ -793,6 +789,7 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
     if (titleMatch) return titleMatch;
     return { id };
   } catch (error) {
+    console.error(chalk.yellow(`   ⚠️ Author page fetch failed for book ${id} (author ${authorSlug}): ${(error as any).code || (error as any).message || error}`));
     return { id };
   }
 }
@@ -811,6 +808,7 @@ export async function scrapeAuthorStats(authorSlug: string): Promise<AuthorStats
     if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) return undefined;
     return stats;
   } catch (error) {
+    console.error(chalk.yellow(`   ⚠️ Author stats fetch failed for ${authorSlug}: ${(error as any).code || (error as any).message || error}`));
     return undefined;
   }
 }

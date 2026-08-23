@@ -1,5 +1,17 @@
 [
   {
+    "nickname": "2012 Average Rating of 4.40 and above with at least 1000 ratings",
+    "officialTitle": "2012 Average Rating of 4.40 and above with at least 1000 ratings",
+    "id": "420796",
+    "url": "https://www.goodreads.com/list/show/420796",
+    "criteria": {
+      "minAvg": 4.40,
+      "min": 1000,
+      "minYear": 2012,
+      "maxYear": 2012
+    }
+  },
+  {
     "nickname": "2013 Average Rating of 4.40 and above with at least 1000 ratings",
     "officialTitle": "2013 Average Rating of 4.40 and above with at least 1000 ratings",
     "id": "419422",

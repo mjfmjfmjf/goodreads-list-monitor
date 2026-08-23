@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadAuthorCache, saveAuthorCache, updateAuthorStats } from './storage.js';
+import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats } from './storage.js';
 import { selectAuthors } from './authorTopStats.js';
 import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.js';
 import { scrapeAuthorStats } from './scraper.js';
@@ -64,15 +64,18 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
   const start = Date.now();
 
   for (let i = 0; i < toScrape.length; i++) {
-    const { name, entry } = toScrape[i];
+    const { name, entry: snapshotEntry } = toScrape[i];
     try {
-      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${entry.slug})`));
-      const stats = await scrapeAuthorStats(entry.slug);
+      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${snapshotEntry.slug})`));
+      const stats = await scrapeAuthorStats(snapshotEntry.slug);
       if (!stats) {
         noStats++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${name}`));
         continue;
       }
+      // Re-read fresh so we merge against current values (another process
+      // may have updated this row since the snapshot was taken).
+      const entry = getAuthor(name) ?? snapshotEntry;
       const prev = {
         averageRating: entry.averageRating,
         numRatings: entry.numRatings,
@@ -90,11 +93,11 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
       );
       if (changed) {
         updated++;
+        upsertAuthor(name, entry);
         console.log(chalk.green.bold(`   ✅ Author cache updated`));
       } else {
         console.log(chalk.gray(`   (No change - values already current or not greater)`));
       }
-      await saveAuthorCache(authorCache);
     } catch (error) {
       failed++;
       console.error(chalk.red.bold(`   ❌ Failed for ${name}: ${(error as any).message}`));

@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadAuthorCache, saveAuthorCache, updateAuthorStats } from './storage.js';
+import { findAuthorBySlug, upsertAuthor, updateAuthorStats } from './storage.js';
 import type { AuthorCacheEntry } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
 
@@ -48,15 +48,13 @@ export async function runAuthorOne(input: string): Promise<void> {
   const id = slug.split('.')[0];
   const name = stats.name || fallbackNameFromSlug(slug);
 
-  const authorCache = await loadAuthorCache();
-  const bySlug = Object.values(authorCache).find(e => e.slug === slug);
-  const key = bySlug ? (Object.keys(authorCache).find(k => authorCache[k] === bySlug) as string) : name;
-  const entry: AuthorCacheEntry = bySlug || {
+  const found = findAuthorBySlug(slug);
+  const key = found?.key ?? name;
+  const entry: AuthorCacheEntry = found?.entry ?? {
     id,
     slug,
     lastSeen: new Date().toISOString(),
   };
-  authorCache[key] = entry;
 
   const prev = {
     averageRating: entry.averageRating,
@@ -78,7 +76,7 @@ export async function runAuthorOne(input: string): Promise<void> {
   );
 
   if (changed) {
-    await saveAuthorCache(authorCache);
+    upsertAuthor(key, entry);
     console.log(chalk.green.bold(`   ✅ Author cache updated (${key})`));
   } else {
     console.log(chalk.gray(`   (No change - values already current or not greater)`));

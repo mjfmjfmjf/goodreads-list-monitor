@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
 import { scrapeListBooks, scrapeBookDetails, scrapeShelfBooks } from './scraper.js';
-import { loadState, saveState, loadBookCache, saveBookCache, syncBooksToCache } from './storage.js';
+import { loadState, saveState, loadBookCache, getBook, upsertBook, syncBooksToCache } from './storage.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
 import { RegexCriterion, matchesRegex } from './bookMatch.js';
 import { parseSeriesPos, matchesSeriesPos, SERIES_POS_STANDALONE } from './seriesPos.js';
@@ -151,8 +151,6 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
       }
     }
 
-    await saveBookCache(bookCache);
-
     // 4. Final Summary Statements
     if (toAdd.length > 0) {
       const msg = `\n✅ Books that should be ADDED (Meet criteria on shelf): ${toAdd.join(' and ')}`;
@@ -174,7 +172,10 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
 }
 
 function updateCache(book: any, tag: string, bookCache: any) {
-  if (!bookCache[book.id]) {
+  // Merge onto the current DB row and persist just that row.
+  const fresh = getBook(book.id);
+  const entry = fresh ?? bookCache[book.id];
+  if (!entry) {
     bookCache[book.id] = {
       id: book.id,
       title: book.title,
@@ -188,21 +189,25 @@ function updateCache(book: any, tag: string, bookCache: any) {
     };
   } else {
     // Sync other metadata if it was missing or updated
-    if (bookCache[book.id].published === 'Unknown' && book.published && book.published !== 'Unknown') {
-      bookCache[book.id].published = book.published;
+    if (entry.published === 'Unknown' && book.published && book.published !== 'Unknown') {
+      entry.published = book.published;
     }
-    if (bookCache[book.id].title === 'Unknown' && book.title !== 'Unknown') {
-      bookCache[book.id].title = book.title;
+    if (entry.title === 'Unknown' && book.title !== 'Unknown') {
+      entry.title = book.title;
     }
-    if (bookCache[book.id].seriesPos === undefined || parseSeriesPos(book.title) !== bookCache[book.id].seriesPos) {
-      bookCache[book.id].seriesPos = parseSeriesPos(book.title);
+    if (entry.seriesPos === undefined || parseSeriesPos(book.title) !== entry.seriesPos) {
+      entry.seriesPos = parseSeriesPos(book.title);
     }
-    if (book.avgRating && bookCache[book.id].avgRating !== book.avgRating) {
-      bookCache[book.id].avgRating = book.avgRating;
+    if (book.avgRating && entry.avgRating !== book.avgRating) {
+      entry.avgRating = book.avgRating;
     }
+    if (!entry.tags) entry.tags = {};
+    entry.tags[tag] = book.tagCount;
+    bookCache[book.id] = entry;
   }
   if (!bookCache[book.id].tags) bookCache[book.id].tags = {};
   bookCache[book.id].tags[tag] = book.tagCount;
+  upsertBook(bookCache[book.id]);
 }
 
 export async function runAudit(listId: string, options: AuditOptions): Promise<AuditResult> {
@@ -340,18 +345,22 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
         if (!bookData || bookData.published === 'Unknown') {
              console.log(chalk.gray(`   [${i + 1}/${listBooks.length}] Fetching missing year for: "${book.title.substring(0, 30)}..."`));
              const details = await scrapeBookDetails(book.id, book.title, book.author);
+             // Preserve fields the list page doesn't carry; persist just this row.
+             const fresh = getBook(book.id);
              bookCache[book.id] = {
+                ...(fresh ?? {}),
                 id: book.id,
-                title: book.title,
-                author: book.author,
-                ratings: book.ratings,
+                title: book.title !== 'Unknown' ? book.title : (fresh?.title || book.title),
+                author: book.author !== 'Unknown Author' ? book.author : (fresh?.author || book.author),
+                ratings: book.ratings && book.ratings !== '0' ? book.ratings : (fresh?.ratings || '0'),
                 published: details.published || 'Unknown',
-                seriesPos: parseSeriesPos(book.title),
+                seriesPos: parseSeriesPos(book.title) ?? fresh?.seriesPos,
                 lastUpdated: new Date().toISOString(),
+                tags: fresh?.tags || {},
                 requiresAuth: details.requiresAuth
              };
              bookData = bookCache[book.id];
-             if (i % 10 === 0) await saveBookCache(bookCache);
+             upsertBook(bookCache[book.id]);
              await delay(500, 1500);
         }
 
@@ -425,8 +434,6 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
         }
       }
     }
-
-    await saveBookCache(bookCache);
 
     // Final consolidated report
     if (tooManyRatings.length > 0) console.log(chalk.magenta.bold(`\n🎓 ${tooManyRatings.join(' and ')} graduated (Too many ratings)`));

@@ -8,7 +8,6 @@ import { loadAuthorCache } from '../storage.js';
 import {
   scrapeTopShelves,
   scrapeShelfBooks,
-  scrapeBookBySearch,
   scrapeAuthorStats,
   scrapeTagCount,
   scrapeListBooks,
@@ -131,14 +130,6 @@ describe('live Goodreads lookups (scraper)', () => {
     });
     fixture = books.find(b => b.authorSlug) || books[0];
     console.log(`   Sample book: "${fixture.title}" by ${fixture.author}`);
-  });
-
-  it('book search round-trips the shelf book', { timeout: 60_000 }, async () => {
-    if (!fixture) throw new Error('Prerequisite: shelf scrape produced no fixture');
-    const result = await scrapeBookBySearch(fixture.id, fixture.title, fixture.author);
-    expect(result.title).toBeTruthy();
-    expect(result.id).toBe(fixture.id);
-    console.log(`   Search found: "${result.title}" (published ${result.published})`);
   });
 
   it('author stats parse for the shelf book author', { timeout: 60_000 }, async () => {

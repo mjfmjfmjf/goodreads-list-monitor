@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
 import { scrapeListBooks, scrapeShelfBooks, scrapeBookDetails, scrapeTopShelves } from './scraper.js';
-import { loadState, loadBookCache, saveBookCache, syncBooksToCache } from './storage.js';
+import { loadState, loadBookCache, getBook, upsertBook, syncBooksToCache } from './storage.js';
 import { TagConfig, ListEntry } from './tagConfig.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
 
@@ -86,25 +86,25 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
     const shelfPos = i + 1;
     
     // Check if we still need to fetch details (if shelf page didn't have the year)
-    const cached = bookCache[sb.id];
+    const cached = getBook(sb.id) ?? bookCache[sb.id];
     if (cached?.published === 'Unknown') {
       const avgStr = sb.avgRating ? `, Avg: ${sb.avgRating}` : '';
       console.log(chalk.gray(`   [${shelfPos}/${shelfBooks.length}] Fetching details for ${formatBookLink(sb.title, sb.id)} by ${sb.author} (Shelf Pos: ${shelfPos}, Tags: ${sb.tagCount}, Ratings: ${sb.ratings}${avgStr}, Pub: ${sb.published})`));
       const details = await scrapeBookDetails(sb.id, sb.title, sb.author);
-      
+
       if (details.published && details.published !== 'Unknown') {
         cached.published = details.published;
         cached.lastUpdated = new Date().toISOString();
         if (details.title && details.title !== 'Unknown') cached.title = details.title;
         if (details.author && details.author !== 'Unknown') cached.author = details.author;
-        
+
+        bookCache[sb.id] = cached;
+        upsertBook(cached);
         syncCount++;
-        if (syncCount % 10 === 0) await saveBookCache(bookCache);
         await delay(500, 1500);
       }
     }
   }
-  await saveBookCache(bookCache);
   console.log(chalk.green.bold(`\n   ✅ Metadata sync complete. Fetched ${syncCount} missing book details.\n`));
 
   const finalCacheSize = Object.keys(bookCache).length;
@@ -219,7 +219,6 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
     }
   }
 
-  await saveBookCache(bookCache);
   const endCacheSize = Object.keys(bookCache).length;
   const netAdded = endCacheSize - initialCacheSize;
   if (netAdded > 0) {

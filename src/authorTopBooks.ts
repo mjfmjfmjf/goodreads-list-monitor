@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache, loadAuthorCache, saveAuthorCache, updateAuthorStats } from './storage.js';
+import { loadBookCache, loadAuthorCache, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { delay } from './utils.js';
 
@@ -85,9 +85,21 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${author.name}`));
         continue;
       }
-      const entry = authorCache[author.name] ||
-        Object.values(authorCache).find(e => e.slug === author.slug);
-      if (entry) {
+      // Resolve the DB row key from the snapshot, then re-read fresh so we
+      // merge against current values (another process may have updated it).
+      const snapKey = authorCache[author.name]
+        ? author.name
+        : Object.keys(authorCache).find(k => authorCache[k].slug === author.slug);
+      let key = snapKey;
+      let entry = key ? getAuthor(key) : undefined;
+      if (!entry) {
+        const found = findAuthorBySlug(author.slug);
+        if (found) {
+          key = found.key;
+          entry = found.entry;
+        }
+      }
+      if (key && entry) {
         const prev = {
           averageRating: entry.averageRating,
           numRatings: entry.numRatings,
@@ -105,20 +117,18 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
         );
         if (changed) {
           updated++;
+          upsertAuthor(key, entry);
           console.log(chalk.green.bold(`   ✅ Author cache updated`));
         } else {
           console.log(chalk.gray(`   (No change - values already current or not greater)`));
         }
       }
-      await saveAuthorCache(authorCache);
     } catch (error) {
       failed++;
       console.error(chalk.red.bold(`   ❌ Failed for ${author.name}: ${(error as any).message}`));
     }
     await delay(2000, 5000);
   }
-
-  await saveAuthorCache(authorCache);
 
   const duration = ((Date.now() - start) / 1000).toFixed(1);
   console.log(chalk.cyan.bold(`\n🏁 Done. Processed ${toScrape.length} authors, updated ${updated} (${failed} failures, ${duration}s).`));

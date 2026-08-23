@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { scrapeListBooks } from './scraper.js';
-import { loadBookCache, saveBookCache, syncBooksToCache, loadAuthorCache, syncAuthorsToCache } from './storage.js';
+import { loadBookCache, syncBooksToCache, loadAuthorCache, syncAuthorsToCache } from './storage.js';
 
 async function harvestList(listId: string) {
   if (!listId) {

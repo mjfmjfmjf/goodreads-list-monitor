@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { scrapeAllUserLists, scrapeListBooks, scrapeBookDetails, ListMetadata, BookMetadata } from './scraper.js';
-import { loadState, saveState, loadBookCache, saveBookCache, syncBooksToCache, loadAuthorCache, saveAuthorCache, syncAuthorsToCache, State, ListState } from './storage.js';
+import { loadState, saveState, loadBookCache, syncBooksToCache, getBook, upsertBook, loadAuthorCache, syncAuthorsToCache, State, ListState, CachedBook } from './storage.js';
 import { delay, formatDate, formatBookLink } from './utils.js';
 import { appendToLog } from './logger.js';
 
@@ -154,10 +154,13 @@ export async function checkUpdates(userId: string): Promise<void> {
             console.log(chalk.gray(`   Fetching missing details for removed book ID ${id}...`));
             const fetched = await scrapeBookDetails(id, details?.title, details?.author);
             if (fetched.isFailed || !fetched.title) {
-              console.log(chalk.gray(`   Could not resolve details for book ${id}, reporting raw ID.`));
+              console.log(chalk.gray(`   Could not resolve details for removed book ID ${id}, reporting raw ID.`));
               await delay();
             } else {
-              details = {
+              // Merge onto the current DB row so we don't drop fields the
+              // list scrape doesn't carry (pages, genres, series position...).
+              const merged: CachedBook = {
+                ...(getBook(id) || {}),
                 id,
                 title: fetched.title || details?.title || 'Unknown',
                 author: fetched.author || details?.author || 'Unknown',
@@ -165,14 +168,15 @@ export async function checkUpdates(userId: string): Promise<void> {
                 avgRating: fetched.avgRating || details?.avgRating,
                 published: fetched.published || details?.published || 'Unknown',
                 lastUpdated: new Date().toISOString(),
-                tags: bookCache[id]?.tags || {}
+                tags: getBook(id)?.tags || {}
               };
-              bookCache[id] = details;
-              await saveBookCache(bookCache);
+              details = merged;
+              bookCache[id] = merged;
+              upsertBook(merged);
               await delay();
             }
           }
-          
+
           if (details) {
             const bookLink = formatBookLink(details.title, id);
             const avgStr = details.avgRating ? `, Avg: ${details.avgRating}` : '';

@@ -2,7 +2,9 @@ import Database from 'better-sqlite3';
 import fs from 'fs-extra';
 import path from 'path';
 
-const DB_PATH = path.join(process.cwd(), 'goodreads.db');
+// Override point for tests: GOODREADS_DB_PATH redirects all storage to an
+// isolated database file so unit tests never touch the real goodreads.db.
+const DB_PATH = process.env.GOODREADS_DB_PATH || path.join(process.cwd(), 'goodreads.db');
 const BACKUP_DIR = path.join(process.cwd(), 'backups');
 const KEEP_BACKUPS = 7;
 

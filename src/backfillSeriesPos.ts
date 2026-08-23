@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache, saveBookCache } from './storage.js';
+import { loadBookCache, getBook, upsertBook } from './storage.js';
 import { parseSeriesPos } from './seriesPos.js';
 
 export async function runBackfillSeriesPos(): Promise<void> {
@@ -10,8 +10,12 @@ export async function runBackfillSeriesPos(): Promise<void> {
   let corrected = 0;
   let cleared = 0;
 
-  for (const book of books) {
-    if (!book.title || book.title === 'Unknown') continue;
+  // Re-read each candidate fresh and write only rows that actually change,
+  // so concurrent writers to other fields can't be clobbered.
+  for (const snap of books) {
+    if (!snap.title || snap.title === 'Unknown') continue;
+    const book = getBook(snap.id);
+    if (!book) continue;
 
     const parsed = parseSeriesPos(book.title);
     if (parsed === book.seriesPos) continue;
@@ -24,9 +28,8 @@ export async function runBackfillSeriesPos(): Promise<void> {
       corrected++;
     }
     book.seriesPos = parsed;
+    upsertBook(book);
   }
-
-  await saveBookCache(bookCache);
 
   console.log(chalk.cyan.bold(`\n🔄 Series Position Backfill Complete: ${books.length} books in cache`));
   console.log(chalk.gray('----------------------------------------------------------------------'));

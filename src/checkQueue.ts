@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache, saveBookCache } from './storage.js';
+import { loadBookCache } from './storage.js';
 import { scrapeAndCacheBook } from './singleBook.js';
 import { getYear } from './utils.js';
 
@@ -82,18 +82,10 @@ export async function runCheckQueue(options: CheckQueueOptions = {}): Promise<vo
 
   console.log(chalk.cyan.bold(`\n📋 Found ${idsToCheck.length} books to process in the queue${modeDesc}...`));
 
-  // Register graceful shutdown to save cache on interrupt
-  let isSaving = false;
-  const handleInterrupt = async () => {
-    if (isSaving) return;
-    isSaving = true;
-    console.log(chalk.yellow('\n\n⚠️ Process interrupted. Saving book cache before exiting...'));
-    try {
-      await saveBookCache(bookCache);
-      console.log(chalk.green('Cache saved successfully.'));
-    } catch (err) {
-      console.error(chalk.red('Failed to save cache on interrupt:', (err as any).message));
-    }
+  // Each book is persisted individually by scrapeAndCacheBook, so an
+  // interrupt can't lose more than the book currently being processed.
+  const handleInterrupt = () => {
+    console.log(chalk.yellow('\n\n⚠️ Process interrupted. Completed books were already saved.'));
     process.exit(1);
   };
   process.on('SIGINT', handleInterrupt);
@@ -121,18 +113,10 @@ export async function runCheckQueue(options: CheckQueueOptions = {}): Promise<vo
     
     await scrapeAndCacheBook(id, options.force || options.forceBad, bookCache);
     processedCount++;
-
-    // Save every 5 books to avoid losing too much progress on interrupt
-    if (processedCount % 5 === 0) {
-      await saveBookCache(bookCache);
-    }
   }
 
-  // Cleanup SIGINT listener and final save
+  // Cleanup SIGINT listener
   process.off('SIGINT', handleInterrupt);
-  if (processedCount > 0) {
-    await saveBookCache(bookCache);
-  }
 
   console.log(chalk.green.bold('\n🏁 Queue processing complete!'));
 }

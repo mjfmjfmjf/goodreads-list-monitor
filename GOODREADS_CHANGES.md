@@ -3,6 +3,28 @@
 Record whenever Goodreads changes a page in a way that forces a code change.
 Newest entry on top. Timestamp format: `YYYY/MM/DD HH:MM` (local time).
 
+## 2026/08/22 15:24 — Anti-bot throttling: redirect-loop deflection on `/search`
+
+- **Page / URL:** `https://www.goodreads.com/search?q=...`
+- **What changed:** A new throttling vector alongside the known HTTP 202 interstitial:
+  search requests get bounced in an infinite redirect loop (no HTTP status at all).
+  axios fails with `ERR_FR_TOO_MANY_REDIRECTS`; node's undici `fetch` fails the same way.
+  Reproduced with a single hand-crafted request ~30 min after the failing test run, so it
+  is persistent, not transient.
+- **Impact:** Invisible to every existing guardrail — `fetchWithRetry` only classifies
+  202/403/429 as throttling, and `scrapeBookBySearch` swallowed all exceptions and returned
+  bare `{ id }`, so the integration test failed with a parser-regression-looking
+  `title: undefined`.
+- **Fix:** (a) `src/utils.ts` `fetchWithRetry` now recognizes `ERR_FR_TOO_MANY_REDIRECTS`,
+  logs it loudly, never retries it, and treats it as throttling in strict mode
+  (`GOODREADS_STRICT_THROTTLE=1` → immediate fail with clear message). (b) `src/scraper.ts` —
+  the five silent live-fetch catches (`scrapeBookBySearch`, `scrapeBookByAuthorPage`,
+  `scrapeAuthorStats`, `scrapeTagCount`, `scrapeListDescription`) now log the error code /
+  message before returning their fallback value, so future throttles can't masquerade as
+  markup changes.
+- **Detected by:** integration test `book search round-trips the shelf book`
+  (failed 2 runs in a row, 2026/08/22); confirmed via instrumented single-request probes.
+
 ## 2026/08/09 10:20 — Search results page: results table markup changed
 
 - **Page / URL:** `https://www.goodreads.com/search?q=...`

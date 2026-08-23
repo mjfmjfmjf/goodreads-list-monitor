@@ -133,62 +133,64 @@ export function loadBookCache(): BookCache {
   return cache;
 }
 
-export function saveBookCache(cache: BookCache): void {
-  const db = getDb();
-  const upsert = db.prepare(`
-    INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count)
-    VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount)
-    ON CONFLICT(id) DO UPDATE SET
-      title=excluded.title, author=excluded.author, author_id=excluded.author_id,
-      ratings=excluded.ratings, avg_rating=excluded.avg_rating, published=excluded.published,
-      pages=excluded.pages, series_pos=excluded.series_pos, genres=excluded.genres,
-      last_updated=excluded.last_updated, tags=excluded.tags,
-      requires_auth=excluded.requires_auth, is_bad=excluded.is_bad, fail_count=excluded.fail_count
-  `);
-  const tx = db.transaction(() => {
-    for (const book of Object.values(cache)) {
-      upsert.run({
-        id: book.id,
-        title: book.title,
-        author: book.author,
-        authorId: book.authorId || null,
-        ratings: parseNum(book.ratings),
-        avgRating: book.avgRating ? parseFloat(book.avgRating) : null,
-        published: book.published,
-        pages: book.pages ? parseInt(book.pages, 10) : null,
-        seriesPos: book.seriesPos ?? null,
-        genres: book.genres ? JSON.stringify(book.genres) : null,
-        lastUpdated: book.lastUpdated,
-        tags: book.tags ? JSON.stringify(book.tags) : null,
-        requiresAuth: book.requiresAuth ? 1 : 0,
-        isBad: book.isBad ? 1 : 0,
-        failCount: book.failCount ?? null,
-      });
-    }
-  });
-  tx();
+const BOOK_UPSERT_SQL = `
+  INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count)
+  VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount)
+  ON CONFLICT(id) DO UPDATE SET
+    title=excluded.title, author=excluded.author, author_id=excluded.author_id,
+    ratings=excluded.ratings, avg_rating=excluded.avg_rating, published=excluded.published,
+    pages=excluded.pages, series_pos=excluded.series_pos, genres=excluded.genres,
+    last_updated=excluded.last_updated, tags=excluded.tags,
+    requires_auth=excluded.requires_auth, is_bad=excluded.is_bad, fail_count=excluded.fail_count
+`;
+
+function bindBook(book: CachedBook) {
+  return {
+    id: book.id,
+    title: book.title,
+    author: book.author,
+    authorId: book.authorId || null,
+    ratings: parseNum(book.ratings),
+    avgRating: book.avgRating ? parseFloat(book.avgRating) : null,
+    published: book.published,
+    pages: book.pages ? parseInt(book.pages, 10) : null,
+    seriesPos: book.seriesPos ?? null,
+    genres: book.genres ? JSON.stringify(book.genres) : null,
+    lastUpdated: book.lastUpdated,
+    tags: book.tags ? JSON.stringify(book.tags) : null,
+    requiresAuth: book.requiresAuth ? 1 : 0,
+    isBad: book.isBad ? 1 : 0,
+    failCount: book.failCount ?? null,
+  };
+}
+
+export function upsertBook(book: CachedBook): void {
+  getDb().prepare(BOOK_UPSERT_SQL).run(bindBook(book));
+}
+
+export function getBook(id: string): CachedBook | undefined {
+  const row = getDb().prepare('SELECT * FROM books WHERE id = ?').get(id) as any;
+  return row ? rowToBook(row) : undefined;
+}
+
+export function deleteBook(id: string): boolean {
+  return getDb().prepare('DELETE FROM books WHERE id = ?').run(id).changes > 0;
 }
 
 export async function syncBooksToCache(books: any[], bookCache: BookCache) {
   const db = getDb();
   let updated = false;
 
-  const upsertStmt = db.prepare(`
-    INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count)
-    VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount)
-    ON CONFLICT(id) DO UPDATE SET
-      title=excluded.title, author=excluded.author, author_id=excluded.author_id,
-      ratings=excluded.ratings, avg_rating=excluded.avg_rating, published=excluded.published,
-      pages=excluded.pages, series_pos=excluded.series_pos, genres=excluded.genres,
-      last_updated=excluded.last_updated, tags=excluded.tags,
-      requires_auth=excluded.requires_auth, is_bad=excluded.is_bad, fail_count=excluded.fail_count
-  `);
+  const upsertStmt = db.prepare(BOOK_UPSERT_SQL);
 
   const parseRatings = (r: string | undefined) => parseInt((r || '0').replace(/,/g, ''), 10);
 
   const tx = db.transaction(() => {
     for (const book of books) {
-      const existing = bookCache[book.id];
+      // Compare against the current DB row (not just the caller's snapshot)
+      // so concurrent writers can't be regressed by stale values.
+      const snap = bookCache[book.id];
+      const existing = getBook(book.id) ?? snap;
       const isNew = !existing;
 
       const existingRatingsNum = parseRatings(existing?.ratings);
@@ -218,29 +220,17 @@ export async function syncBooksToCache(books: any[], bookCache: BookCache) {
           seriesPos: newSeriesPos !== undefined ? newSeriesPos : existing?.seriesPos,
           lastUpdated: new Date().toISOString(),
           tags: existing?.tags || (book.tagCount !== undefined ? {} : undefined),
+          genres: existing?.genres,
+          requiresAuth: existing?.requiresAuth,
+          isBad: existing?.isBad,
+          failCount: existing?.failCount,
         };
 
         if (book.tagCount !== undefined && !merged.tags) merged.tags = {};
 
         bookCache[book.id] = merged;
 
-        upsertStmt.run({
-          id: merged.id,
-          title: merged.title,
-          author: merged.author,
-          authorId: merged.authorId || null,
-          ratings: parseNum(merged.ratings),
-          avgRating: merged.avgRating ? parseFloat(merged.avgRating) : null,
-          published: merged.published,
-          pages: merged.pages ? parseInt(merged.pages, 10) : null,
-          seriesPos: merged.seriesPos ?? null,
-          genres: merged.genres ? JSON.stringify(merged.genres) : null,
-          lastUpdated: merged.lastUpdated,
-          tags: merged.tags ? JSON.stringify(merged.tags) : null,
-          requiresAuth: merged.requiresAuth ? 1 : 0,
-          isBad: merged.isBad ? 1 : 0,
-          failCount: merged.failCount ?? null,
-        });
+        upsertStmt.run(bindBook(merged));
 
         updated = true;
       }
@@ -275,31 +265,42 @@ export function loadAuthorCache(): AuthorCache {
   return cache;
 }
 
-export function saveAuthorCache(cache: AuthorCache): void {
-  const db = getDb();
-  const upsert = db.prepare(`
-    INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves)
-    VALUES (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves)
-    ON CONFLICT(name) DO UPDATE SET
-      id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
-      average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
-      num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves
-  `);
-  const tx = db.transaction(() => {
-    for (const [name, entry] of Object.entries(cache)) {
-      upsert.run({
-        name,
-        id: entry.id,
-        slug: entry.slug,
-        lastSeen: entry.lastSeen,
-        averageRating: entry.averageRating ? parseFloat(entry.averageRating) : null,
-        numRatings: parseNum(entry.numRatings),
-        numReviews: parseNum(entry.numReviews),
-        numShelves: parseNum(entry.numShelves),
-      });
-    }
-  });
-  tx();
+export function getAuthor(name: string): AuthorCacheEntry | undefined {
+  const row = getDb().prepare('SELECT * FROM authors WHERE name = ?').get(name) as any;
+  return row ? rowToAuthor(row) : undefined;
+}
+
+export function findAuthorBySlug(slug: string): { key: string; entry: AuthorCacheEntry } | undefined {
+  const row = getDb()
+    .prepare('SELECT * FROM authors WHERE slug = ? ORDER BY last_seen DESC LIMIT 1')
+    .get(slug) as any;
+  return row ? { key: row.name as string, entry: rowToAuthor(row) } : undefined;
+}
+
+function bindAuthor(name: string, e: AuthorCacheEntry) {
+  return {
+    name,
+    id: e.id,
+    slug: e.slug,
+    lastSeen: e.lastSeen,
+    averageRating: e.averageRating ? parseFloat(e.averageRating) : null,
+    numRatings: parseNum(e.numRatings),
+    numReviews: parseNum(e.numReviews),
+    numShelves: parseNum(e.numShelves),
+  };
+}
+
+const AUTHOR_UPSERT_SQL = `
+  INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves)
+  VALUES (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves)
+  ON CONFLICT(name) DO UPDATE SET
+    id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
+    average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
+    num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves
+`;
+
+export function upsertAuthor(name: string, entry: AuthorCacheEntry): void {
+  getDb().prepare(AUTHOR_UPSERT_SQL).run(bindAuthor(name, entry));
 }
 
 export function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {

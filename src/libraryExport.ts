@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
 import { normalizeTitle, normalizeAuthor } from './utils.js';
-import { loadBookCache, saveBookCache, BookCache } from './storage.js';
+import { loadBookCache, getBook, upsertBook, BookCache } from './storage.js';
 
 const REQUIRED_COLUMNS = ['Book Id', 'Title', 'Author', 'Exclusive Shelf', 'Date Read', 'My Review', 'My Rating', 'Number of Pages', 'Publisher', 'Bookshelves'];
 
@@ -115,10 +115,13 @@ export async function backfillBookPagesFromLibrary(entries: LibraryEntry[]): Pro
 
   const now = new Date().toISOString();
   for (const { id, pages } of result.updates) {
-    bookCache[id].pages = pages;
-    bookCache[id].lastUpdated = now;
+    const book = getBook(id);
+    if (!book) continue;
+    book.pages = pages;
+    book.lastUpdated = now;
+    upsertBook(book);
+    bookCache[id] = book;
   }
-  await saveBookCache(bookCache);
   return result;
 }
 
