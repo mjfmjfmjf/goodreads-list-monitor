@@ -15,7 +15,11 @@ import { runSummaryByYear } from './summary.js';
 import { runSummaryRatings } from './summaryRatings.js';
 import { runRatingsHistogram } from './summaryHistogram.js';
 import { runSummarySeriesPos } from './summarySeriesPos.js';
+import { runDumpList } from './dumpList.js';
+import { runFieldCoverage } from './fieldCoverage.js';
+import { runAuthorHarvestStatus } from './authorHarvestStatus.js';
 import { runTitleCharHistogram } from './titleCharHistogram.js';
+import { runTitleFirstWordHistogram } from './titleFirstWordHistogram.js';
 import { runBackfillSeriesPos } from './backfillSeriesPos.js';
 import { runBackfillPages } from './backfillPages.js';
 import { runAvgHistogram } from './summaryAvgHistogram.js';
@@ -114,13 +118,74 @@ program
   });
 
 program
-  .command('series-pos-histogram')
-  .description('Show a histogram of the number of books in the cache by series position')
+  .command('dump-list <listIdOrUrl>')
+  .description('Dump a Goodreads list to the screen in order: page, global position, title, author. Paginates the whole list politely.')
+  .addHelpText('after', `
+Examples:
+  $ ./dumpList.sh 4893
+  $ ./dumpList.sh "https://www.goodreads.com/list/show/4893.Best_Science_Fiction_of_the_21st_Century"
+  $ ./dumpList.sh 4893 --grep penumbra
+  $ ./dumpList.sh 4893 --maxPages 3`)
+  .option('--grep <text>', 'Only print rows whose title or author contains this text (case-insensitive)')
+  .option('--maxPages <number>', 'Stop after this many pages (default: whole list)')
+  .option('--delaySeconds <number>', 'Seconds between page fetches (default 2)')
+  .action(async (listArg, options) => {
+    try {
+      await runDumpList(listArg, options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to dump list:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-harvest-status')
+  .description('Offline report: which authors have harvested stats, how fresh they are, and the top never-harvested authors by best book ratings')
+  .addHelpText('after', `
+Examples:
+  $ ./authorHarvestStatus.sh`)
   .action(async () => {
     try {
-      await runSummarySeriesPos();
+      await runAuthorHarvestStatus();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to compute author harvest status:'), (error as any).message);
+    }
+  });
+
+program
+  .command('field-coverage')
+  .description('Show per-field population counts and percentages for the books and authors tables')
+  .addHelpText('after', `
+Examples:
+  $ ./fieldCoverage.sh`)
+  .action(async () => {
+    try {
+      await runFieldCoverage();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to compute field coverage:'), (error as any).message);
+    }
+  });
+
+program
+  .command('series-pos-histogram')
+  .description('Show a histogram of the number of books in the cache by series position')
+  .option('--byCount', 'Sort positions from most books to least (standalone/multi-volume stay as bookends)')
+  .action(async (options) => {
+    try {
+      await runSummarySeriesPos({ byCount: !!options.byCount });
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate series position histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('title-first-word-histogram')
+  .description('Show a histogram of the first word of book titles in the cache')
+  .option('--limit <number>', 'number of top words to show (default 100)', '100')
+  .action(async (options) => {
+    try {
+      await runTitleFirstWordHistogram({ limit: parseInt(options.limit, 10) });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate title first word histogram:'), (error as any).message);
     }
   });
 

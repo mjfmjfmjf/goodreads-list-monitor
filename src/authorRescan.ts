@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks } from './storage.js';
+import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT } from './storage.js';
 import { selectAuthors } from './authorTopStats.js';
 import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.js';
 import { scrapeAuthorStats } from './scraper.js';
@@ -45,8 +45,13 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
   const cutoff = minAgeDays > 0 ? Date.now() - minAgeDays * 24 * 60 * 60 * 1000 : 0;
   const toScrape: SelectedAuthor[] = [];
   let minAgeSkipped = 0;
+  let failSkipped = 0;
   for (const a of authors) {
     const hasStats = a.entry.numRatings || a.entry.averageRating || a.entry.numReviews || a.entry.numShelves;
+    if ((a.entry.failCount ?? 0) >= AUTHOR_FAIL_LIMIT) {
+      failSkipped++;
+      continue;
+    }
     if (hasStats && a.entry.lastSeen && cutoff > 0 && new Date(a.entry.lastSeen).getTime() >= cutoff) {
       minAgeSkipped++;
       continue;
@@ -56,6 +61,7 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
 
   console.log(chalk.gray(`   ${toScrape.length} authors to scrape.`));
   if (minAgeSkipped > 0) console.log(chalk.gray(`   Skipping ${minAgeSkipped} authors updated within the last ${minAgeDays} day(s) (--minAge).\n`));
+  if (failSkipped > 0) console.log(chalk.gray(`   Skipping ${failSkipped} authors with ≥${AUTHOR_FAIL_LIMIT} consecutive failures.\n`));
   else console.log('');
 
   let failed = 0;
@@ -70,10 +76,12 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
     const { name, entry: snapshotEntry } = toScrape[i];
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${snapshotEntry.slug})`));
-      const result = await scrapeAuthorStats(snapshotEntry.slug);
+      let failReason = 'no_stats_line';
+      const result = await scrapeAuthorStats(snapshotEntry.slug, (r) => { failReason = r; });
       if (!result) {
         noStats++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${name}`));
+        recordAuthorFailure(name, failReason);
         continue;
       }
       const stats = result.stats;
@@ -82,13 +90,17 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
       // Re-read fresh so we merge against current values (another process
       // may have updated this row since the snapshot was taken).
       const entry = getAuthor(name) ?? snapshotEntry;
+      const prevCatalogPages = entry.catalogPages;
+      if (result.catalogPages) entry.catalogPages = result.catalogPages;
+      entry.failCount = 0;
+      entry.lastError = undefined;
       const prev = {
         averageRating: entry.averageRating,
         numRatings: entry.numRatings,
         numReviews: entry.numReviews,
         numShelves: entry.numShelves,
       };
-      const changed = updateAuthorStats(entry, stats);
+      const changed = updateAuthorStats(entry, stats) || entry.catalogPages !== prevCatalogPages;
       const fmt = (cur?: string, was?: string) =>
         `${cur ?? 'n/a'}${was !== undefined && was !== cur ? chalk.gray(` (prev ${was})`) : ''}`;
       console.log(

@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache, loadAuthorCache, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats, countBooks } from './storage.js';
+import { loadBookCache, loadAuthorCache, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { delay } from './utils.js';
 
@@ -68,9 +68,14 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
   {
     let skipped = 0;
     let freshSkipped = 0;
+    let failSkipped = 0;
     toScrape = authors.filter(a => {
       const entry = authorCache[a.name] || Object.values(authorCache).find(e => e.slug === a.slug);
       if (!entry || entry.numRatings === undefined) return true;
+      if ((entry.failCount ?? 0) >= AUTHOR_FAIL_LIMIT) {
+        failSkipped++;
+        return false;
+      }
       if (options.skip) {
         skipped++;
         return false;
@@ -83,6 +88,7 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
     });
     if (skipped > 0) console.log(chalk.gray(`   Skipping ${skipped} authors already in the cache (--skip).\n`));
     if (freshSkipped > 0) console.log(chalk.gray(`   Skipping ${freshSkipped} authors updated within the last ${minAgeDays} day(s) (--minAge).\n`));
+    if (failSkipped > 0) console.log(chalk.gray(`   Skipping ${failSkipped} authors with ≥${AUTHOR_FAIL_LIMIT} consecutive failures.\n`));
   }
 
   console.log(chalk.gray(`   ${toScrape.length} authors to scrape.\n`));
@@ -98,9 +104,12 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
     const author = toScrape[i];
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${author.name} (${author.slug})`));
-      const result = await scrapeAuthorStats(author.slug);
+      let failReason = 'no_stats_line';
+      const result = await scrapeAuthorStats(author.slug, (r) => { failReason = r; });
       if (!result) {
+        failed++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${author.name}`));
+        recordAuthorFailure(author.name, failReason);
         continue;
       }
       const stats = result.stats;
@@ -121,13 +130,17 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
         }
       }
       if (key && entry) {
+        const prevCatalogPages = entry.catalogPages;
+        if (result.catalogPages) entry.catalogPages = result.catalogPages;
+        entry.failCount = 0;
+        entry.lastError = undefined;
         const prev = {
           averageRating: entry.averageRating,
           numRatings: entry.numRatings,
           numReviews: entry.numReviews,
           numShelves: entry.numShelves,
         };
-        const changed = updateAuthorStats(entry, stats);
+        const changed = updateAuthorStats(entry, stats) || entry.catalogPages !== prevCatalogPages;
         const fmt = (cur?: string, was?: string) =>
           `${cur ?? 'n/a'}${was !== undefined && was !== cur ? chalk.gray(` (prev ${was})`) : ''}`;
         console.log(

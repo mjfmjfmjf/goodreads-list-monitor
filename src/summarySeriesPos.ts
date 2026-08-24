@@ -15,7 +15,8 @@ export interface SeriesPosHistogram {
 }
 
 export function computeSeriesPosHistogram(
-  books: Pick<CachedBook, 'title' | 'seriesPos'>[]
+  books: Pick<CachedBook, 'title' | 'seriesPos'>[],
+  options: { byCount?: boolean } = {}
 ): SeriesPosHistogram {
   const counts = new Map<number, number>();
   let standalone = 0;
@@ -34,15 +35,17 @@ export function computeSeriesPosHistogram(
 
   const rows = [...counts.entries()]
     .map(([pos, count]) => ({ pos, count }))
-    .sort((a, b) => a.pos - b.pos);
+    .sort(options.byCount
+      ? (a, b) => b.count - a.count || a.pos - b.pos
+      : (a, b) => a.pos - b.pos);
 
   return { standalone, multiVolume, rows, total: books.length };
 }
 
-export async function runSummarySeriesPos(): Promise<void> {
+export async function runSummarySeriesPos(options: { byCount?: boolean } = {}): Promise<void> {
   const bookCache = await loadBookCache();
   const books = Object.values(bookCache);
-  const hist = computeSeriesPosHistogram(books);
+  const hist = computeSeriesPosHistogram(books, { byCount: options.byCount });
 
   const rows: { label: string; count: number; isSpecial: boolean }[] = [
     { label: 'standalone', count: hist.standalone, isSpecial: true },

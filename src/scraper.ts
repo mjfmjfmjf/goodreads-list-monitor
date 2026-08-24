@@ -77,7 +77,7 @@ export function extractWorkId(html: string): string | undefined {
   );
 }
 
-const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+export const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 const TIMEOUT = 30000; // 30 seconds
 
 export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]> {
@@ -912,9 +912,19 @@ export interface AuthorStatsResult {
   stats: AuthorStats;
   booksInserted: number;
   booksEnriched: number;
+  catalogPages?: number;
 }
 
-export async function scrapeAuthorStats(authorSlug: string): Promise<AuthorStatsResult | undefined> {
+export function parseCatalogPageCount(html: string): number {
+  const pages = [...String(html).matchAll(/[?&]page=(\d+)/g)].map(m => parseInt(m[1], 10));
+  if (pages.length === 0) return 1;
+  return Math.max(1, Math.max(...pages));
+}
+
+export async function scrapeAuthorStats(
+  authorSlug: string,
+  onError?: (reason: string) => void
+): Promise<AuthorStatsResult | undefined> {
   const url = `https://www.goodreads.com/author/list/${authorSlug}`;
   const config = await loadConfig();
 
@@ -925,22 +935,27 @@ export async function scrapeAuthorStats(authorSlug: string): Promise<AuthorStats
     const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
     const $ = cheerio.load(response.data);
     const stats = parseAuthorStats($);
-    if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) return undefined;
+    if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) {
+      onError?.('no_stats_line');
+      return undefined;
+    }
 
     const works = parseAuthorListBooks($, authorSlug);
     let booksInserted = 0;
     let booksEnriched = 0;
+    const catalogPages = parseCatalogPageCount(String(response.data));
     if (works.length) {
       const res = mergeBooksFromAuthorPage(works);
       booksInserted = res.inserted;
       booksEnriched = res.updated;
-      const lastPage = Math.max(1, ...[...String(response.data).matchAll(/[?&]page=(\d+)/g)].map(m => parseInt(m[1], 10)));
-      const catalogNote = lastPage > 1 ? `, catalog spans ~${lastPage} pages` : '';
+      const catalogNote = catalogPages ? `, catalog spans ~${catalogPages} page${catalogPages === 1 ? '' : 's'}` : '';
       console.log(chalk.dim(`   📚 ${authorSlug}: ${booksInserted} new / ${booksEnriched} enriched of ${works.length} on page${catalogNote}`));
     }
-    return { stats, booksInserted, booksEnriched };
+    return { stats, booksInserted, booksEnriched, catalogPages };
   } catch (error) {
-    console.error(chalk.yellow(`   ⚠️ Author stats fetch failed for ${authorSlug}: ${(error as any).code || (error as any).message || error}`));
+    const reason = String((error as any).code || (error as any).message || error);
+    console.error(chalk.yellow(`   ⚠️ Author stats fetch failed for ${authorSlug}: ${reason}`));
+    onError?.(reason);
     return undefined;
   }
 }

@@ -18,7 +18,21 @@ shelf.html
 
 # Saved Goodreads reference pages
 mjf.year.in.books.*.txt
+mjf.life.in.books.*.txt
 summaryYear.*.txt
+romance-section.html
+
+# Local databases & backups
+goodreads.db*
+backups/
+src/scraper.ts.20*
+
+# One-off probes / scratch notes
+probeGenre.ts
+probeRateLimit.js
+parse_genres.js
+howManyBooksShouldWeFind.txt
+savedAuthorData.txt
 
 # Configuration (contains private cookies/tokens)
 config.json*

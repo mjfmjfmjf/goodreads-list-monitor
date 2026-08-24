@@ -23,3 +23,17 @@ describe('extractWorkId', () => {
     expect(extractWorkId('<html>nothing here</html>')).toBeUndefined();
   });
 });
+
+import { parseCatalogPageCount } from './scraper.js';
+
+describe('parseCatalogPageCount', () => {
+  it('returns the max page number when pagination exists', () => {
+    const html = '<a href="/author/list/3389?page=2">2</a><a href="?page=72">72</a>';
+    expect(parseCatalogPageCount(html)).toBe(72);
+  });
+
+  it('returns 1 for single-page authors', () => {
+    expect(parseCatalogPageCount('<html>no pagination</html>')).toBe(1);
+    expect(parseCatalogPageCount('<a href="?page=1">1</a>')).toBe(1);
+  });
+});

@@ -3,8 +3,9 @@ import * as cheerio from 'cheerio';
 import fs from 'fs';
 import { loadBookCache, getBook, upsertBook, loadConfig, BookCache } from './storage.js';
 import { fetchWithRetry, formatBookLink } from './utils.js';
+import { extractWorkId } from './scraper.js';
 
-const LOG_FILE = 'genreHarvest.log';
+const LOG_FILE = 'bookSweep.log';
 
 // Genres that appear in the site-wide nav on every Goodreads page — not book-specific
 const NAV_GENRES = new Set([
@@ -136,7 +137,7 @@ export function extractGenresFromDom(html: string): string[] {
   return [...new Set(genres)].filter(g => !NAV_GENRES.has(g));
 }
 
-export interface GenreHarvestOptions {
+export interface BookSweepOptions {
   limit?: string;
   minRatings?: string;
   delay?: string;
@@ -144,7 +145,7 @@ export interface GenreHarvestOptions {
   throttleSleep?: string;
 }
 
-export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promise<void> {
+export async function runBookSweep(options: BookSweepOptions = {}): Promise<void> {
   const limit = parseInt(options.limit || '100', 10);
   const minRatings = parseInt(options.minRatings || '1000', 10);
   const delaySec = parseInt(options.delay || '30', 10);
@@ -154,14 +155,15 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
   const cache = await loadBookCache();
   const config = await loadConfig();
 
-  // Filter: has enough ratings AND no genres yet
+  // Filter: has enough ratings AND (no genres yet OR no workId yet)
   const candidates = Object.values(cache).filter(book => {
     const ratings = parseInt((book.ratings || '0').replace(/,/g, ''), 10);
-    return ratings >= minRatings && (!book.genres || book.genres.length === 0);
+    const needsGenres = !book.genres || book.genres.length === 0;
+    return ratings >= minRatings && (needsGenres || !book.workId);
   });
 
-  console.log(chalk.cyan(`Found ${candidates.length} books with ≥${minRatings} ratings and no genres.`));
-  logToFile(`Starting genre harvest: limit=${limit}, minRatings=${minRatings}, delay=${delaySec}s, jitter=${jitterMs / 1000}s, throttleSleep=${throttleSleepSec}s, candidates=${candidates.length}`);
+  console.log(chalk.cyan(`Found ${candidates.length} books with ≥${minRatings} ratings missing genres or workId.`));
+  logToFile(`Starting book sweep: limit=${limit}, minRatings=${minRatings}, delay=${delaySec}s, jitter=${jitterMs / 1000}s, throttleSleep=${throttleSleepSec}s, candidates=${candidates.length}`);
 
   if (candidates.length === 0) {
     console.log(chalk.green('Nothing to do.'));
@@ -238,6 +240,8 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
       if (genres.length === 0) {
         genres = details.genres;
       }
+      // Work id groups all editions of a title under one key
+      const workId = extractWorkId(typeof response.data === 'string' ? response.data : '');
 
       // Update cache — only improve, never overwrite good data with bad
       const entry = getBook(book.id) ?? cache[book.id];
@@ -271,6 +275,10 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
         entry.pages = details.pages;
         updatedFields.push('pages');
       }
+      if (workId && !entry.workId) {
+        entry.workId = workId;
+        updatedFields.push('workId');
+      }
 
       if (updatedFields.length > 0) {
         entry.lastUpdated = new Date().toISOString();
@@ -287,6 +295,7 @@ export async function runGenreHarvest(options: GenreHarvestOptions = {}): Promis
       if (updatedFields.includes('avgRating')) changes.push(`Avg: ${oldAvg || '?'} → ${entry.avgRating}`);
       if (updatedFields.includes('published')) changes.push(`Pub: ${oldPub || '?'} → ${entry.published}`);
       if (updatedFields.includes('pages')) changes.push(`Pages: ${oldPages || '?'} → ${entry.pages}`);
+      if (updatedFields.includes('workId')) changes.push(`WorkId: ${entry.workId}`);
       if (changes.length > 0) {
         console.log(chalk.cyan(`  Updated: ${changes.join(' | ')}`));
       }

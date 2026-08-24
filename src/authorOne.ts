@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { findAuthorBySlug, upsertAuthor, updateAuthorStats } from './storage.js';
+import { findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure } from './storage.js';
 import type { AuthorCacheEntry } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
 
@@ -38,9 +38,11 @@ export async function runAuthorOne(input: string): Promise<void> {
 
   console.log(chalk.cyan.bold(`\n👤 Author Stats: fetching ${parsed.slug}`));
 
-  const result = await scrapeAuthorStats(parsed.slug);
+  let failReason = 'no_stats_line';
+  const result = await scrapeAuthorStats(parsed.slug, (r) => { failReason = r; });
   if (!result) {
     console.log(chalk.yellow(`   ⚠️ No stats line found for ${parsed.slug}`));
+    recordAuthorFailure(fallbackNameFromSlug(parsed.slug), failReason);
     return;
   }
   const stats = result.stats;
@@ -63,8 +65,10 @@ export async function runAuthorOne(input: string): Promise<void> {
     numReviews: entry.numReviews,
     numShelves: entry.numShelves,
   };
+  const prevCatalogPages = entry.catalogPages;
+  if (result.catalogPages) entry.catalogPages = result.catalogPages;
 
-  const changed = updateAuthorStats(entry, stats);
+  const changed = updateAuthorStats(entry, stats) || entry.catalogPages !== prevCatalogPages;
   const fmt = (cur?: string, was?: string) =>
     `${cur ?? 'n/a'}${was !== undefined && was !== cur ? chalk.gray(` (prev ${was})`) : ''}`;
 

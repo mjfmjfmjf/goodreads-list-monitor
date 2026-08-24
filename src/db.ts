@@ -121,8 +121,18 @@ function initSchema(db: Database.Database) {
 
   // Migrations for databases created before a column existed.
   const bookCols = db.prepare('PRAGMA table_info(books)').all() as any[];
-  if (!bookCols.some(c => c.name === 'work_id')) {
+  if (!bookCols.some((c: any) => c.name === 'work_id')) {
     db.exec('ALTER TABLE books ADD COLUMN work_id TEXT');
+  }
+  const authorCols = db.prepare('PRAGMA table_info(authors)').all() as any[];
+  if (!authorCols.some((c: any) => c.name === 'catalog_pages')) {
+    db.exec('ALTER TABLE authors ADD COLUMN catalog_pages INTEGER');
+  }
+  if (!authorCols.some((c: any) => c.name === 'fail_count')) {
+    db.exec('ALTER TABLE authors ADD COLUMN fail_count INTEGER DEFAULT 0');
+  }
+  if (!authorCols.some((c: any) => c.name === 'last_error')) {
+    db.exec('ALTER TABLE authors ADD COLUMN last_error TEXT');
   }
 }
 

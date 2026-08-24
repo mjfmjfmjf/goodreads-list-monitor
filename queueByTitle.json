@@ -1,5 +1,55 @@
 [
   {
+    "nickname": "Titles that start with the word an and have a lot of ratings",
+    "officialTitle": "Titles that start with the word an and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420916",
+    "id": "420916",
+    "criteria": {
+      "titleRegex": "^an\\b",
+      "min": 10000
+    }
+  },
+  {
+    "nickname": "Titles that start with the word a and have a lot of ratings",
+    "officialTitle": "Titles that start with the word a and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420915",
+    "id": "420915",
+    "criteria": {
+      "titleRegex": "^a\\b",
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "Titles that start with a and have a lot of ratings",
+    "officialTitle": "Titles that start with a and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420914",
+    "id": "420914",
+    "criteria": {
+      "titleRegex": "^(?![Aa][Nn]?\\b)[Aa]",
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "Titles that start with b and have a lot of ratings",
+    "officialTitle": "Titles that start with b and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420910",
+    "id": "420910",
+    "criteria": {
+      "titleRegex": "^b",
+      "min": 100000
+    }
+  },
+  {
+    "nickname": "Titles that start with c and have a lot of ratings",
+    "officialTitle": "Titles that start with c and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/420898",
+    "id": "420898",
+    "criteria": {
+      "titleRegex": "^c",
+      "min": 100000
+    }
+  },
+  {
     "nickname": "Titles that start with d and have a lot of ratings",
     "officialTitle": "Titles that start with d and have a lot of ratings",
     "url": "https://www.goodreads.com/list/show/420886",

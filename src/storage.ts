@@ -55,7 +55,12 @@ export interface AuthorCacheEntry {
   numRatings?: string;
   numReviews?: string;
   numShelves?: string;
+  catalogPages?: number;
+  failCount?: number;
+  lastError?: string;
 }
+
+export const AUTHOR_FAIL_LIMIT = 5;
 
 export interface AuthorCache {
   [authorName: string]: AuthorCacheEntry;
@@ -359,6 +364,9 @@ function rowToAuthor(row: any): AuthorCacheEntry & { name: string } {
     numRatings: row.num_ratings ? String(row.num_ratings) : undefined,
     numReviews: row.num_reviews ? String(row.num_reviews) : undefined,
     numShelves: row.num_shelves ? String(row.num_shelves) : undefined,
+    catalogPages: row.catalog_pages ?? undefined,
+    failCount: row.fail_count ?? undefined,
+    lastError: row.last_error ?? undefined,
   };
 }
 
@@ -395,20 +403,34 @@ function bindAuthor(name: string, e: AuthorCacheEntry) {
     numRatings: parseNum(e.numRatings),
     numReviews: parseNum(e.numReviews),
     numShelves: parseNum(e.numShelves),
+    catalogPages: e.catalogPages ?? null,
+    failCount: e.failCount ?? null,
+    lastError: e.lastError ?? null,
   };
 }
 
 const AUTHOR_UPSERT_SQL = `
-  INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves)
-  VALUES (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves)
+  INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, fail_count, last_error)
+  VALUES (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @failCount, @lastError)
   ON CONFLICT(name) DO UPDATE SET
     id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
     average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
-    num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves
+    num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
+    catalog_pages=COALESCE(excluded.catalog_pages, catalog_pages),
+    fail_count=COALESCE(excluded.fail_count, fail_count),
+    last_error=COALESCE(excluded.last_error, last_error)
 `;
 
 export function upsertAuthor(name: string, entry: AuthorCacheEntry): void {
   getDb().prepare(AUTHOR_UPSERT_SQL).run(bindAuthor(name, entry));
+}
+
+export function recordAuthorFailure(name: string, reason: string): void {
+  const existing = getAuthor(name);
+  if (!existing) return;
+  existing.failCount = (existing.failCount ?? 0) + 1;
+  existing.lastError = reason.slice(0, 200);
+  upsertAuthor(name, existing);
 }
 
 export function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {

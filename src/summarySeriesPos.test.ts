@@ -83,4 +83,20 @@ describe('computeSeriesPosHistogram', () => {
       total: 0,
     });
   });
+
+  it('sorts rows by count descending with --byCount, ties broken by position', () => {
+    const hist = computeSeriesPosHistogram([
+      book('A (#1)'),
+      book('B (#2)'),
+      book('C (#2)'),
+      book('D (#3)'),
+      book('E (#3)'),
+      book('F (#3)'),
+    ], { byCount: true });
+    expect(hist.rows).toEqual([
+      { pos: 3, count: 3 },
+      { pos: 2, count: 2 },
+      { pos: 1, count: 1 },
+    ]);
+  });
 });
