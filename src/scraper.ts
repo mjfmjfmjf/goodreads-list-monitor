@@ -316,7 +316,10 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
   let lastPageFirstId = '';
 
   while (hasNext) {
-    const url = `https://www.goodreads.com/list/show/${listId}?page=${page}`;
+    // Accept either a numeric/named list id ("4893", "1.Best_Books_Ever")
+    // or a full path under /list/ ("best_of_year/2021").
+    const listPath = listId.includes('/') ? listId : `show/${listId}`;
+    const url = `https://www.goodreads.com/list/${listPath}?page=${page}`;
     
     try {
       const headers: any = { 'User-Agent': USER_AGENT };
@@ -901,6 +904,26 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
 
     if (idMatch) return idMatch;
     if (titleMatch) return titleMatch;
+
+    // Page 1 miss — crawl remaining pages if the catalog is multi-page.
+    const totalPages = parseCatalogPageCount(String(response.data));
+    for (let page = 2; page <= totalPages; page++) {
+      await delay(2000, 4000);
+      try {
+        const pageResponse = await fetchWithRetry(`${url}?page=${page}`, { headers, timeout: TIMEOUT });
+        const pageBooks = parseAuthorListBooks(cheerio.load(pageResponse.data), authorSlug);
+        const pageIdMatch = pageBooks.find(b => b.id === id) || null;
+        if (pageIdMatch) return pageIdMatch;
+        if (exactTitleHint) {
+          const pageTitleMatch = pageBooks.find(b => b.title.trim().toLowerCase() === exactTitleHint) || null;
+          if (pageTitleMatch) return pageTitleMatch;
+        }
+      } catch (e) {
+        // Stop crawling on page-level error but don't fail the whole lookup.
+        break;
+      }
+    }
+
     return { id };
   } catch (error) {
     console.error(chalk.yellow(`   ⚠️ Author page fetch failed for book ${id} (author ${authorSlug}): ${(error as any).code || (error as any).message || error}`));
@@ -913,6 +936,7 @@ export interface AuthorStatsResult {
   booksInserted: number;
   booksEnriched: number;
   catalogPages?: number;
+  books?: AuthorListBook[];
 }
 
 export function parseCatalogPageCount(html: string): number {
@@ -921,11 +945,20 @@ export function parseCatalogPageCount(html: string): number {
   return Math.max(1, Math.max(...pages));
 }
 
+function buildAuthorListUrl(authorSlug: string, sort?: string, page?: number): string {
+  const params: string[] = [];
+  if (sort) params.push(`sort=${sort}`);
+  if (page && page > 1) params.push(`page=${page}`);
+  return `https://www.goodreads.com/author/list/${authorSlug}${params.length ? '?' + params.join('&') : ''}`;
+}
+
 export async function scrapeAuthorStats(
   authorSlug: string,
-  onError?: (reason: string) => void
+  onError?: (reason: string) => void,
+  crawlAllPages = false,
+  sort?: string
 ): Promise<AuthorStatsResult | undefined> {
-  const url = `https://www.goodreads.com/author/list/${authorSlug}`;
+  const url = buildAuthorListUrl(authorSlug, sort);
   const config = await loadConfig();
 
   try {
@@ -951,7 +984,27 @@ export async function scrapeAuthorStats(
       const catalogNote = catalogPages ? `, catalog spans ~${catalogPages} page${catalogPages === 1 ? '' : 's'}` : '';
       console.log(chalk.dim(`   📚 ${authorSlug}: ${booksInserted} new / ${booksEnriched} enriched of ${works.length} on page${catalogNote}`));
     }
-    return { stats, booksInserted, booksEnriched, catalogPages };
+
+    if (crawlAllPages && catalogPages > 1) {
+      for (let page = 2; page <= catalogPages; page++) {
+        await delay(2000, 4000);
+        try {
+          const pageResponse = await fetchWithRetry(buildAuthorListUrl(authorSlug, sort, page), { headers, timeout: TIMEOUT });
+          const pageBooks = parseAuthorListBooks(cheerio.load(pageResponse.data), authorSlug);
+          if (pageBooks.length) {
+            const res = mergeBooksFromAuthorPage(pageBooks);
+            booksInserted += res.inserted;
+            booksEnriched += res.updated;
+            console.log(chalk.dim(`   📚 ${authorSlug} p${page}: +${res.inserted} new / ${res.updated} enriched of ${pageBooks.length}`));
+          }
+        } catch (e) {
+          console.error(chalk.yellow(`   ⚠️ Failed page ${page} for ${authorSlug}: ${(e as any).message}`));
+          break;
+        }
+      }
+    }
+
+    return { stats, booksInserted, booksEnriched, catalogPages, books: works };
   } catch (error) {
     const reason = String((error as any).code || (error as any).message || error);
     console.error(chalk.yellow(`   ⚠️ Author stats fetch failed for ${authorSlug}: ${reason}`));

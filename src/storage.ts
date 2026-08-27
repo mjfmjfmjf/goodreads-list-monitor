@@ -290,9 +290,14 @@ export function mergeBooksFromAuthorPage(books: AuthorPageBookRow[]): { inserted
 }
 
 
-export async function syncBooksToCache(books: any[], bookCache: BookCache) {
+export interface SyncBooksOutcome {
+  inserted: number;
+  updated: number;
+}
+
+export async function syncBooksToCache(books: any[], bookCache: BookCache): Promise<SyncBooksOutcome> {
   const db = getDb();
-  let updated = false;
+  const outcome: SyncBooksOutcome = { inserted: 0, updated: 0 };
 
   const upsertStmt = db.prepare(BOOK_UPSERT_SQL);
 
@@ -345,11 +350,13 @@ export async function syncBooksToCache(books: any[], bookCache: BookCache) {
 
         upsertStmt.run(bindBook(merged));
 
-        updated = true;
+        if (isNew) outcome.inserted++;
+        else outcome.updated++;
       }
     }
   });
   tx();
+  return outcome;
 }
 
 // ── Authors ────────────────────────────────────────────────────────

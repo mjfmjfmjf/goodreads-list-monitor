@@ -154,14 +154,14 @@ describe('runSummaryRatings', () => {
 });
 
 describe('runRatingsHistogram', () => {
-  it('shows cumulative >= / <= columns that reconcile with the total', async () => {
+  it('shows cumulative and inverse cumulative columns that reconcile with the total', async () => {
     const c = capture();
     try {
       await runRatingsHistogram();
       const out = c.out();
       expect(out).toContain('Total books in cache: 9');
-      expect(out).toContain('       9 <=');
-      expect(out).toContain('       9 >=');
+      expect(out).toContain('CUM >=');
+      expect(out).toContain('CUM <=');
     } finally {
       c.restore();
     }

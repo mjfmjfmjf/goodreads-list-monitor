@@ -8,9 +8,18 @@ import { delay } from './utils.js';
 export interface AuthorRescanOptions extends AuthorTopStatsOptions {
   minAge?: string;
   rescanMissing?: boolean;
+  multiPage?: boolean;
+  sort?: string;
+  minYear?: string;
 }
 
 const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
+
+const parseYear = (published?: string): number | null => {
+  if (!published) return null;
+  const y = parseInt(published.replace(/[^\d]/g, '').slice(0, 4), 10);
+  return Number.isFinite(y) && y > 0 ? y : null;
+};
 
 export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promise<void> {
   const authorCache = await loadAuthorCache();
@@ -18,6 +27,10 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
   const sortBy = (options.sortBy || 'numRatings') as string;
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
   const minAgeDays = options.minAge !== undefined ? parseNum(options.minAge) : 0;
+  const minYear = options.minYear !== undefined ? parseNum(options.minYear) : 0;
+  const listSort = options.sort || (minYear > 0 ? 'original_publication_year' : 'popularity');
+  // --minYear only looks at the first page (newest books), so never crawl all pages.
+  const crawlAllPages = !!options.multiPage && minYear === 0;
 
   let authors: SelectedAuthor[];
   let missingField = 0;
@@ -28,12 +41,29 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
       .filter(([, entry]) => !entry.numRatings && !entry.averageRating && !entry.numReviews && !entry.numShelves)
       .map(([name, entry]) => ({ name, entry, value: 0 }));
     console.log(chalk.cyan.bold(`\n👤 Author Rescan: scanning authors with no stats (limit ${limit})`));
+  } else if (options.multiPage) {
+    // Select authors with null or ≥2 catalog pages (skip single-page catalogs),
+    // then apply the same --sortBy / --minRatings / --maxRatings filters.
+    const sortBy = (options.sortBy || 'numRatings') as string;
+    const minRatings = options.minRatings !== undefined ? parseNum(options.minRatings) : 0;
+    const maxRatings = options.maxRatings !== undefined ? parseNum(options.maxRatings) : Infinity;
+    authors = Object.entries(authorCache)
+      .filter(([, entry]) => (!entry.catalogPages || entry.catalogPages >= 2) && parseNum(entry.numRatings) >= minRatings && parseNum(entry.numRatings) <= maxRatings)
+      .map(([name, entry]) => ({ name, entry, value: sortBy === 'averageRating' ? parseFloat(entry.averageRating || '0') : parseNum((entry as any)[sortBy]) }))
+      .sort((a, b) => b.value - a.value || parseNum(b.entry.numRatings) - parseNum(a.entry.numRatings) || a.name.localeCompare(b.name))
+      .slice(0, limit);
+    console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping multi-page authors (Top ${limit} by ${sortBy}, ≥${minRatings.toLocaleString()} ratings)`));
   } else {
     const selected = selectAuthors(authorCache, options);
     authors = selected.authors;
     missingField = selected.missingField;
     console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping stats for ${authors.length} authors (Top ${limit} by ${sortBy})`));
   }
+
+  if (minYear > 0) {
+    console.log(chalk.cyan.bold(`\n🔎 Find authors with a book from ${minYear}+ (list sorted by ${listSort}, first page only)`));
+  }
+  console.log(chalk.gray(`   List sort: ${listSort}${crawlAllPages ? ' | crawling all pages' : ' | first page only'}`));
   console.log(chalk.gray(`   Min Age: ${minAgeDays > 0 ? `${minAgeDays} day(s)` : 'none (scrape everything)'}${missingField > 0 ? `, Excluded (no ${sortBy}): ${missingField.toLocaleString()}` : ''}\n`));
 
   if (authors.length === 0) {
@@ -77,7 +107,7 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${snapshotEntry.slug})`));
       let failReason = 'no_stats_line';
-      const result = await scrapeAuthorStats(snapshotEntry.slug, (r) => { failReason = r; });
+      const result = await scrapeAuthorStats(snapshotEntry.slug, (r) => { failReason = r; }, crawlAllPages, listSort);
       if (!result) {
         noStats++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${name}`));
@@ -87,6 +117,21 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
       const stats = result.stats;
       totalInserted += result.booksInserted;
       totalEnriched += result.booksEnriched;
+
+      if (minYear > 0) {
+        const recent = (result.books ?? [])
+          .map(b => ({ title: b.title, year: parseYear(b.published) }))
+          .filter((b): b is { title: string; year: number } => b.year !== null && b.year >= minYear)
+          .sort((a, b) => b.year - a.year);
+        if (recent.length > 0) {
+          console.log(chalk.green(`   🔥 Books from ${minYear}+:`));
+          for (const b of recent) {
+            console.log(`      ${chalk.cyan(b.title)} (${b.year})`);
+          }
+        } else {
+          console.log(chalk.gray(`   (No books from ${minYear}+ on first page)`));
+        }
+      }
       // Re-read fresh so we merge against current values (another process
       // may have updated this row since the snapshot was taken).
       const entry = getAuthor(name) ?? snapshotEntry;

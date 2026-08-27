@@ -1,5 +1,25 @@
 [
   {
+    "nickname": "Titles that start with the word my and have a lot of ratings",
+    "officialTitle": "Titles that start with the word my and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/421107",
+    "id": "421107",
+    "criteria": {
+      "titleRegex": "^my\\b",
+      "min": 10000
+    }
+  },
+  {
+    "nickname": "Titles that start with the word how and have a lot of ratings",
+    "officialTitle": "Titles that start with the word how and have a lot of ratings",
+    "url": "https://www.goodreads.com/list/show/421107",
+    "id": "421107",
+    "criteria": {
+      "titleRegex": "^how\\b",
+      "min": 10000
+    }
+  },
+  {
     "nickname": "Titles that start with the word an and have a lot of ratings",
     "officialTitle": "Titles that start with the word an and have a lot of ratings",
     "url": "https://www.goodreads.com/list/show/420916",

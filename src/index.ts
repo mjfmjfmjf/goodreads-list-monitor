@@ -16,6 +16,8 @@ import { runSummaryRatings } from './summaryRatings.js';
 import { runRatingsHistogram } from './summaryHistogram.js';
 import { runSummarySeriesPos } from './summarySeriesPos.js';
 import { runDumpList } from './dumpList.js';
+import { runBestOfYear } from './bestOfYear.js';
+import { runGenBestOfYearConfig } from './bestOfYearConfig.js';
 import { runFieldCoverage } from './fieldCoverage.js';
 import { runAuthorHarvestStatus } from './authorHarvestStatus.js';
 import { runTitleCharHistogram } from './titleCharHistogram.js';
@@ -25,6 +27,8 @@ import { runBackfillPages } from './backfillPages.js';
 import { runAvgHistogram } from './summaryAvgHistogram.js';
 import { runAuthorTopBooks } from './authorTopBooks.js';
 import { runAuthorTopStats } from './authorTopStats.js';
+import { runAuthorTopBookHistogram } from './authorTopBookHistogram.js';
+import { runAuthorOrphans } from './authorOrphans.js';
 import { runAuthorListDiff } from './authorListDiff.js';
 import { runAuthorRescan } from './authorRescan.js';
 import { runAuthorOne } from './authorOne.js';
@@ -42,6 +46,7 @@ import { runCommonUnreviewedMonitoredBooks } from './commonUnreviewedMonitoredBo
 import { runTagGaps, runCacheGaps } from './tagGaps.js';
 import { runNextBooks } from './nextBooks.js';
 import { runBookSweep } from './bookSweep.js';
+import { runReadme, runColorLegend } from './readme.js';
 import { loadState, saveState, loadConfig } from './storage.js';
 import { backupDbSync } from './db.js';
 
@@ -134,6 +139,42 @@ Examples:
       await runDumpList(listArg, options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to dump list:'), (error as any).message);
+    }
+  });
+
+program
+  .command('scrape-best-of-year')
+  .description('Scrape Goodreads best-of-year lists (https://www.goodreads.com/list/best_of_year/<year>) into the book cache. Defaults to every year from 1980 through the current year; books without Listopia pub metadata inherit the list year. Max 100 pages per year.')
+  .addHelpText('after', `
+Examples:
+  $ ./scrapeBestOfYear.sh
+  $ ./scrapeBestOfYear.sh --minYear 2020
+  $ ./scrapeBestOfYear.sh --minYear 1980 --maxYear 1999`)
+  .option('--minYear <year>', 'First year to scrape (default 1980)')
+  .option('--maxYear <year>', 'Last year to scrape (default: current year)')
+  .option('--delaySeconds <number>', 'Seconds between yearly lists (default 2)')
+  .action(async (options) => {
+    try {
+      await runBestOfYear(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to scrape best-of-year lists:'), (error as any).message);
+    }
+  });
+
+program
+  .command('gen-best-of-year-config')
+  .description('Walk the "By year" cross-links on the Best Books of <year> list family (seeds: list/show/34595 and list/best_of_year/2026) and write one bulk-audit entry per year to bulkBestBooksOfYear.json, with criteria.minYear = criteria.maxYear = the list year.')
+  .addHelpText('after', `
+Examples:
+  $ ./genBestOfYearConfig.sh
+  $ ./genBestOfYearConfig.sh --out myYears.json`)
+  .option('--out <file>', 'Output config path (default bulkBestBooksOfYear.json)')
+  .option('--delaySeconds <number>', 'Seconds between page fetches (default 2)')
+  .action(async (options) => {
+    try {
+      await runGenBestOfYearConfig(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate best-of-year config:'), (error as any).message);
     }
   });
 
@@ -263,19 +304,62 @@ Examples:
   });
 
 program
+  .command('author-top-book-histogram')
+  .description('For each author in the cache, bin their highest-rated book (by rating count) into the shared ratings-histogram brackets, showing how many authors have their top book in each range')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-top-book-histogram
+  $ ./authorTopBookHistogram.sh`)
+  .action(async () => {
+    try {
+      await runAuthorTopBookHistogram();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run author top book histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-orphans')
+  .description('List authors that appear in the book cache but have no author-cache entry, ordered by their highest-rated book (by rating count). Read-only (no network). Add --inspect to also print a per-orphan browser URL and bucket each as multi-author / no author id / genuinely missing.')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-orphans
+  $ npm run author-orphans -- --limit 20 --minRatings 100000
+  $ npm run author-orphans -- --inspect --limit 30
+  $ ./authorOrphans.sh --inspect --limit 30`)
+  .option('--limit <number>', 'Show top N orphans (default 50)')
+  .option('--minRatings <number>', 'Only orphans whose top book has at least this many ratings')
+  .option('--maxRatings <number>', 'Only orphans whose top book has at most this many ratings')
+  .option('--inspect', 'Print a per-orphan browser URL and classify each (multi-author / no id / genuinely missing)')
+  .action(async (options) => {
+    try {
+      await runAuthorOrphans(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to list author orphans:'), (error as any).message);
+    }
+  });
+
+program
   .command('author-rescan')
-  .description('Re-scrape the author page for each author matching the reader criteria (--limit/--sortBy/--minRatings/--maxRatings) to refresh their stats in the author cache. Use --rescanMissing to target only authors with no stats yet.')
+  .description('Re-scrape the author page for each author matching the reader criteria (--limit/--sortBy/--minRatings/--maxRatings) to refresh their stats in the author cache. Use --rescanMissing to target only authors with no stats yet. Use --multiPage to target authors with null or ≥2 catalog pages and crawl all pages. Use --minYear to find authors with recent books (first page only, sorted by original_publication_year).')
   .addHelpText('after', `
 Examples:
   $ npm run author-rescan -- --limit 50
   $ npm run author-rescan -- --sortBy averageRating --minRatings 100000 --limit 10
   $ npm run author-rescan -- --rescanMissing --limit 500
+  $ npm run author-rescan -- --multiPage --minRatings 300000 --sortBy numRatings --limit 2000 --minAge 3
+  $ npm run author-rescan -- --sort original_publication_year --limit 50
+  $ npm run author-rescan -- --minYear 2025 --limit 500
   $ ./authorRescan.sh --rescanMissing --minAge 30 --limit 500`)
   .option('--limit <number>', 'Number of authors to refresh (default 100)', '100')
   .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default numRatings)', 'numRatings')
   .option('--minRatings <number>', 'Only consider authors with at least this many ratings')
   .option('--maxRatings <number>', 'Only consider authors with at most this many ratings')
   .option('--minAge <days>', 'Skip authors whose stats were last updated within this many days (default 0 = scrape everything)')
+  .option('--rescanMissing', 'Target only authors with no stats yet')
+  .option('--multiPage', 'Target authors with null or ≥2 catalog pages (skip single-page catalogs); crawls all pages')
+  .option('--sort <field>', 'Goodreads author-list sort order: popularity (default), title, original_publication_year, average_rating, number_of_pages')
+  .option('--minYear <year>', 'Find authors with a book published in/after this year; sorts by original_publication_year (unless --sort given) and reads the first page only')
   .action(async (options) => {
     try {
       await runAuthorRescan(options);
@@ -943,6 +1027,28 @@ program
     state.userId = userId;
     await saveState(state);
     console.log(chalk.green.bold(`Default User ID set to ${userId}`));
+  });
+
+program
+  .command('readme')
+  .description('Render the README at the command line (no raw markdown)')
+  .action(() => {
+    try {
+      runReadme();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to render README:'), (error as any).message);
+    }
+  });
+
+program
+  .command('color-legend')
+  .description('Show the output color legend as colored swatches')
+  .action(() => {
+    try {
+      runColorLegend();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to render color legend:'), (error as any).message);
+    }
   });
 
 program

@@ -3,7 +3,7 @@ import { loadAuthorCache } from './storage.js';
 import type { AuthorCache } from './storage.js';
 import type { AuthorCacheEntry } from './storage.js';
 
-export type AuthorSortField = 'numRatings' | 'averageRating' | 'numReviews' | 'numShelves';
+export type AuthorSortField = 'numRatings' | 'averageRating' | 'numReviews' | 'numShelves' | 'catalogPages';
 
 export interface AuthorTopStatsOptions {
   limit?: string;
@@ -18,13 +18,14 @@ export interface SelectedAuthor {
   value: number;
 }
 
-const SORT_FIELDS: AuthorSortField[] = ['numRatings', 'averageRating', 'numReviews', 'numShelves'];
+const SORT_FIELDS: AuthorSortField[] = ['numRatings', 'averageRating', 'numReviews', 'numShelves', 'catalogPages'];
 
 const SORT_LABELS: Record<AuthorSortField, string> = {
   numRatings: 'Number of Ratings',
   averageRating: 'Average Rating',
   numReviews: 'Number of Reviews',
-  numShelves: 'Number of Shelves'
+  numShelves: 'Number of Shelves',
+  catalogPages: 'Catalog Pages'
 };
 
 const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
@@ -42,7 +43,9 @@ export function selectAuthors(authorCache: AuthorCache, options: AuthorTopStatsO
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
 
   const valueOf = (entry: AuthorCacheEntry): number =>
-    sortBy === 'averageRating' ? parseAvg(entry.averageRating) : parseNum(entry[sortBy]);
+    sortBy === 'averageRating' ? parseAvg(entry.averageRating) :
+    sortBy === 'catalogPages' ? (entry.catalogPages ?? 0) :
+    parseNum(entry[sortBy]);
 
   const authors: SelectedAuthor[] = [];
   let missingField = 0;
@@ -52,11 +55,15 @@ export function selectAuthors(authorCache: AuthorCache, options: AuthorTopStatsO
     if (ratings < minRatings || ratings > maxRatings) continue;
 
     const value = valueOf(entry);
-    if (value <= 0) {
+    if (sortBy === 'catalogPages') {
+      // null/undefined catalogPages = 0 pages (not "missing")
+      authors.push({ name, entry, value: value || 0 });
+    } else if (value <= 0) {
       missingField++;
       continue;
+    } else {
+      authors.push({ name, entry, value });
     }
-    authors.push({ name, entry, value });
   }
 
   authors.sort((a, b) => {
@@ -100,11 +107,12 @@ export async function runAuthorTopStats(options: AuthorTopStatsOptions = {}): Pr
     const ratings = entry.numRatings ? `Ratings: ${chalk.yellow(entry.numRatings)}` : 'Ratings: N/A';
     const reviews = entry.numReviews ? `Reviews: ${entry.numReviews}` : 'Reviews: N/A';
     const shelves = entry.numShelves ? `Shelves: ${entry.numShelves}` : 'Shelves: N/A';
+    const pages = entry.catalogPages ? `Pages: ${chalk.magenta(String(entry.catalogPages))}` : '';
     const updated = entry.lastSeen ? `, Updated: ${new Date(entry.lastSeen).toLocaleDateString()}` : '';
 
     console.log(
       `${(i + 1).toString().padStart(4, ' ')}. ${name} (${entry.slug})\n` +
-      `      ${avg}, ${ratings}, ${reviews}, ${shelves}${updated}`
+      `      ${avg}, ${ratings}, ${reviews}, ${shelves}${pages ? ', ' + pages : ''}${updated}`
     );
   }
 

@@ -256,6 +256,20 @@ describe('syncBooksToCache merge semantics', () => {
     expect(getBook('9103')).toBeDefined();
     expect((cache as any)['9103'].tags).toEqual({});
   });
+
+  it('reports inserted vs updated counts', async () => {
+    upsertBook(makeBook({ id: '9104', ratings: '100' }));
+    const first = await syncBooksToCache([
+      makeBook({ id: '9105', ratings: '50' }),
+      makeBook({ id: '9106', ratings: '60' }),
+    ], {});
+    expect(first).toEqual({ inserted: 2, updated: 0 });
+    const second = await syncBooksToCache([
+      makeBook({ id: '9105', ratings: '500' }),
+      makeBook({ id: '9106', ratings: '40' }),
+    ], {});
+    expect(second).toEqual({ inserted: 0, updated: 1 });
+  });
 });
 
 describe('state and config', () => {

@@ -10,6 +10,21 @@ A production-grade CLI tool to monitor, audit, and discover books on Goodreads L
 - **Tag Discovery**: Cross-reference entire Goodreads shelves with your lists to find missing popular books.
 - **Persistent Caching**: Saves book details locally in `booksCache.json` to minimize network calls and respect rate limits, now including average ratings.
 
+## Output Color Legend
+
+Most reports share a consistent color scheme:
+
+- **Yellow** — raw counts from the cache (books, ratings, reviews, shelves).
+- **Green** — derived/modeled values and success states (average ratings, estimates, "updated" confirmations).
+- **Cyan** — percentages and supporting context (share of total, completeness, cache %).
+- **Magenta** — the emphasized cumulative/total figure in a row (e.g. CUM >=).
+- **Gray** — zeros, empty cells, timers, and background detail so your eye lands on the real data.
+- **White** — names, labels, and list nicknames (the primary text of a line).
+- **Red** — errors, failures, removed/outlier books, and "Unknown" values.
+- **Dim** — muted scrape progress sublines (e.g. per-page author crawl lines).
+- **Blue** — one-off section headings (e.g. "Out of position" in author list diffs).
+- **Red background (🛑 banner)** — a critical Goodreads site-structure warning; stop and check the scrape.
+
 ## Year in Books & Life in Books (no account needed)
 
 The signature features: a full **text-only** "Year in Books" for any year, plus a
@@ -89,6 +104,10 @@ plus a `config.json` in the repo root holding your browser session cookie:
 export CSV (and your local `booksCache.json` when present).
 
 ## Usage
+
+> This README renders nicely at the command line — no raw markdown:
+> `./readme.sh` (or `npm run readme`). For a compact color swatch sheet
+> showing every output color documented above: `npm run color-legend`.
 
 ### 1. Daily Monitoring
 Check for any changes in the lists you've created:
