@@ -22,6 +22,10 @@ mjf.life.in.books.*.txt
 summaryYear.*.txt
 romance-section.html
 
+# Auto-generated changelog + live queue state (data, not code)
+changeLog.txt*
+lastSuccessGetBookByNumber.json
+
 # Local databases & backups
 goodreads.db*
 backups/
