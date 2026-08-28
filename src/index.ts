@@ -19,6 +19,11 @@ import { runDumpList } from './dumpList.js';
 import { runBestOfYear } from './bestOfYear.js';
 import { runGenBestOfYearConfig } from './bestOfYearConfig.js';
 import { runFieldCoverage } from './fieldCoverage.js';
+import { runMonitorYearlyHighlyRatedLists } from './monitorYearlyHighlyRatedLists.js';
+import { runDbReadBook } from './dbReadBook.js';
+import { exportBooksAndAuthors, printExportResult } from './exportData.js';
+import { importData, printImportResult } from './importData.js';
+import { analyzeCsv, printAnalysis } from './csvAnalyze.js';
 import { runAuthorHarvestStatus } from './authorHarvestStatus.js';
 import { runTitleCharHistogram } from './titleCharHistogram.js';
 import { runTitleFirstWordHistogram } from './titleFirstWordHistogram.js';
@@ -28,6 +33,7 @@ import { runAvgHistogram } from './summaryAvgHistogram.js';
 import { runAuthorTopBooks } from './authorTopBooks.js';
 import { runAuthorTopStats } from './authorTopStats.js';
 import { runAuthorTopBookHistogram } from './authorTopBookHistogram.js';
+import { runAuthorNewestYearHistogram } from './authorNewestYearHistogram.js';
 import { runAuthorOrphans } from './authorOrphans.js';
 import { runAuthorListDiff } from './authorListDiff.js';
 import { runAuthorRescan } from './authorRescan.js';
@@ -48,7 +54,7 @@ import { runNextBooks } from './nextBooks.js';
 import { runBookSweep } from './bookSweep.js';
 import { runReadme, runColorLegend } from './readme.js';
 import { loadState, saveState, loadConfig } from './storage.js';
-import { backupDbSync } from './db.js';
+import { backupDbSync, getDb } from './db.js';
 
 const program = new Command();
 
@@ -207,6 +213,20 @@ Examples:
   });
 
 program
+  .command('monitor-yearly-highly-rated-lists')
+  .description('Per year (2012-2026), show distinct eligible works at 4.4+/4.5+/4.6+ avg rating vs the current list size')
+  .addHelpText('after', `
+Examples:
+  $ ./monitorYearlyHighlyRatedLists.sh`)
+  .action(async () => {
+    try {
+      await runMonitorYearlyHighlyRatedLists();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to compute yearly highly-rated list monitor:'), (error as any).message);
+    }
+  });
+
+program
   .command('series-pos-histogram')
   .description('Show a histogram of the number of books in the cache by series position')
   .option('--byCount', 'Sort positions from most books to least (standalone/multi-volume stay as bookends)')
@@ -315,6 +335,28 @@ Examples:
       await runAuthorTopBookHistogram();
     } catch (error) {
       console.error(chalk.red.bold('Failed to run author top book histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-newest-year-histogram')
+  .description('For each author, bin their newest cached publication by year or by decade (2000-2009, 2010-2019, 2020-2029), with counts and percents')
+  .option('--by <mode>', 'Group by "year" or "decade" (default year)', 'year')
+  .option('--sort <sort>', 'Order rows by "year" ascending (default) or "count" descending', 'year')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-newest-year-histogram
+  $ npm run author-newest-year-histogram -- --by decade
+  $ npm run author-newest-year-histogram -- --by decade --sort count
+  $ ./authorNewestYearHistogram.sh
+  $ ./authorNewestYearHistogram.sh --by decade --sort count`)
+  .action(async (options) => {
+    try {
+      const mode = options.by === 'decade' ? 'decade' : 'year';
+      const sort = options.sort === 'count' ? 'count' : 'year';
+      await runAuthorNewestYearHistogram(mode, sort);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run author newest-year histogram:'), (error as any).message);
     }
   });
 
@@ -742,6 +784,86 @@ program
       await scrapeAndCacheBook(bookId);
     } catch (error) {
       console.error(chalk.red.bold('Failed to check book:'), (error as any).message);
+    }
+  });
+
+program
+  .command('read-book <bookId>')
+  .description('Offline: read a single book (and its joined author row) directly from the local DB by book id. No network.')
+  .addHelpText('after', `
+Examples:
+  $ npm run read-book -- 170448
+  $ ./dbReadBook.sh 170448`)
+  .action(async (bookId) => {
+    try {
+      await runDbReadBook(String(bookId));
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to read book from DB:'), (error as any).message);
+    }
+  });
+
+program
+  .command('export-data <basename>')
+  .description('Export the book + author data as two timestamped, gzipped CSV files for sharing. Sanitized: the config table (live session cookies) and lists are EXCLUDED. basename is a mandatory identifier, e.g. mjf. Writes to the current directory by default.')
+  .option('--out <dir>', 'Output directory (default: current directory)', '')
+  .addHelpText('after', `
+Examples:
+  $ npm run export-data -- mjf
+  $ npm run export-data -- mjf --out ~/Downloads
+  $ ./exportData.sh mjf
+  -> writes mjf_books_YYYYMMDD-HHMMSS.csv.gz and mjf_authors_YYYYMMDD-HHMMSS.csv.gz`)
+  .action(async (basename, options) => {
+    try {
+      const outDir = options.out || process.cwd();
+      const result = await exportBooksAndAuthors(getDb(), { basename: String(basename), outDir });
+      printExportResult(result, outDir);
+      for (const f of [result.booksFile, result.authorsFile]) {
+        printAnalysis(await analyzeCsv(f));
+      }
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to export data:'), (error as any).message);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('import-data')
+  .description('Import book + author data from the sanitized CSV+gzip files produced by export-data. Merges fill-blank-only per field with genre/tag union: never overwrites a known-good DB value. Updates the schema automatically (current spec).')
+  .option('--books <file>', 'Path to the books .csv.gz file')
+  .option('--authors <file>', 'Path to the authors .csv.gz file')
+  .option('--ratingPolicy <policy>', 'How to handle avg_rating on existing books: "keep" (fill-blank-only, default) or "update" (overwrite with imported value)', 'keep')
+  .addHelpText('after', `
+Examples:
+  $ npm run import-data -- --books mjf_books_20260828-100153.csv.gz --authors mjf_authors_20260828-100153.csv.gz
+  $ npm run import-data -- --books books.csv.gz --authors authors.csv.gz --ratingPolicy update
+  $ ./importData.sh --books books.csv.gz --authors authors.csv.gz --ratingPolicy update`)
+  .action(async (options) => {
+    try {
+      const policy = options.ratingPolicy === 'update' ? 'update' : 'keep';
+      for (const f of [options.books, options.authors].filter(Boolean)) {
+        printAnalysis(await analyzeCsv(f));
+      }
+      const counts = await importData(getDb(), { booksFile: options.books, authorsFile: options.authors, ratingPolicy: policy });
+      printImportResult(counts, policy);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to import data:'), (error as any).message);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('analyze-csv <file>')
+  .description('Field-level analysis of a CSV file (plain .csv or .csv.gz, auto-detected): row count, size, and per-column population, type, numeric range, and value samples.').addHelpText('after', `
+Examples:
+  $ npm run analyze-csv -- mjf_books_20260828-100153.csv.gz
+  $ npm run analyze-csv -- books.csv
+  $ ./analyzeCsv.sh some.csv.gz`)
+  .action(async (file) => {
+    try {
+      printAnalysis(await analyzeCsv(String(file)));
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to analyze CSV:'), (error as any).message);
+      process.exitCode = 1;
     }
   });
 

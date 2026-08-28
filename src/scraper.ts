@@ -842,8 +842,11 @@ function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
 async function updateAuthorStatsFromPage($: cheerio.CheerioAPI, authorSlug: string): Promise<void> {
   const stats = parseAuthorStats($);
   if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) return;
+  // Prefer the canonical slug that the page itself carries (robust even when we
+  // arrived via an id-only ref); the passed ref is just a fallback.
+  const slugForLookup = stats.slug || authorSlug;
   // Single-row read/merge/write: no full-cache snapshot involved.
-  const found = findAuthorBySlug(authorSlug);
+  const found = findAuthorBySlug(slugForLookup);
   if (found && updateAuthorStats(found.entry, stats)) {
     upsertAuthor(found.key, found.entry);
   }
@@ -883,7 +886,10 @@ export function parseAuthorListBooks($: cheerio.CheerioAPI, authorSlug?: string)
 }
 
 export async function scrapeBookByAuthorPage(id: string, authorSlug: string, titleHint?: string): Promise<Partial<BookMetadata>> {
-  const url = `https://www.goodreads.com/author/list/${authorSlug}`;
+  // Call Goodreads by authorId; the slug is kept only as a write-back/fallback
+  // identity (the page also carries the canonical slug, handled below).
+  const authorId = extractAuthorId(authorSlug);
+  const url = buildAuthorListUrl(authorId);
   const config = await loadConfig();
 
   try {
@@ -945,11 +951,20 @@ export function parseCatalogPageCount(html: string): number {
   return Math.max(1, Math.max(...pages));
 }
 
-function buildAuthorListUrl(authorSlug: string, sort?: string, page?: number): string {
+// Author identity is the numeric authorId. A ref may arrive as a bare id
+// ("630") or a full slug ("630.Dan_Brown"); either way we call Goodreads by the
+// id only, keeping the slug purely as a fallback/write-back identity.
+export function extractAuthorId(authorRef: string): string {
+  const first = (authorRef || '').trim().split('.')[0];
+  return first || authorRef;
+}
+
+function buildAuthorListUrl(authorRef: string, sort?: string, page?: number): string {
+  const id = extractAuthorId(authorRef);
   const params: string[] = [];
   if (sort) params.push(`sort=${sort}`);
   if (page && page > 1) params.push(`page=${page}`);
-  return `https://www.goodreads.com/author/list/${authorSlug}${params.length ? '?' + params.join('&') : ''}`;
+  return `https://www.goodreads.com/author/list/${id}${params.length ? '?' + params.join('&') : ''}`;
 }
 
 export async function scrapeAuthorStats(
@@ -960,7 +975,6 @@ export async function scrapeAuthorStats(
 ): Promise<AuthorStatsResult | undefined> {
   const url = buildAuthorListUrl(authorSlug, sort);
   const config = await loadConfig();
-
   try {
     const headers: any = { 'User-Agent': USER_AGENT };
     if (config.cookie) headers['Cookie'] = config.cookie;
@@ -1030,6 +1044,16 @@ async function updateSuccessMetric(method: 'id' | 'search' | 'author', success: 
   }
 }
 
+// Decide whether an author-list result is a confirmed hit for the book we were
+// looking up. scrapeBookByAuthorPage returns a title ONLY when it found an
+// id/title match on the author's works page; a miss returns { id } with no
+// title. A confirmed identity match counts as success even when the row's
+// auxiliary stats (ratings / published year) weren't parsed — e.g. a
+// combined-editions row often lacks a parseable publication year.
+export function acceptAuthorListMatch(details: { title?: string } & Record<string, unknown>): boolean {
+  return !!details.title;
+}
+
 export async function scrapeBookDetails(bookId: string, titleHint?: string, authorHint?: string, authorSlugHint?: string): Promise<Partial<BookMetadata> & { isFailed?: boolean }> {
   const url = `https://www.goodreads.com/book/show/${bookId}`;
   const config = await loadConfig();
@@ -1084,7 +1108,7 @@ export async function scrapeBookDetails(bookId: string, titleHint?: string, auth
       console.log(chalk.gray(`   👤 [Method: Author List] Attempting for book ${bookId}${titleHint ? ` "${titleHint}"` : ''} (Author: ${effectiveSlug})...`));
       const authorDetails = await scrapeBookByAuthorPage(bookId, effectiveSlug, titleHint);
       const duration = ((Date.now() - start) / 1000).toFixed(2);
-      if (authorDetails.title && authorDetails.published !== 'Unknown') {
+      if (acceptAuthorListMatch(authorDetails)) {
         console.log(chalk.gray(`      ✅ Success via Author List (${duration}s)`));
         await updateSuccessMetric('author', true);
         return authorDetails;

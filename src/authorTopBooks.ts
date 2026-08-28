@@ -154,7 +154,11 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
           upsertAuthor(key, entry);
           console.log(chalk.green.bold(`   ✅ Author cache updated`));
         } else {
-          console.log(chalk.gray(`   (No change - values already current or not greater)`));
+          // Values already current — a no-op scrape. Still stamp last_seen so
+          // the author is not immediately re-crawled by --minAge next run.
+          entry.lastSeen = new Date().toISOString();
+          upsertAuthor(key, entry);
+          console.log(chalk.gray(`   (No change - values already current or not greater; refreshed last_seen)`));
         }
       }
     } catch (error) {

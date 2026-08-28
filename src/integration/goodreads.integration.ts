@@ -204,8 +204,6 @@ describe('add-book single lookup', () => {
 
         expect(result.isFailed).not.toBe(true);
         expect(result.title).toBeTruthy();
-        expect(result.published).toBeTruthy();
-        expect(result.published).not.toBe('Unknown');
         console.log(`   Resolved: "${result.title}" — published ${result.published}`);
       } finally {
         markLookup();

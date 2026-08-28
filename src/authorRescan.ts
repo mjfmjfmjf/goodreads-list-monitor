@@ -159,7 +159,11 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
         upsertAuthor(name, entry);
         console.log(chalk.green.bold(`   ✅ Author cache updated`));
       } else {
-        console.log(chalk.gray(`   (No change - values already current or not greater)`));
+        // Values already current — a no-op scrape. Still stamp last_seen so the
+        // author is not immediately re-crawled by --minAge on the next run.
+        entry.lastSeen = new Date().toISOString();
+        upsertAuthor(name, entry);
+        console.log(chalk.gray(`   (No change - values already current or not greater; refreshed last_seen)`));
       }
     } catch (error) {
       failed++;

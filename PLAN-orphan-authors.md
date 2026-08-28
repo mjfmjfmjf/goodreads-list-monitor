@@ -56,6 +56,10 @@ Lauren Roberts id 21728475).
   body, page `<title>` = "Dan Brown (Author of Angels & Demons)"). No redirect
   needed. This satisfies the Phase-2 URL-construction dependency: we can scrape
   or inspect from `authorId` alone, or even use `/author/list/{id}`.
+- **`/author/list/{id}` (id only) ALSO WORKS** — verified 2026/08/27 (live probe),
+  HTTP 200 with the full books list and canonical slug in the body. The scraper now
+  calls `/author/list/{id}` for all author pages (`extractAuthorId` in `scraper.ts`),
+  keeping the slug only as a write-back/fallback identity.
 - Clean author-show/list URLs are derivable from `authorId`:
   `/author/list/{id}.{Slug}` — e.g. `https://www.goodreads.com/author/list/1406384.John_Green`,
   `https://www.goodreads.com/author/list/1265.Jane_Austen`.

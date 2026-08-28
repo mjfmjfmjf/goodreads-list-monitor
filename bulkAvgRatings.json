@@ -96,12 +96,12 @@
     }
   },
   {
-    "nickname": "2020 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2020 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2020 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2020 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "418227",
     "url": "https://www.goodreads.com/list/show/418227",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2020,
       "maxYear": 2020

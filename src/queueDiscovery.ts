@@ -2,11 +2,12 @@ import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
 import { scrapeListBooks } from './scraper.js';
-import { loadBookCache, getBook, CachedBook } from './storage.js';
+import { loadBookCache, CachedBook } from './storage.js';
 import { ListEntry } from './tagConfig.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
 import { matchesRegex } from './bookMatch.js';
 import { parseSeriesPos, matchesSeriesPos, SERIES_POS_STANDALONE, SERIES_POS_MULTI } from './seriesPos.js';
+import { looksLikeNameConcat } from './authorOrphans.js';
 
 const AUDIT_REPORT = path.join(process.cwd(), 'auditReport.txt');
 const DEFAULT_BULK_CONFIG_FILE = path.join(process.cwd(), 'bulkAuditConfig.json');
@@ -25,6 +26,65 @@ function isSameBook(book1: { id: string, title: string, author: string }, book2:
   const auth2 = normalizeAuthor(book2.author);
   
   return title1 === title2 && auth1 === auth2;
+}
+
+// Decide whether a discovery candidate is effectively already on the list.
+// Two signals, either of which counts:
+//  1. The list contains the same exact edition (by id) or a normalize-equal
+//     title+author (isSameBook).
+//  2. A harvested workId is available for BOTH the candidate edition and some
+//     list book edition — same workId => same book under a different
+//     edition/translation title (e.g. "Vindens skugga" vs "The Shadow of the
+//     Wind"). This is what lets the queue make use of the workIds we harvest.
+export function isAlreadyOnList(
+  sb: { id: string; title: string; author: string },
+  listBooks: { id: string; title: string; author: string }[],
+  listWorkIds: ReadonlySet<string>,
+  sbWorkId?: string,
+): boolean {
+  if (listBooks.some(lb => isSameBook(sb, lb))) return true;
+  if (sbWorkId !== undefined && listWorkIds.has(sbWorkId)) return true;
+  return false;
+}
+
+// Collect every workId we can attribute to a book already on the list. We try
+// two ways, in order:
+//  1. The exact list-book id is in our cache and carries a workId.
+//  2. The list-book's authorId+title matches a cached edition of ours with a
+//     workId. This matters because lists often show a DIFFERENT edition id than
+//     the one we harvested, so the exact-id lookup misses even when we DO know
+//     the work's workId from a sibling edition.
+// Translations with different titles still can't be resolved without a workId
+// on both sides, but this catches the common same-title/different-edition case.
+export function resolveListWorkIds(
+  listBooks: { id: string; authorId?: string; title: string }[],
+  bookCache: Record<string, CachedBook>,
+): Set<string> {
+  const byAuthor = new Map<string, CachedBook[]>();
+  for (const b of Object.values(bookCache)) {
+    if (!b.authorId) continue;
+    const arr = byAuthor.get(b.authorId);
+    if (arr) arr.push(b);
+    else byAuthor.set(b.authorId, [b]);
+  }
+
+  const workIds = new Set<string>();
+  for (const lb of listBooks) {
+    const exact = bookCache[lb.id]?.workId;
+    if (exact) {
+      workIds.add(exact);
+      continue;
+    }
+    if (!lb.authorId) continue;
+    const listTitle = normalizeTitle(lb.title);
+    for (const cand of byAuthor.get(lb.authorId) ?? []) {
+      if (cand.workId && normalizeTitle(cand.title) === listTitle) {
+        workIds.add(cand.workId);
+        break;
+      }
+    }
+  }
+  return workIds;
 }
 
 async function appendToAuditReport(listTitle: string, message: string): Promise<void> {
@@ -49,6 +109,45 @@ function sortBooks(books: CachedBook[], sortBy: 'year' | 'ratings' | 'avg'): Cac
     const ratingsB = parseInt(b.ratings.replace(/,/g, ''), 10) || 0;
     return ratingsB - ratingsA;
   });
+}
+
+// Prune discovery candidates so we only propose ONE book per work (the
+// highest-rated edition) and never propose obvious data-quality junk.
+export function pruneCandidates(candidates: CachedBook[]): CachedBook[] {
+  // 1. Drop run-together multi-author concatenations (e.g. "Mark TwainGeorge
+  //    Eliot", "Charles DickensWilhelm HauffE.T.A. HoffmannLudwig Bechstein") —
+  //    these are cache artifacts, not clean books the user wants to queue.
+  const clean = candidates.filter(c => !looksLikeNameConcat(c.author));
+
+  const ratingsOf = (c: CachedBook): number => parseInt(c.ratings.replace(/,/g, ''), 10) || 0;
+  const normKey = (c: CachedBook): string => `${normalizeTitle(c.title)}|${normalizeAuthor(c.author)}`;
+  const keepBest = (m: Map<string, CachedBook>, k: string, c: CachedBook): void => {
+    const prev = m.get(k);
+    if (!prev || ratingsOf(c) > ratingsOf(prev)) m.set(k, c);
+  };
+
+  // 2. Collapse by normalized title+author. normalizeAuthor already strips
+  //    trailing "(Narrator)"/"(Translator)" etc., so "Jim Gaffigan" and
+  //    "Jim Gaffigan(Narrator)" merge here — even when one of them lacks a
+  //    cached workId (this is what catches the Dad Is Fat edition pair).
+  const byTitle = new Map<string, CachedBook>();
+  for (const c of clean) keepBest(byTitle, normKey(c), c);
+
+  // 3. Then merge any survivors that share a workId — catches editions of the
+  //    same work whose titles differ (e.g. "The Adventures of Tom Sawyer" vs
+  //    "Las aventuras de Tom Sawyer"), keeping the highest-rated.
+  const merged: CachedBook[] = [];
+  const seenWork = new Set<string>();
+  for (const c of byTitle.values()) {
+    const existing = c.workId ? merged.find(m => m.workId === c.workId) : undefined;
+    if (existing) {
+      if (ratingsOf(c) > ratingsOf(existing)) merged[merged.indexOf(existing)] = c;
+      continue;
+    }
+    merged.push(c);
+    if (c.workId) seenWork.add(c.workId);
+  }
+  return merged;
 }
 
 export async function runQueueDiscovery(
@@ -166,20 +265,32 @@ export async function runQueueDiscovery(
     // Sort the candidate books
     const sortedCandidates = sortBooks(candidates, sortBy);
 
+    // Drop multi-author concatenation junk and collapse duplicate editions of
+    // the same work down to one, so the queue proposes each work only once
+    // instead of surfacing editions that would show as duplicates if added.
+    const prunedCandidates = pruneCandidates(sortedCandidates);
+
     const toAdd: string[] = [];
 
-    console.log(chalk.gray(`   📥 Fetching list content to check against ${sortedCandidates.length} candidate(s)...`));
+    console.log(chalk.gray(`   📥 Fetching list content to check against ${prunedCandidates.length} candidate(s)...`));
     const listBooks = await scrapeListBooks(listEntry.id);
     console.log(chalk.gray(`   Found ${listBooks.length} books on list.`));
 
-    for (const sb of sortedCandidates) {
-      const alreadyOnList = listBooks.some(lb => isSameBook(sb, lb));
+    // Resolve every list book to a workId via the cache. Editions/translations
+    // of one work share the same Goodreads workId, so once we've harvested a
+    // workId for ANY edition of a book already on the list, we can recognize a
+    // differently-titled candidate edition (e.g. "Vindens skugga" vs "The
+    // Shadow of the Wind") as already-on-list instead of proposing it as missing.
+    const listWorkIds = resolveListWorkIds(listBooks, bookCache);
+
+    for (const sb of prunedCandidates) {
+      const sbWorkId = bookCache[sb.id]?.workId;
+      const alreadyOnList = isAlreadyOnList(sb, listBooks, listWorkIds, sbWorkId);
       if (!alreadyOnList) {
         const pubInfo = sb.published !== 'Unknown' ? `, Pub: ${formatDate(sb.published)}` : '';
         const avgStr = sb.avgRating ? `, Avg: ${sb.avgRating}` : '';
         const bookLink = formatBookLink(sb.title, sb.id);
-        const cachedWork = getBook(sb.id)?.workId;
-        const workStr = cachedWork ? ` · work:${cachedWork}` : '';
+        const workStr = sbWorkId ? ` · work:${sbWorkId}` : '';
         const msg = `[MISSING] ${bookLink} by ${sb.author} (Ratings: ${sb.ratings}${avgStr}${pubInfo})${workStr}`;
         console.log(chalk.green.bold(`   ➕ ${msg}`));
         await appendToAuditReport(listEntry.officialTitle, msg);

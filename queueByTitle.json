@@ -115,7 +115,7 @@
     "url": "https://www.goodreads.com/list/show/420640",
     "id": "420640",
     "criteria": {
-      "titleRegex": "^h",
+      "titleRegex": "^(?!how\\b)h",
       "min": 100000
     }
   },
