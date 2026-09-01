@@ -113,6 +113,16 @@ function initSchema(db: Database.Database) {
       url TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS tag_books (
+      tag_name TEXT NOT NULL,
+      book_id TEXT NOT NULL,
+      position INTEGER,
+      shelved INTEGER,
+      harvested_at TEXT NOT NULL,
+      PRIMARY KEY (tag_name, book_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_tag_books_position ON tag_books(tag_name, position);
     CREATE INDEX IF NOT EXISTS idx_books_ratings ON books(ratings DESC);
     CREATE INDEX IF NOT EXISTS idx_books_author ON books(author);
     CREATE INDEX IF NOT EXISTS idx_authors_num_ratings ON authors(num_ratings DESC);
@@ -133,6 +143,10 @@ function initSchema(db: Database.Database) {
   }
   if (!authorCols.some((c: any) => c.name === 'last_error')) {
     db.exec('ALTER TABLE authors ADD COLUMN last_error TEXT');
+  }
+  const tagCols = db.prepare('PRAGMA table_info(tag_books)').all() as any[];
+  if (!tagCols.some((c: any) => c.name === 'shelved')) {
+    db.exec('ALTER TABLE tag_books ADD COLUMN shelved INTEGER');
   }
 }
 

@@ -3,6 +3,10 @@ import os from 'os';
 import path from 'path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+// runLifeInBooks boots the book cache + reads a library CSV, so each call is
+// ~3.5s on its own; under the parallel unit-suite run that routinely exceeds
+// vitest's 5000ms default. Give the slow tests a generous timeout.
+const SLOW_TIMEOUT = 30_000;
 import { runLifeInBooks } from './lifeInBooks.js';
 import { runPublisherStats } from './publisherStats.js';
 
@@ -79,7 +83,7 @@ describe('runLifeInBooks', () => {
     } finally {
       c.restore();
     }
-  });
+  }, SLOW_TIMEOUT);
 
   it('restricts to reviewed entries with requireReviews', async () => {
     const c = capture();
@@ -92,7 +96,7 @@ describe('runLifeInBooks', () => {
     } finally {
       c.restore();
     }
-  });
+  }, SLOW_TIMEOUT);
 
   it('reports an empty read shelf', async () => {
     const c = capture();

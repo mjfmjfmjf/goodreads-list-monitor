@@ -24,7 +24,9 @@ import {
   syncBooksToCache,
   updateAuthorStats,
   upsertAuthor,
-  upsertBook
+  upsertBook,
+  upsertTagBooks,
+  loadTagBooks
 } from './storage.js';
 import type { AuthorCacheEntry, CachedBook } from './storage.js';
 
@@ -210,6 +212,55 @@ describe('book rows', () => {
     expect(deleteBook('9005')).toBe(true);
     expect(getBook('9005')).toBeUndefined();
     expect(deleteBook('9005')).toBe(false);
+  });
+});
+
+describe('tag_books upsert / lookup', () => {
+  it('inserts rows keyed by (tag, book) with position + timestamp', () => {
+    upsertTagBooks('graphic-novels', [
+      { id: '1001', position: 1, shelved: 841 },
+      { id: '1002', position: 2, shelved: 500 },
+      { id: '1003', position: 3 },
+    ]);
+    const rows = loadTagBooks('graphic-novels');
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ tagName: 'graphic-novels', bookId: '1001', position: 1, shelved: 841 });
+    expect(rows[0].harvestedAt).toBeTruthy();
+    expect(rows[1].shelved).toBe(500);
+    expect(rows[2].shelved).toBeUndefined();
+    expect(rows.map(r => r.bookId)).toEqual(['1001', '1002', '1003']);
+  });
+
+  it('upsert on the same (tag, book) refreshes position and shelved instead of duplicating', () => {
+    upsertTagBooks('graphic-novels-pos-refresh', [{ id: '1001', position: 1, shelved: 100 }]);
+    upsertTagBooks('graphic-novels-pos-refresh', [{ id: '1001', position: 991, shelved: 841 }]);
+    upsertTagBooks('graphic-novels-pos-refresh', [{ id: '1002', position: 992 }]);
+    const rows = loadTagBooks('graphic-novels-pos-refresh');
+    expect(rows).toHaveLength(2);
+    const moved = rows.find(r => r.bookId === '1001')!;
+    expect(moved.position).toBe(991);
+    expect(moved.shelved).toBe(841);
+  });
+
+  it('keeps distinct rows when different books share the same position', () => {
+    upsertTagBooks('graphic-novels-shared-pos', [{ id: '2001', position: 1250 }]);
+    upsertTagBooks('graphic-novels-shared-pos', [{ id: '2002', position: 1250 }]);
+    const rows = loadTagBooks('graphic-novels-shared-pos');
+    expect(rows.filter(r => r.position === 1250)).toHaveLength(2);
+  });
+
+  it('holds multiple tags independently and supports per-book lookup', () => {
+    upsertTagBooks('graphic-novels', [{ id: '3001', position: 5 }]);
+    upsertTagBooks('manga', [{ id: '3001', position: 9 }]);
+    upsertTagBooks('manga', [{ id: '3002', position: 1 }]);
+    expect(loadTagBooks('manga')).toHaveLength(2);
+    const byBook = loadTagBooks(undefined, '3001');
+    expect(byBook.map(r => r.tagName).sort()).toEqual(['graphic-novels', 'manga']);
+  });
+
+  it('is a no-op for an empty book list', () => {
+    upsertTagBooks('fantasy', []);
+    expect(loadTagBooks('fantasy')).toHaveLength(0);
   });
 });
 

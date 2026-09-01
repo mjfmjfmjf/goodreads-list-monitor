@@ -18,12 +18,14 @@ import {
 import { loadBookCache, BookCache } from './storage.js';
 import { getYear, formatBookLink } from './utils.js';
 import { groupFavoriteAuthors } from './favoriteAuthors.js';
+import { maybeSyncLiveReads } from './reviewListSync.js';
 
 export interface YearInBooksOptions {
   year?: string;
   export?: string;
   library?: string;
   requireReviews?: boolean;
+  live?: boolean;
 }
 
 const CHAR_FIELDS: CharField[] = ['title', 'authorLast', 'authorFirst'];
@@ -61,6 +63,50 @@ function parsePages(entry: LibraryEntry): number | undefined {
   return isNaN(n) || n <= 0 ? undefined : n;
 }
 
+// Number of reading days to use as the per-day denominator for a year.
+//   - current calendar year  -> Jan 1 → today (incomplete year)
+//   - first year of reading  -> date of the earliest book → Dec 31 of that year
+//   - any other year         -> the full year (365 or 366 if leap)
+// `allEntries` is the full dated read set across years, used to detect the
+// first year and its earliest book date.
+export function readingDays(year: number, allEntries: LibraryEntry[]): number {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+
+  const parseDate = (s: string): Date | null => {
+    const m = s.match(/^(\d{4})\/(\d{2})\/(\d{2})$/);
+    if (!m) return null;
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  };
+  const daySpan = (a: Date, b: Date): number =>
+    Math.max(1, Math.round((b.getTime() - a.getTime()) / (24 * 60 * 60 * 1000)));
+
+  // Current calendar year: Jan 1 → today.
+  if (year === currentYear) {
+    return daySpan(new Date(year, 0, 1), now);
+  }
+
+  // First year of reading: earliest book date → Dec 31.
+  const allYears = allEntries
+    .map(e => e.dateRead.match(/^(\d{4})\//)?.[1])
+    .filter((y): y is string => !!y)
+    .map(Number);
+  const minYear = allYears.length ? Math.min(...allYears) : year;
+  if (year === minYear) {
+    const firstTs = allEntries
+      .filter(e => e.dateRead.startsWith(`${year}/`))
+      .map(e => parseDate(e.dateRead))
+      .filter((d): d is Date => d !== null)
+      .map(d => d.getTime());
+    const startMs = firstTs.length ? Math.min(...firstTs) : new Date(year, 0, 1).getTime();
+    return daySpan(new Date(startMs), new Date(year, 11, 31));
+  }
+
+  // Full year.
+  const leap = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+  return leap ? 366 : 365;
+}
+
 export function parseRating(entry: LibraryEntry): number | undefined {
   const v = parseFloat(entry.myRating);
   if (isNaN(v) || v === 0) return undefined;
@@ -77,7 +123,12 @@ function exampleText(entries: LibraryEntry[], bucketOf: (entry: LibraryEntry) =>
   return map;
 }
 
-export function renderStats(entries: LibraryEntry[]): string[] {
+export interface PerDayContext {
+  year: number;
+  allEntries: LibraryEntry[];
+}
+
+export function renderStats(entries: LibraryEntry[], perDay?: PerDayContext): string[] {
   const lines: string[] = [];
   lines.push(`   Books read: ${chalk.white(entries.length.toLocaleString())}`);
 
@@ -90,6 +141,16 @@ export function renderStats(entries: LibraryEntry[]): string[] {
     const missingPages = entries.length - withPages.length;
     const countNote = missingPages > 0 ? ` (${missingPages} books had no page count)` : '';
     lines.push(`   Pages read: ${chalk.white(totalPages.toLocaleString())}${chalk.gray(countNote)}`);
+
+    if (perDay) {
+      const days = readingDays(perDay.year, perDay.allEntries);
+      const booksPerDay = entries.length / days;
+      const pagesPerDay = totalPages / days;
+      lines.push(
+        `   Per day: ${chalk.white(booksPerDay.toFixed(2))} book${booksPerDay === 1 ? '' : 's'} · ` +
+        `${chalk.white(pagesPerDay.toFixed(0))} pages (${chalk.gray(`${days} days`)} in ${perDay.year})`
+      );
+    }
 
     const sorted = [...withPages].sort((a, b) => a.pages - b.pages);
     const shortest = sorted[0];
@@ -366,6 +427,24 @@ export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<
     process.exit(1);
   }
 
+  let liveNote = '';
+  if (options.live && year === String(new Date().getFullYear())) {
+    const sync = await maybeSyncLiveReads(library, year);
+    if (sync && sync.entries.length > 0) {
+      const known = new Set(library.entries.map(e => e.id));
+      const merged = sync.entries.filter(e => !known.has(e.id));
+      if (merged.length > 0) {
+        liveNote = chalk.green(
+          `\n   ✳️  Live review-list sync: +${merged.length} book${merged.length === 1 ? '' : 's'} read since your last CSV export (${sync.pagesFetched} page${sync.pagesFetched === 1 ? '' : 's'} walked; ${sync.stoppedReason === 'caught-up' ? 'caught up' : sync.stoppedReason}).`
+        );
+        library.entries.push(...merged);
+        console.log(liveNote);
+      }
+    } else if (sync) {
+      console.log(chalk.gray(`   (Live review-list sync: no new reads since your last CSV export — ${sync.pagesFetched} page${sync.pagesFetched === 1 ? '' : 's'} walked.)`));
+    }
+  }
+
   const requireReviews = options.requireReviews === true;
   const readEntries = readInYear(library, year, false);
   const reviewedEntries = readInYear(library, year, true);
@@ -379,6 +458,12 @@ export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<
 
   const bookCache = await loadBookCache();
   const ctx: SectionContext = { entries, bookCache, reviewYear: parseInt(year, 10) };
+  const allDated = library.entries.filter(e => /^\d{4}\//.test(e.dateRead));
+  const perDay: PerDayContext = { year: parseInt(year, 10), allEntries: allDated };
+  const sections: Section[] = [
+    { key: 'stats', title: '📊 Reading stats', render: (c) => renderStats(c.entries, perDay) },
+    ...SECTIONS.slice(1),
+  ];
 
   console.log(chalk.cyan.bold(`\n📚 Year in Books — ${year}`));
   console.log(chalk.gray(requireReviews
@@ -386,5 +471,5 @@ export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<
     : `   ${readEntries.length.toLocaleString()} books read (${reviewedEntries.length.toLocaleString()} reviewed) — read shelf, year from Date Read`));
   console.log(chalk.gray(DIVIDER));
 
-  await renderSections(SECTIONS, ctx);
+  await renderSections(sections, ctx);
 }

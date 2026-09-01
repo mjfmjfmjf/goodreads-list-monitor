@@ -20,6 +20,8 @@ import { runBestOfYear } from './bestOfYear.js';
 import { runGenBestOfYearConfig } from './bestOfYearConfig.js';
 import { runFieldCoverage } from './fieldCoverage.js';
 import { runMonitorYearlyHighlyRatedLists } from './monitorYearlyHighlyRatedLists.js';
+import { runMonitorTopRatedList } from './monitorTopRatedList.js';
+import { runMonitorTopStandalones } from './monitorTopStandalones.js';
 import { runDbReadBook } from './dbReadBook.js';
 import { exportBooksAndAuthors, printExportResult } from './exportData.js';
 import { importData, printImportResult } from './importData.js';
@@ -27,6 +29,8 @@ import { analyzeCsv, printAnalysis } from './csvAnalyze.js';
 import { runAuthorHarvestStatus } from './authorHarvestStatus.js';
 import { runTitleCharHistogram } from './titleCharHistogram.js';
 import { runTitleFirstWordHistogram } from './titleFirstWordHistogram.js';
+import { runTagHistogram } from './tagHistogram.js';
+import { runTagCoverage } from './tagCoverage.js';
 import { runBackfillSeriesPos } from './backfillSeriesPos.js';
 import { runBackfillPages } from './backfillPages.js';
 import { runAvgHistogram } from './summaryAvgHistogram.js';
@@ -227,6 +231,43 @@ Examples:
   });
 
 program
+  .command('monitor-top-rated-list')
+  .description('Compute the top-N highest-rated books (>=minRatings, no box sets, one book per series) and diff against your Listopia votes')
+  .addHelpText('after', `
+Examples:
+  $ ./monitorTopRatedList.sh
+  $ npm run monitor-top-rated-list -- --min 10000 --limit 100
+  $ npm run monitor-top-rated-list -- --votes https://www.goodreads.com/list/user_vote/7700658`)
+  .option('--votes <ref>', 'Listopia user-votes page id or URL (default 7700658)', '7700658')
+  .option('--limit <number>', 'Number of top books to show/compare (default 100)', '100')
+  .option('--min <number>', 'Minimum ratings a book must have (default 10000)', '10000')
+  .action(async (options) => {
+    try {
+      await runMonitorTopRatedList({ voteRef: options.votes, limit: options.limit, minRatings: options.min });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to monitor top-rated list:'), (error as any).message);
+    }
+  });
+
+program
+  .command('monitor-top-standalones')
+  .description('Reorder your Listopia votes for a standalones list: keep only standalone books, highest avg rating first (# ratings as tiebreaker)')
+  .addHelpText('after', `
+Examples:
+  $ ./monitorTopStandalones.sh
+  $ npm run monitor-top-standalones
+  $ npm run monitor-top-standalones -- --votes https://www.goodreads.com/list/user_vote/9695567`)
+  .option('--votes <ref>', 'Listopia user-votes page id or URL (default 9695567)', '9695567')
+  .option('--min <number>', 'Minimum ratings a voted book must have to stay (default 10000)', '10000')
+  .action(async (options) => {
+    try {
+      await runMonitorTopStandalones({ voteRef: options.votes, minRatings: options.min });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to monitor top standalones list:'), (error as any).message);
+    }
+  });
+
+program
   .command('series-pos-histogram')
   .description('Show a histogram of the number of books in the cache by series position')
   .option('--byCount', 'Sort positions from most books to least (standalone/multi-volume stay as bookends)')
@@ -258,6 +299,38 @@ program
       await runTitleCharHistogram();
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate title character histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('tag-histogram')
+  .description('Show a histogram of tag_books tags: share of books shelved under one tag, and under one or two tags')
+  .option('--limit <number>', 'number of top tags to show (default 25)', '25')
+  .option('--min <number>', 'only include tags with at least this many books (default 0)', '0')
+  .option('--sortBy <key>', 'sort key: pct, pct2, single, upTo2, total, ratings, shelves, tag (default: pct, ascending)', 'pct')
+  .option('--asc', 'sort ascending instead of descending (percent keys are ascending by default)')
+  .action(async (options) => {
+    try {
+      await runTagHistogram({ limit: options.limit, min: options.min, asc: options.asc, sortBy: options.sortBy });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate tag histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('tag-coverage')
+  .description('Least number of tags (greedy set-cover) that cover the most books: cumulative unique books and % coverage, with a limit')
+  .addHelpText('after', `
+Examples:
+  $ ./tagCoverage.sh                   # top 20 tags (or until 100%)
+  $ ./tagCoverage.sh --limit 50        # show up to 50 tags
+  $ ./tagCoverage.sh --limit 1000      # show up to 1000 tags`)
+  .option('--limit <number>', 'max number of tags to show (default 20)', '20')
+  .action(async (options) => {
+    try {
+      await runTagCoverage({ limit: options.limit });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to compute tag coverage:'), (error as any).message);
     }
   });
 
@@ -390,6 +463,7 @@ Examples:
   $ npm run author-rescan -- --sortBy averageRating --minRatings 100000 --limit 10
   $ npm run author-rescan -- --rescanMissing --limit 500
   $ npm run author-rescan -- --multiPage --minRatings 300000 --sortBy numRatings --limit 2000 --minAge 3
+  $ npm run author-rescan -- --multiPage --onlyUntouched --minRatings 1000 --sortBy numRatings --limit 5000 --minAge 0
   $ npm run author-rescan -- --sort original_publication_year --limit 50
   $ npm run author-rescan -- --minYear 2025 --limit 500
   $ ./authorRescan.sh --rescanMissing --minAge 30 --limit 500`)
@@ -400,6 +474,7 @@ Examples:
   .option('--minAge <days>', 'Skip authors whose stats were last updated within this many days (default 0 = scrape everything)')
   .option('--rescanMissing', 'Target only authors with no stats yet')
   .option('--multiPage', 'Target authors with null or ≥2 catalog pages (skip single-page catalogs); crawls all pages')
+  .option('--onlyUntouched', 'With --multiPage, target only authors that have never been multi-page-crawled (no catalogPages yet). Use with --minAge 0 to grind exactly the remaining first-pass tail.')
   .option('--sort <field>', 'Goodreads author-list sort order: popularity (default), title, original_publication_year, average_rating, number_of_pages')
   .option('--minYear <year>', 'Find authors with a book published in/after this year; sorts by original_publication_year (unless --sort given) and reads the first page only')
   .action(async (options) => {
@@ -559,11 +634,13 @@ Examples:
   $ npm run year-in-books -- 2026 --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
   $ npm run year-in-books -- 2026 --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export
   $ npm run year-in-books -- 2026 --requireReviews  # only books with review text
+  $ npm run year-in-books -- 2026 --live  # current year only: also sync recent reads from the live review-list page (catch-up since last CSV export)
   $ ./year-in-books.sh 2026`)
   .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
   .option('--requireReviews', 'Only count books that also have review text (default: any book with a Date Read in the year)')
+  .option('--live', 'Current year only: walk the live review-list page (shelf=read) until it catches up to your last CSV export, and add any books read since then. Needs the stored login cookie + user id.')
   .action(async (year, options) => {
     try {
       await runYearInBooks({ ...options, year, export: options.export || options.import });

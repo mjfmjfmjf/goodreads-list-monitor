@@ -12,7 +12,8 @@ import {
   renderFavoriteAuthors,
   renderPublishers,
   renderBookshelves,
-  parseRating
+  parseRating,
+  readingDays
 } from './yearInBooks.js';
 import { LibraryEntry } from './libraryExport.js';
 
@@ -75,6 +76,10 @@ function renderYearByYear(ctx: SectionContext): string[] {
       `${chalk.yellow(pagesTotal.toLocaleString())} pages, mean rating ${chalk.green.bold(mean)}`;
     if (group.noPages > 0) line += chalk.gray(` (${group.noPages.toLocaleString()} without page counts)`);
     if (group.ratings.length !== group.books) line += chalk.gray(` (${(group.books - group.ratings.length).toLocaleString()} unrated)`);
+    const days = readingDays(parseInt(y, 10), ctx.entries);
+    const booksPerDay = group.books / days;
+    const pagesPerDay = pagesTotal / days;
+    line += chalk.gray(` · ${booksPerDay.toFixed(2)}/day, ${pagesPerDay.toFixed(0)} pages/day over ${days}d`);
     lines.push(line);
   }
   return lines;

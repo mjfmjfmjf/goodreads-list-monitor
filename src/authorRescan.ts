@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT } from './storage.js';
+import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT, type AuthorCacheEntry } from './storage.js';
 import { selectAuthors } from './authorTopStats.js';
 import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.js';
 import { scrapeAuthorStats } from './scraper.js';
@@ -9,6 +9,7 @@ export interface AuthorRescanOptions extends AuthorTopStatsOptions {
   minAge?: string;
   rescanMissing?: boolean;
   multiPage?: boolean;
+  onlyUntouched?: boolean;
   sort?: string;
   minYear?: string;
 }
@@ -20,6 +21,37 @@ const parseYear = (published?: string): number | null => {
   const y = parseInt(published.replace(/[^\d]/g, '').slice(0, 4), 10);
   return Number.isFinite(y) && y > 0 ? y : null;
 };
+
+// Select authors eligible for a --multiPage crawl and return them sorted by the
+// requested field (descending), validated against min/max ratings. With
+// `onlyUntouched`, restrict to authors that have never been multi-page-crawled
+// (no catalogPages recorded yet) so a first pass only targets the remaining
+// tail instead of re-evaluating already-completed ones.
+export interface MultiPageSelectionOptions {
+  limit: number;
+  sortBy: string;
+  minRatings: number;
+  maxRatings: number;
+  onlyUntouched?: boolean;
+}
+
+export function selectMultiPageAuthors(
+  authorCache: Record<string, AuthorCacheEntry>,
+  opts: MultiPageSelectionOptions,
+): SelectedAuthor[] {
+  const valueOf = (entry: AuthorCacheEntry): number =>
+    opts.sortBy === 'averageRating' ? parseFloat(entry.averageRating || '0') : parseNum((entry as any)[opts.sortBy]);
+  return Object.entries(authorCache)
+    .filter(([, entry]) => {
+      const isMultiPage = !entry.catalogPages || entry.catalogPages >= 2;
+      if (opts.onlyUntouched && entry.catalogPages && entry.catalogPages >= 2) return false;
+      const ratings = parseNum(entry.numRatings);
+      return isMultiPage && ratings >= opts.minRatings && ratings <= opts.maxRatings;
+    })
+    .map(([name, entry]) => ({ name, entry, value: valueOf(entry) }))
+    .sort((a, b) => b.value - a.value || parseNum(b.entry.numRatings) - parseNum(a.entry.numRatings) || a.name.localeCompare(b.name))
+    .slice(0, opts.limit);
+}
 
 export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promise<void> {
   const authorCache = await loadAuthorCache();
@@ -44,15 +76,21 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
   } else if (options.multiPage) {
     // Select authors with null or ≥2 catalog pages (skip single-page catalogs),
     // then apply the same --sortBy / --minRatings / --maxRatings filters.
+    // With --onlyUntouched, restrict to authors that have never been
+    // multi-page-crawled (no catalogPages recorded yet) so a first pass only
+    // targets the not-yet-done tail instead of re-evaluating completed ones.
     const sortBy = (options.sortBy || 'numRatings') as string;
     const minRatings = options.minRatings !== undefined ? parseNum(options.minRatings) : 0;
     const maxRatings = options.maxRatings !== undefined ? parseNum(options.maxRatings) : Infinity;
-    authors = Object.entries(authorCache)
-      .filter(([, entry]) => (!entry.catalogPages || entry.catalogPages >= 2) && parseNum(entry.numRatings) >= minRatings && parseNum(entry.numRatings) <= maxRatings)
-      .map(([name, entry]) => ({ name, entry, value: sortBy === 'averageRating' ? parseFloat(entry.averageRating || '0') : parseNum((entry as any)[sortBy]) }))
-      .sort((a, b) => b.value - a.value || parseNum(b.entry.numRatings) - parseNum(a.entry.numRatings) || a.name.localeCompare(b.name))
-      .slice(0, limit);
-    console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping multi-page authors (Top ${limit} by ${sortBy}, ≥${minRatings.toLocaleString()} ratings)`));
+    const untouchedOnly = !!options.onlyUntouched;
+    authors = selectMultiPageAuthors(authorCache, {
+      limit,
+      sortBy,
+      minRatings,
+      maxRatings,
+      onlyUntouched: untouchedOnly,
+    });
+    console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping multi-page authors${untouchedOnly ? ' (never crawled)' : ''} (Top ${limit} by ${sortBy}, ≥${minRatings.toLocaleString()} ratings)`));
   } else {
     const selected = selectAuthors(authorCache, options);
     authors = selected.authors;

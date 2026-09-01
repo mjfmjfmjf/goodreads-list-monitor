@@ -57,6 +57,20 @@ export async function runFieldCoverage(): Promise<void> {
     FROM authors
   `).get() as any;
 
+  const tagTotals = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      COUNT(DISTINCT tag_name) AS 'distinct_tags',
+      COUNT(DISTINCT book_id) AS 'distinct_book_ids',
+      SUM(CASE WHEN position IS NOT NULL THEN 1 ELSE 0 END) AS 'position',
+      SUM(CASE WHEN shelved IS NOT NULL THEN 1 ELSE 0 END) AS 'shelved',
+      MIN(shelved) AS 'shelved_min',
+      MAX(shelved) AS 'shelved_max',
+      AVG(shelved) AS 'shelved_avg',
+      COUNT(DISTINCT harvested_at) AS 'distinct_harvest_times'
+    FROM tag_books
+  `).get() as any;
+
   console.log(chalk.cyan.bold('\n📊 Book-cache field coverage:'));
   console.log(chalk.gray('----------------------------------------------------------------------'));
   for (const stat of computeFieldStats(bookTotals, Number(bookTotals.total))) {
@@ -67,5 +81,17 @@ export async function runFieldCoverage(): Promise<void> {
   for (const stat of computeFieldStats(authorTotals, Number(authorTotals.total))) {
     console.log('  ' + formatCoverageLine(stat));
   }
+  console.log(chalk.cyan.bold(`\n📊 Tag-book field coverage:`));
+  console.log(chalk.gray('----------------------------------------------------------------------'));
+  const tagTotal = Number(tagTotals.total);
+  console.log(chalk.gray(`  total rows          : ${tagTotal.toLocaleString()}`));
+  console.log(chalk.gray(`  distinct tags       : ${Number(tagTotals.distinct_tags).toLocaleString()}`));
+  console.log(chalk.gray(`  distinct book IDs   : ${Number(tagTotals.distinct_book_ids).toLocaleString()}`));
+  console.log(chalk.gray(`  distinct harvests   : ${Number(tagTotals.distinct_harvest_times).toLocaleString()}`));
+  console.log('  ' + formatCoverageLine({ field: 'position', populated: Number(tagTotals.position), total: tagTotal }));
+  const shelvedPop = Number(tagTotals.shelved) || 0;
+  console.log('  ' + formatCoverageLine({ field: 'shelved', populated: shelvedPop, total: tagTotal }));
+  const shelvedAvg = tagTotals.shelved_avg != null ? Number(tagTotals.shelved_avg).toFixed(1) : '—';
+  console.log(`  ${'shelved min'.padEnd(14)} : ${chalk.yellow((tagTotals.shelved_min ?? '—').toLocaleString?.() ?? '—')}  max ${chalk.yellow((tagTotals.shelved_max ?? '—').toLocaleString?.() ?? '—')}  avg ${chalk.yellow(shelvedAvg)}`);
   console.log();
 }

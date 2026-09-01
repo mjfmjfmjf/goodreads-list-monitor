@@ -290,6 +290,70 @@ export function mergeBooksFromAuthorPage(books: AuthorPageBookRow[]): { inserted
 }
 
 
+// ── Tag books ─────────────────────────────────────────────────────
+
+export interface TagBookRow {
+  tagName: string;
+  bookId: string;
+  position?: number;
+  shelved?: number;
+  harvestedAt: string;
+}
+
+// Upsert a tag membership. PK is (tag_name, book_id), so re-reading a tag
+// refreshes an existing row's position + timestamp rather than duplicating it.
+// Different books can share the same position across reads — each stays its own
+// (tag, book) row, accumulating historical tag → book → position mappings over time.
+export function upsertTagBooks(tag: string, books: { id: string; position?: number; shelved?: number }[]): void {
+  const db = getDb();
+  if (!books.length) return;
+  const now = new Date().toISOString();
+  const stmt = db.prepare(`
+    INSERT INTO tag_books (tag_name, book_id, position, shelved, harvested_at)
+    VALUES (@tagName, @bookId, @position, @shelved, @harvestedAt)
+    ON CONFLICT(tag_name, book_id) DO UPDATE SET
+      position = excluded.position,
+      shelved = excluded.shelved,
+      harvested_at = excluded.harvested_at
+  `);
+  const tx = db.transaction(() => {
+    for (const book of books) {
+      if (!book.id) continue;
+      stmt.run({
+        tagName: tag,
+        bookId: book.id,
+        position: book.position ?? null,
+        shelved: book.shelved ?? null,
+        harvestedAt: now,
+      });
+    }
+  });
+  tx();
+}
+
+export function loadTagBooks(tag?: string, bookId?: string): TagBookRow[] {
+  const db = getDb();
+  const clauses: string[] = [];
+  const params: any[] = [];
+  if (tag !== undefined) {
+    clauses.push('tag_name = ?');
+    params.push(tag);
+  }
+  if (bookId !== undefined) {
+    clauses.push('book_id = ?');
+    params.push(bookId);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+  const rows = db.prepare(`SELECT * FROM tag_books ${where} ORDER BY tag_name, position`).all(...params) as any[];
+  return rows.map(row => ({
+    tagName: row.tag_name,
+    bookId: row.book_id,
+    position: row.position ?? undefined,
+    shelved: row.shelved ?? undefined,
+    harvestedAt: row.harvested_at,
+  }));
+}
+
 export interface SyncBooksOutcome {
   inserted: number;
   updated: number;

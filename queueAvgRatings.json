@@ -1,59 +1,59 @@
 [
   {
-    "nickname": "2012 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2012 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2012 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2012 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "420796",
     "url": "https://www.goodreads.com/list/show/420796",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2012,
       "maxYear": 2012
     }
   },
   {
-    "nickname": "2013 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2013 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2013 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2013 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "419422",
     "url": "https://www.goodreads.com/list/show/419422",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2013,
       "maxYear": 2013
     }
   },
   {
-    "nickname": "2014 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2014 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2014 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2014 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "419200",
     "url": "https://www.goodreads.com/list/show/419200",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2014,
       "maxYear": 2014
     }
   },
   {
-    "nickname": "2015 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2015 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2015 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2015 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "419195",
     "url": "https://www.goodreads.com/list/show/419195",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2015,
       "maxYear": 2015
     }
   },
   {
-    "nickname": "2016 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2016 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2016 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2016 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "418852",
     "url": "https://www.goodreads.com/list/show/418852",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2016,
       "maxYear": 2016

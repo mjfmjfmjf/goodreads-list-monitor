@@ -84,7 +84,9 @@ export async function runRatingsHistogram(): Promise<void> {
   }
 
   const cachePctStr = (i: number) => ((totalBooks > 0 ? counts[i] / totalBooks * 100 : 0).toFixed(2) + '%');
-  const compPctStr = (i: number) => ((cumEsts[i] > 0 ? cumCounts[i] / cumEsts[i] * 100 : 100).toFixed(2) + '%');
+  // COMP % = this bracket's cached count / this bracket's estimated count
+  // (per-bracket completeness, not cumulative).
+  const compPctStr = (i: number) => ((estimates[i] > 0 ? counts[i] / estimates[i] * 100 : 100).toFixed(2) + '%');
 
   const col = (val: string, width: number) => val.padStart(width);
 

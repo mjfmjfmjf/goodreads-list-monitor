@@ -5,10 +5,15 @@ import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
 import { delay, fetchWithRetry, formatDate } from './utils.js';
-import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage } from './storage.js';
+import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks } from './storage.js';
 import type { AuthorStats } from './storage.js';
 
 let structuralWarningIssued = false;
+
+// A single-book lookup (scrapeBookByAuthorPage) only reads the author's catalog
+// page 1 — that page's contents (all books on it) are cached per authorId so
+// later lookups for a different book by the same author skip the network entirely.
+const authorPage1Cache = new Map<string, AuthorListBook[]>();
 
 async function handleStructuralWarning(message: string) {
   if (structuralWarningIssued) {
@@ -169,6 +174,9 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
   let allBooks: BookMetadata[] = [];
   let thresholdReached = false;
   let lastPageFirstId = '';
+  // Position is 1-based global shelf order. When reading a partial shelf that
+  // doesn't start at page 1, assume 50 books per unread preceding page.
+  let bookPos = Math.max(0, (startPage - 1) * 50);
 
   for (let page = startPage; page <= maxPages; page++) {
     if (thresholdReached) break;
@@ -263,7 +271,8 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
             return;
           }
 
-          pageBooks.push({ id, title, author, authorId, authorSlug, position: 0, ratings, avgRating, published, tagCount: tagCount ?? 0 });
+          bookPos++;
+          pageBooks.push({ id, title, author, authorId, authorSlug, position: bookPos, ratings, avgRating, published, tagCount: tagCount ?? 0 });
         }
       });
 
@@ -295,6 +304,16 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
       uniqueBooks.push(book);
       seenIds.add(book.id);
     }
+  }
+
+  // Record each book's position on this tag shelf so future lookups can
+  // resolve tag memberships without re-reading Goodreads. Upsert by (tag, book)
+  // refreshes position/timestamp on re-read; position is intentionally not part
+  // of the key so a given position can hold different books over time.
+  try {
+    upsertTagBooks(tag, uniqueBooks.map(b => ({ id: b.id, position: b.position, shelved: b.tagCount })));
+  } catch (error) {
+    // Ignore tag-membership persistence errors in scraper
   }
 
   // Automatically sync authors to cache
@@ -890,9 +909,22 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
   // identity (the page also carries the canonical slug, handled below).
   const authorId = extractAuthorId(authorSlug);
   const url = buildAuthorListUrl(authorId);
-  const config = await loadConfig();
+
+  const exactTitleHint = titleHint ? titleHint.trim().toLowerCase() : null;
+
+  // If we already fetched this author's catalog page 1 this run, the target
+  // cannot be on it unless it's already in that cached list — so search the
+  // cache directly and skip the network entirely (avoids re-reading the same
+  // author for every one of their volumes in a batch).
+  const cachedBooks = authorPage1Cache.get(authorId);
+  if (cachedBooks) {
+    const cachedMatch = findOnAuthorPage(id, exactTitleHint, cachedBooks);
+    if (cachedMatch) return cachedMatch;
+    return { id };
+  }
 
   try {
+    const config = await loadConfig();
     const headers: any = { 'User-Agent': USER_AGENT };
     if (config.cookie) headers['Cookie'] = config.cookie;
 
@@ -902,39 +934,36 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
     // Capture/refresh the author's overall stats whenever we scrape their page
     await updateAuthorStatsFromPage($, authorSlug);
 
-    const exactTitleHint = titleHint ? titleHint.trim().toLowerCase() : null;
     const books = parseAuthorListBooks($, authorSlug);
+    authorPage1Cache.set(authorId, books);
 
-    const idMatch = books.find(b => b.id === id) || null;
-    const titleMatch = !idMatch && exactTitleHint ? (books.find(b => b.title.trim().toLowerCase() === exactTitleHint) || null) : null;
+    const match = findOnAuthorPage(id, exactTitleHint, books);
+    if (match) return match;
 
-    if (idMatch) return idMatch;
-    if (titleMatch) return titleMatch;
-
-    // Page 1 miss — crawl remaining pages if the catalog is multi-page.
     const totalPages = parseCatalogPageCount(String(response.data));
-    for (let page = 2; page <= totalPages; page++) {
-      await delay(2000, 4000);
-      try {
-        const pageResponse = await fetchWithRetry(`${url}?page=${page}`, { headers, timeout: TIMEOUT });
-        const pageBooks = parseAuthorListBooks(cheerio.load(pageResponse.data), authorSlug);
-        const pageIdMatch = pageBooks.find(b => b.id === id) || null;
-        if (pageIdMatch) return pageIdMatch;
-        if (exactTitleHint) {
-          const pageTitleMatch = pageBooks.find(b => b.title.trim().toLowerCase() === exactTitleHint) || null;
-          if (pageTitleMatch) return pageTitleMatch;
-        }
-      } catch (e) {
-        // Stop crawling on page-level error but don't fail the whole lookup.
-        break;
-      }
-    }
+    console.log(
+      chalk.gray(
+        `      🔎 "${titleHint || id}" not on catalog page 1 of ${totalPages} for author ${authorSlug}; ` +
+        `giving up (single-book lookup only reads page 1).`
+      )
+    );
 
     return { id };
   } catch (error) {
     console.error(chalk.yellow(`   ⚠️ Author page fetch failed for book ${id} (author ${authorSlug}): ${(error as any).code || (error as any).message || error}`));
     return { id };
   }
+}
+
+// A single-book lookup matches the target against a cached author-page-1 book
+// list by id first, then by exact lowercased title.
+export function findOnAuthorPage(id: string, exactTitleHint: string | null, books: AuthorListBook[]): AuthorListBook | null {
+  const idMatch = books.find(b => b.id === id) || null;
+  if (idMatch) return idMatch;
+  if (exactTitleHint) {
+    return books.find(b => b.title.trim().toLowerCase() === exactTitleHint) || null;
+  }
+  return null;
 }
 
 export interface AuthorStatsResult {

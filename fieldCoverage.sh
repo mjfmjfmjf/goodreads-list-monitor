@@ -2,7 +2,7 @@
 # fieldCoverage.sh — wrapper for `field-coverage`
 #
 # Offline report: per-field population counts and percentages for the
-# books and authors tables in goodreads.db.
+# books, authors, and tag_books tables in goodreads.db.
 #
 # Usage:
 #   ./fieldCoverage.sh

@@ -3,6 +3,24 @@
 Record whenever Goodreads changes a page in a way that forces a code change.
 Newest entry on top. Timestamp format: `YYYY/MM/DD HH:MM` (local time).
 
+## 2026/08/30 23:20 — Author-catalog crawl halted + per-run author page-1 cache
+
+- **Page / URL:** `https://www.goodreads.com/author/list/<authorId>`
+- **What changed:** During "Unknown" publication-year backfills, `scrapeBookByAuthorPage`
+  crawled the author's catalog (100+ pages) searching for a single usually-obscure volume,
+  and re-crawled the same author from scratch for every one of their volumes in the batch
+  (e.g. Swift Vol 2, 3, 10 each re-read his full 166-page catalog). Combined with the 3–6s
+  `delay()` between pages and Goodreads throttling, one book lookup burned 5–19 minutes of
+  back-to-back `(Waiting ...)` lines with no indication of what it was doing.
+- **Fix:** `src/scraper.ts` — a single-book lookup now reads the author's **catalog page 1
+  only** (no page-2+ crawling; page-1 books are all we need). The parsed page-1 books are
+  cached per authorId in a module-level `authorPage1Cache` for the run, so a later book by
+  the same author is matched against that cached list with **no network call at all**. New
+  pure `findOnAuthorPage(id, titleHint, books)` helper, unit-tested in `scraper.test.ts`.
+  The separate `scrapeAuthorStats(crawlAllPages=true)` path keeps its full-crawl behavior.
+- **Detected by:** manual run during an `audio_wanted` shelf backfill (Swift volume took
+  ~19 min / 1164s; ~30s after the intermediate 5-page cap).
+
 ## 2026/08/22 15:24 — Anti-bot throttling: redirect-loop deflection on `/search`
 
 - **Page / URL:** `https://www.goodreads.com/search?q=...`
