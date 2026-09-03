@@ -4,10 +4,14 @@ import { statSync } from 'node:fs';
 import path from 'path';
 import chalk from 'chalk';
 
-// Sanitized CSV+gzip export of the two shareable tables (books, authors).
-// Deliberately EXCLUDES config (live session cookies / userId) and lists.
-// Not network-bound; reads directly from the local DB and streams to disk so
-// the ~1M-row books table doesn't inflate memory.
+// Sanitized CSV+gzip export of the shareable library-data tables (books,
+// authors, tag_books, genres, genre_tag_xref). Deliberately EXCLUDES config
+// (live session cookies / userId), lists, and author_scrape_failures
+// (operational scrape-bookkeeping). Not network-bound; reads directly from the
+// local DB and streams to disk so the ~1M-row books table doesn't inflate memory.
+
+// Ordered list of tables to export; the order is the display/reporting order.
+export const EXPORT_TABLES = ['books', 'authors', 'tag_books', 'genres', 'genre_tag_xref'] as const;
 
 function pickle(value: unknown): string {
   if (value == null) return '';
@@ -35,7 +39,14 @@ function timestamp(): string {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }
 
+export interface ExportFile {
+  table: string;
+  path: string;
+  count: number;
+}
+
 export interface ExportBatchResult {
+  files: ExportFile[];
   booksFile: string;
   authorsFile: string;
   bookCount: number;
@@ -83,9 +94,14 @@ export async function exportBooksAndAuthors(
     throw new Error('basename (identifier) must be non-empty and use only letters, digits, ".", "_", or "-".');
   }
   const ts = timestamp();
-  const books = await exportTable(db, 'books', outDir, basename, ts);
-  const authors = await exportTable(db, 'authors', outDir, basename, ts);
+  const files: ExportFile[] = [];
+  for (const table of EXPORT_TABLES) {
+    files.push({ table, ...(await exportTable(db, table, outDir, basename, ts)) });
+  }
+  const books = files.find(f => f.table === 'books')!;
+  const authors = files.find(f => f.table === 'authors')!;
   return {
+    files,
     booksFile: books.path,
     authorsFile: authors.path,
     bookCount: books.count,
@@ -103,9 +119,9 @@ export function fmtBytes(b: number): string {
 export function printExportResult(r: ExportBatchResult, outDir: string): void {
   console.log(chalk.cyan.bold('\n📦 Sanitized export written to:'));
   console.log(chalk.gray(outDir));
-  const bs = statSync(r.booksFile).size;
-  const as = statSync(r.authorsFile).size;
-  console.log(chalk.white(`  ${path.basename(r.booksFile)}   ${r.bookCount.toLocaleString('en-US')} rows   ${fmtBytes(bs)}`));
-  console.log(chalk.white(`  ${path.basename(r.authorsFile)}   ${r.authorCount.toLocaleString('en-US')} rows   ${fmtBytes(as)}`));
-  console.log(chalk.gray('   (config with session cookies and lists intentionally excluded)'));
+  for (const f of r.files) {
+    const bytes = statSync(f.path).size;
+    console.log(chalk.white(`  ${path.basename(f.path)}   ${f.count.toLocaleString('en-US')} rows   ${fmtBytes(bytes)}`));
+  }
+  console.log(chalk.gray('   (config with session cookies, lists, and author_scrape_failures intentionally excluded)'));
 }

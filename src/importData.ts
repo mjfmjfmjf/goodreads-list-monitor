@@ -274,7 +274,13 @@ export function mergeBook(existing: ExistingBook | undefined, inc: BookImportRow
 }
 
 // ── DB persistence (fill-blank + union) ─────────────────────────────
-export interface ImportCounts { booksInserted: number; booksUpdated: number; booksSkipped: number; authorsInserted: number; authorsUpdated: number; authorsSkipped: number; }
+export interface ImportCounts {
+  booksInserted: number; booksUpdated: number; booksSkipped: number;
+  authorsInserted: number; authorsUpdated: number; authorsSkipped: number;
+  tagBooksInserted: number; tagBooksUpdated: number;
+  genresInserted: number; genresUpdated: number;
+  xrefInserted: number; xrefUpdated: number;
+}
 
 export async function importBooksFile(
   db: import('better-sqlite3').Database,
@@ -409,6 +415,226 @@ export async function importAuthorsFile(
   return { total };
 }
 
+// ── tag_books import (scraped shelf data) ─────────────────────────
+// PK (tag_name, book_id). Merge policy — "don't replace good with bad":
+//   position / shelved: fill-blank-only (keep a good DB value, adopt imported
+//   only when the DB value is blank). harvested_at: keep the newer timestamp.
+export interface TagBookImportRow {
+  tagName: string;
+  bookId: string;
+  position?: number | null;
+  shelved?: number | null;
+  harvestedAt?: string;
+}
+
+export function decodeTagBookRow(headers: string[], fields: (string | null)[]): TagBookImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const tagName = get('tag_name');
+  const bookId = get('book_id');
+  if (!tagName || !bookId) return null;
+  return {
+    tagName,
+    bookId,
+    position: toInt(get('position')),
+    shelved: toInt(get('shelved')),
+    harvestedAt: get('harvested_at') ?? undefined,
+  };
+}
+
+export async function importTagBooksFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const upsert = db.prepare(`
+    INSERT INTO tag_books (tag_name, book_id, position, shelved, harvested_at)
+    VALUES (@tagName, @bookId, @position, @shelved, @harvestedAt)
+    ON CONFLICT(tag_name, book_id) DO UPDATE SET
+      position=CASE WHEN tag_books.position IS NULL THEN excluded.position ELSE tag_books.position END,
+      shelved=CASE WHEN tag_books.shelved IS NULL THEN excluded.shelved ELSE tag_books.shelved END,
+      harvested_at=CASE
+        WHEN excluded.harvested_at IS NULL OR excluded.harvested_at = '' THEN tag_books.harvested_at
+        WHEN tag_books.harvested_at IS NULL OR tag_books.harvested_at < excluded.harvested_at THEN excluded.harvested_at
+        ELSE tag_books.harvested_at END
+  `);
+  const find = db.prepare('SELECT * FROM tag_books WHERE tag_name = ? AND book_id = ?');
+  const BATCH = 20_000;
+  let batch: { tagName: string; bookId: string; position: number | null; shelved: number | null; harvestedAt: string | null; isNew: boolean }[] = [];
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodeTagBookRow(headers, fields);
+    if (!row) return;
+    total++;
+    const existing = find.get(row.tagName, row.bookId) as any;
+    batch.push({
+      tagName: row.tagName,
+      bookId: row.bookId,
+      position: row.position ?? null,
+      shelved: row.shelved ?? null,
+      harvestedAt: row.harvestedAt || null,
+      isNew: !existing,
+    });
+    if (batch.length >= BATCH) { flush(); batch = []; }
+  });
+  flush();
+
+  function flush(): void {
+    const tx = db.transaction((rows: typeof batch) => {
+      for (const p of rows) {
+        upsert.run(p);
+        if (p.isNew) counts.tagBooksInserted++;
+        else counts.tagBooksUpdated++;
+      }
+    });
+    tx(batch);
+  }
+  return { total };
+}
+
+// ── genres import (genre directory) ───────────────────────────────
+// PK name. member_count: fill-blank-only. first_seen: keep the oldest.
+// last_updated: keep the newer.
+export interface GenreImportRow {
+  name: string;
+  memberCount?: number | null;
+  firstSeen?: string;
+  lastUpdated?: string;
+}
+
+export function decodeGenreRow(headers: string[], fields: (string | null)[]): GenreImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const name = get('name');
+  if (!name) return null;
+  return {
+    name,
+    memberCount: toInt(get('member_count')),
+    firstSeen: get('first_seen') ?? undefined,
+    lastUpdated: get('last_updated') ?? undefined,
+  };
+}
+
+export async function importGenresFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const upsert = db.prepare(`
+    INSERT INTO genres (name, member_count, first_seen, last_updated)
+    VALUES (@name, @memberCount, @firstSeen, @lastUpdated)
+    ON CONFLICT(name) DO UPDATE SET
+      member_count=CASE WHEN genres.member_count IS NULL THEN excluded.member_count ELSE genres.member_count END,
+      first_seen=CASE
+        WHEN excluded.first_seen IS NULL OR excluded.first_seen = '' THEN genres.first_seen
+        WHEN genres.first_seen IS NULL OR genres.first_seen > excluded.first_seen THEN excluded.first_seen
+        ELSE genres.first_seen END,
+      last_updated=CASE
+        WHEN excluded.last_updated IS NULL OR excluded.last_updated = '' THEN genres.last_updated
+        WHEN genres.last_updated IS NULL OR genres.last_updated < excluded.last_updated THEN excluded.last_updated
+        ELSE genres.last_updated END
+  `);
+  const find = db.prepare('SELECT * FROM genres WHERE name = ?');
+  let batch: { name: string; memberCount: number | null; firstSeen: string; lastUpdated: string; isNew: boolean }[] = [];
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodeGenreRow(headers, fields);
+    if (!row) return;
+    total++;
+    const existing = find.get(row.name) as any;
+    batch.push({
+      name: row.name,
+      memberCount: row.memberCount ?? null,
+      firstSeen: row.firstSeen || '',
+      lastUpdated: row.lastUpdated || '',
+      isNew: !existing,
+    });
+    if (batch.length >= 20_000) { flush(); batch = []; }
+  });
+  flush();
+
+  function flush(): void {
+    const tx = db.transaction((rows: typeof batch) => {
+      for (const p of rows) {
+        upsert.run(p);
+        if (p.isNew) counts.genresInserted++;
+        else counts.genresUpdated++;
+      }
+    });
+    tx(batch);
+  }
+  return { total };
+}
+
+// ── genre_tag_xref import ──────────────────────────────────────────
+// PK (genre_name, tag_name). Insert when absent; when present, prefer the
+// stronger kind so an 'exact' mapping is never downgraded to a weaker one.
+export interface XrefImportRow {
+  genreName: string;
+  tagName: string;
+  kind?: string;
+}
+
+export function decodeXrefRow(headers: string[], fields: (string | null)[]): XrefImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const genreName = get('genre_name');
+  const tagName = get('tag_name');
+  if (!genreName || !tagName) return null;
+  return { genreName, tagName, kind: get('kind') ?? undefined };
+}
+
+export async function importXrefFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const upsert = db.prepare(`
+    INSERT INTO genre_tag_xref (genre_name, tag_name, kind)
+    VALUES (@genreName, @tagName, @kind)
+    ON CONFLICT(genre_name, tag_name) DO UPDATE SET
+      kind=CASE
+        WHEN genre_tag_xref.kind = 'exact' THEN genre_tag_xref.kind
+        WHEN excluded.kind = 'exact' THEN 'exact'
+        ELSE genre_tag_xref.kind END
+  `);
+  const find = db.prepare('SELECT * FROM genre_tag_xref WHERE genre_name = ? AND tag_name = ?');
+  let batch: { genreName: string; tagName: string; kind: string | null; isNew: boolean }[] = [];
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodeXrefRow(headers, fields);
+    if (!row) return;
+    total++;
+    const existing = find.get(row.genreName, row.tagName) as any;
+    batch.push({
+      genreName: row.genreName,
+      tagName: row.tagName,
+      kind: row.kind || 'exact',
+      isNew: !existing,
+    });
+    if (batch.length >= 20_000) { flush(); batch = []; }
+  });
+  flush();
+
+  function flush(): void {
+    const tx = db.transaction((rows: typeof batch) => {
+      for (const p of rows) {
+        upsert.run(p);
+        if (p.isNew) counts.xrefInserted++;
+        else counts.xrefUpdated++;
+      }
+    });
+    tx(batch);
+  }
+  return { total };
+}
+
 // Fill-blank-only for authors (status fields like last_seen are always updated).
 export interface ExistingAuthor {
   id?: string; slug?: string; lastSeen?: string; firstSeen?: string; averageRating?: number | null; numRatings?: number | null;
@@ -434,25 +660,40 @@ export function mergeAuthor(existing: ExistingAuthor | undefined, inc: AuthorImp
 export interface ImportOptions {
   booksFile?: string;
   authorsFile?: string;
+  tagBooksFile?: string;
+  genresFile?: string;
+  xrefFile?: string;
   ratingPolicy?: 'keep' | 'update';
 }
 export async function importData(
   db: import('better-sqlite3').Database,
   options: ImportOptions
 ): Promise<ImportCounts> {
-  if (!options.booksFile && !options.authorsFile) {
-    throw new Error('Provide at least one of --books or --authors file paths.');
+  if (!options.booksFile && !options.authorsFile && !options.tagBooksFile && !options.genresFile && !options.xrefFile) {
+    throw new Error('Provide at least one of --books, --authors, --tagBooks, --genres, or --xref file paths.');
   }
-  const counts: ImportCounts = { booksInserted: 0, booksUpdated: 0, booksSkipped: 0, authorsInserted: 0, authorsUpdated: 0, authorsSkipped: 0 };
+  const counts: ImportCounts = {
+    booksInserted: 0, booksUpdated: 0, booksSkipped: 0,
+    authorsInserted: 0, authorsUpdated: 0, authorsSkipped: 0,
+    tagBooksInserted: 0, tagBooksUpdated: 0,
+    genresInserted: 0, genresUpdated: 0,
+    xrefInserted: 0, xrefUpdated: 0,
+  };
   const policy = options.ratingPolicy === 'update' ? 'update' : 'keep';
   if (options.booksFile) await importBooksFile(db, options.booksFile, counts, policy);
   if (options.authorsFile) await importAuthorsFile(db, options.authorsFile, counts);
+  if (options.tagBooksFile) await importTagBooksFile(db, options.tagBooksFile, counts);
+  if (options.genresFile) await importGenresFile(db, options.genresFile, counts);
+  if (options.xrefFile) await importXrefFile(db, options.xrefFile, counts);
   return counts;
 }
 
 export function printImportResult(counts: ImportCounts, ratingPolicy: 'keep' | 'update' = 'keep'): void {
   console.log(chalk.cyan.bold('\n📥 Import complete:'));
-  console.log(chalk.white(`  books:   ${counts.booksInserted} inserted, ${counts.booksUpdated} updated`));
-  console.log(chalk.white(`  authors: ${counts.authorsInserted} inserted, ${counts.authorsUpdated} updated`));
+  console.log(chalk.white(`  books:       ${counts.booksInserted} inserted, ${counts.booksUpdated} updated`));
+  console.log(chalk.white(`  authors:     ${counts.authorsInserted} inserted, ${counts.authorsUpdated} updated`));
+  console.log(chalk.white(`  tag_books:   ${counts.tagBooksInserted} inserted, ${counts.tagBooksUpdated} updated`));
+  console.log(chalk.white(`  genres:      ${counts.genresInserted} inserted, ${counts.genresUpdated} updated`));
+  console.log(chalk.white(`  xref:        ${counts.xrefInserted} inserted, ${counts.xrefUpdated} updated`));
   console.log(chalk.gray(`  avgRating policy: ${ratingPolicy === 'update' ? 'update (overwrite)' : 'keep (fill-blank-only)'}`));
 }

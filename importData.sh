@@ -1,9 +1,10 @@
 #!/bin/bash
 # importData.sh — wrapper for `import-data`
 #
-# Import book + author data from the sanitized CSV+gzip exports produced by
-# export-data. Merges fill-blank-only per field with genre/tag union; never
-# overwrites a known-good DB value unless --ratingPolicy update is given.
+# Import library data from the sanitized CSV+gzip exports produced by
+# export-data (books, authors, tag_books, genres, genre_tag_xref).
+# Merges fill-blank-only per field with genre/tag union; never overwrites a
+# known-good DB value unless --ratingPolicy update is given.
 # The schema is upgraded automatically (current spec) on open.
 #
 # Usage:

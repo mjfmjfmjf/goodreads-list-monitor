@@ -949,21 +949,21 @@ Examples:
 
 program
   .command('export-data <basename>')
-  .description('Export the book + author data as two timestamped, gzipped CSV files for sharing. Sanitized: the config table (live session cookies) and lists are EXCLUDED. basename is a mandatory identifier, e.g. mjf. Writes to the current directory by default.')
+  .description('Export the library-data tables (books, authors, tag_books, genres, genre_tag_xref) as timestamped, gzipped CSV files for sharing. Sanitized: config (live session cookies) , lists, and author_scrape_failures are EXCLUDED. basename is a mandatory identifier, e.g. mjf. Writes to the current directory by default.')
   .option('--out <dir>', 'Output directory (default: current directory)', '')
   .addHelpText('after', `
 Examples:
   $ npm run export-data -- mjf
   $ npm run export-data -- mjf --out ~/Downloads
   $ ./exportData.sh mjf
-  -> writes mjf_books_YYYYMMDD-HHMMSS.csv.gz and mjf_authors_YYYYMMDD-HHMMSS.csv.gz`)
+  -> writes mjf_<table>_YYYYMMDD-HHMMSS.csv.gz for each exported table`)
   .action(async (basename, options) => {
     try {
       const outDir = options.out || process.cwd();
       const result = await exportBooksAndAuthors(getDb(), { basename: String(basename), outDir });
       printExportResult(result, outDir);
-      for (const f of [result.booksFile, result.authorsFile]) {
-        printAnalysis(await analyzeCsv(f));
+      for (const f of result.files) {
+        printAnalysis(await analyzeCsv(f.path));
       }
     } catch (error) {
       console.error(chalk.red.bold('Failed to export data:'), (error as any).message);
@@ -973,22 +973,34 @@ Examples:
 
 program
   .command('import-data')
-  .description('Import book + author data from the sanitized CSV+gzip files produced by export-data. Merges fill-blank-only per field with genre/tag union: never overwrites a known-good DB value. Updates the schema automatically (current spec).')
+  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, tag_books, genres, genre_tag_xref). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad. Config/list/author_scrape_failures are not exported and not imported. Updates the schema automatically (current spec).')
   .option('--books <file>', 'Path to the books .csv.gz file')
   .option('--authors <file>', 'Path to the authors .csv.gz file')
+  .option('--tagBooks <file>', 'Path to the tag_books .csv.gz file')
+  .option('--genres <file>', 'Path to the genres .csv.gz file')
+  .option('--xref <file>', 'Path to the genre_tag_xref .csv.gz file')
   .option('--ratingPolicy <policy>', 'How to handle avg_rating on existing books: "keep" (fill-blank-only, default) or "update" (overwrite with imported value)', 'keep')
   .addHelpText('after', `
 Examples:
-  $ npm run import-data -- --books mjf_books_20260828-100153.csv.gz --authors mjf_authors_20260828-100153.csv.gz
+  $ npm run import-data -- --books mjf_books_*.csv.gz --authors mjf_authors_*.csv.gz
+  $ npm run import-data -- --tagBooks mjf_tag_books_*.csv.gz --genres mjf_genres_*.csv.gz --xref mjf_genre_tag_xref_*.csv.gz
   $ npm run import-data -- --books books.csv.gz --authors authors.csv.gz --ratingPolicy update
   $ ./importData.sh --books books.csv.gz --authors authors.csv.gz --ratingPolicy update`)
   .action(async (options) => {
     try {
       const policy = options.ratingPolicy === 'update' ? 'update' : 'keep';
-      for (const f of [options.books, options.authors].filter(Boolean)) {
+      const files = [options.books, options.authors, options.tagBooks, options.genres, options.xref].filter(Boolean);
+      for (const f of files) {
         printAnalysis(await analyzeCsv(f));
       }
-      const counts = await importData(getDb(), { booksFile: options.books, authorsFile: options.authors, ratingPolicy: policy });
+      const counts = await importData(getDb(), {
+        booksFile: options.books,
+        authorsFile: options.authors,
+        tagBooksFile: options.tagBooks,
+        genresFile: options.genres,
+        xrefFile: options.xref,
+        ratingPolicy: policy,
+      });
       printImportResult(counts, policy);
     } catch (error) {
       console.error(chalk.red.bold('Failed to import data:'), (error as any).message);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   splitCsvLine, decodeBookRow, decodeAuthorRow, mergeBook, mergeAuthor, mergeTags,
+  decodeTagBookRow, decodeGenreRow, decodeXrefRow,
 } from './importData.js';
 
 describe('splitCsvLine', () => {
@@ -117,5 +118,45 @@ describe('mergeAuthor', () => {
     const inc = { name: 'n', id: '9', slug: '9.known', lastSeen: '2026-08-28', firstSeen: '2026-08-01' };
     const out = mergeAuthor(existing, inc);
     expect(out.firstSeen).toBe('2026-08-01');
+  });
+});
+
+const tagBookHeaders = ['tag_name', 'book_id', 'position', 'shelved', 'harvested_at'];
+
+describe('decodeTagBookRow', () => {
+  it('decodes typed fields', () => {
+    expect(decodeTagBookRow(tagBookHeaders, ['to-read', '170448', '3', '200', '2026-08-28T00:00:00Z'])).toEqual({
+      tagName: 'to-read', bookId: '170448', position: 3, shelved: 200, harvestedAt: '2026-08-28T00:00:00Z',
+    });
+  });
+  it('returns null when the primary key is incomplete', () => {
+    expect(decodeTagBookRow(tagBookHeaders, [null, '170448', '3', '200', null])).toBeNull();
+    expect(decodeTagBookRow(tagBookHeaders, ['to-read', null, '3', '200', null])).toBeNull();
+  });
+});
+
+const genreHeaders = ['name', 'member_count', 'first_seen', 'last_updated'];
+
+describe('decodeGenreRow', () => {
+  it('decodes typed fields', () => {
+    expect(decodeGenreRow(genreHeaders, ['fiction', '1000000', '2026-08-28', '2026-08-28'])).toEqual({
+      name: 'fiction', memberCount: 1000000, firstSeen: '2026-08-28', lastUpdated: '2026-08-28',
+    });
+  });
+  it('returns null when name is missing', () => {
+    expect(decodeGenreRow(genreHeaders, [null, '1000000', null, null])).toBeNull();
+  });
+});
+
+const xrefHeaders = ['genre_name', 'tag_name', 'kind'];
+
+describe('decodeXrefRow', () => {
+  it('decodes fields with default kind', () => {
+    expect(decodeXrefRow(xrefHeaders, ['fiction', 'fiction', 'cognate'])).toEqual({
+      genreName: 'fiction', tagName: 'fiction', kind: 'cognate',
+    });
+  });
+  it('returns null when the primary key is incomplete', () => {
+    expect(decodeXrefRow(xrefHeaders, [null, 'fiction', 'exact'])).toBeNull();
   });
 });
