@@ -4,6 +4,9 @@ import { checkUpdates, performIngest } from './monitor.js';
 import { runAudit, runTagAudit } from './auditor.js';
 import { generateTagConfig } from './tagConfig.js';
 import { runTagDiscovery, runBulkTagDiscovery } from './discovery.js';
+import { runGapGenreTagDiscovery } from './gapGenreDiscovery.js';
+import { computeGenrePairings } from './genrePairings.js';
+import { computeTagPairings } from './tagPairings.js';
 import { runQueueDiscovery } from './queueDiscovery.js';
 import { generateBulkConfig } from './bulkConfig.js';
 import { runBulkAudit } from './bulkAudit.js';
@@ -19,6 +22,7 @@ import { runDumpList } from './dumpList.js';
 import { runBestOfYear } from './bestOfYear.js';
 import { runGenBestOfYearConfig } from './bestOfYearConfig.js';
 import { runFieldCoverage } from './fieldCoverage.js';
+import { runGenreList } from './genreList.js';
 import { runMonitorYearlyHighlyRatedLists } from './monitorYearlyHighlyRatedLists.js';
 import { runMonitorTopRatedList } from './monitorTopRatedList.js';
 import { runMonitorTopStandalones } from './monitorTopStandalones.js';
@@ -31,6 +35,7 @@ import { runTitleCharHistogram } from './titleCharHistogram.js';
 import { runTitleFirstWordHistogram } from './titleFirstWordHistogram.js';
 import { runTagHistogram } from './tagHistogram.js';
 import { runTagCoverage } from './tagCoverage.js';
+import { runTagFirstPagePicks } from './tagFirstPagePicks.js';
 import { runBackfillSeriesPos } from './backfillSeriesPos.js';
 import { runBackfillPages } from './backfillPages.js';
 import { runAvgHistogram } from './summaryAvgHistogram.js';
@@ -217,6 +222,35 @@ Examples:
   });
 
 program
+  .command('genre-list')
+  .description('List the Goodreads genre catalog and compare it to captured tags. Use --scrape to harvest /genres/list (name + # books) into the genres table, tracking first_seen and last_updated. Use --compare to see which genres are already exact tag matches, which have no tag yet, and which tags are not genres. Use --seed-xref to populate the genre_tag_xref normalization table (exact matches + curated spelling-variant cognates like sf/scifi/sci-fi/sff → science-fiction).')
+  .addHelpText('after', `
+Examples:
+  $ ./genreList.sh                    # show the catalog (default: first 50 by name)
+  $ ./genreList.sh --limit 200        # show more
+  $ ./genreList.sh --scrape           # harvest /genres/list (network, ~17 pages)
+  $ ./genreList.sh --compare          # goal 2: genres vs tags (exact / no-tag / tags-not-genres)
+  $ ./genreList.sh --compare --sortBy alpha --limit 40
+  $ ./genreList.sh --seed-xref        # goal 3: populate genre_tag_xref (exact + cognate aliases)
+  $ ./genreList.sh --xref             # view the xref table
+  $ ./genreList.sh --xref --cognateOnly  # view just the curated spelling-variant families
+  $ ./genreList.sh --compare --sortBy member`)
+  .option('--limit <number>', 'Number of rows to show in report/compare/xref mode (default 50)')
+  .option('--scrape', 'Scrape /genres/list into the genres table. Network + polite rate limiting.')
+  .option('--compare', 'Compare the genre catalog to captured tags (exact matches / no-tag / tags-not-genres). Offline.')
+  .option('--sortBy <field>', 'For --compare: sort by count (default), member, or alpha')
+  .option('--seed-xref', 'Seed the genre_tag_xref normalization table with exact matches + curated cognate aliases. Offline.')
+  .option('--xref', 'Show the genre_tag_xref rows grouped by genre.')
+  .option('--cognateOnly', 'With --xref, show only the curated spelling-variant (cognate) families.')
+  .action(async (options) => {
+    try {
+      await runGenreList(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run genre-list:'), (error as any).message);
+    }
+  });
+
+program
   .command('monitor-yearly-highly-rated-lists')
   .description('Per year (2012-2026), show distinct eligible works at 4.4+/4.5+/4.6+ avg rating vs the current list size')
   .addHelpText('after', `
@@ -335,6 +369,31 @@ Examples:
   });
 
 program
+  .command('tag-first-page-picks')
+  .description('Find books that appear on the most tag "first pages" (position 1-50 on a tag\'s shelf) that you have NOT reviewed, and print their cached book info. Uses the cached library import; pass --export/--import to refresh.')
+  .addHelpText('after', `
+Examples:
+  $ npm run tag-first-page-picks -- --limit 20
+  $ npm run tag-first-page-picks -- --limit 50
+  $ npm run tag-first-page-picks -- --terse --limit 50  # one line per book
+  $ npm run tag-first-page-picks -- --includeReviewed  # include books you've already reviewed
+  $ npm run tag-first-page-picks -- --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export
+  $ ./tagFirstPagePicks.sh --limit 20`)
+  .option('--limit <number>', 'Number of top books to show (default 20)', '20')
+  .option('--terse', 'One line per book (book link, author, publish year, tag count)')
+  .option('--includeReviewed', 'Include books you have already reviewed (default: exclude reviewed)')
+  .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
+  .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
+  .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
+  .action(async (options) => {
+    try {
+      await runTagFirstPagePicks(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to find tag first-page picks:'), (error as any).message);
+    }
+  });
+
+program
   .command('backfill-series-pos')
   .description('Recompute seriesPos for every cached book from its title and save the cache (fixes stale/incorrect values)')
   .action(async () => {
@@ -435,17 +494,24 @@ Examples:
 
 program
   .command('author-orphans')
-  .description('List authors that appear in the book cache but have no author-cache entry, ordered by their highest-rated book (by rating count). Read-only (no network). Add --inspect to also print a per-orphan browser URL and bucket each as multi-author / no author id / genuinely missing.')
+  .description('List authors that appear in the book cache but have no author-cache entry, ordered by their highest-rated book (by rating count). Read-only (no network) unless --scrape. Add --inspect to also print a per-orphan browser URL and bucket each as multi-author / no author id / genuinely missing. Add --scrape to ingest the "genuinely missing" orphans (those with an authorId) into the author cache; combine with --multiPage to crawl each author\'s full catalog.')
   .addHelpText('after', `
 Examples:
   $ npm run author-orphans
   $ npm run author-orphans -- --limit 20 --minRatings 100000
   $ npm run author-orphans -- --inspect --limit 30
-  $ ./authorOrphans.sh --inspect --limit 30`)
+  $ ./authorOrphans.sh --inspect --limit 30
+  # Ingest book-only authors into the author cache (first page of each catalog):
+  $ npm run author-orphans -- --scrape --limit 25
+  # Same, but crawl each author's full multi-page catalog:
+  $ npm run author-orphans -- --scrape --multiPage --limit 10
+  $ ./authorOrphans.sh --scrape --multiPage --limit 10`)
   .option('--limit <number>', 'Show top N orphans (default 50)')
   .option('--minRatings <number>', 'Only orphans whose top book has at least this many ratings')
   .option('--maxRatings <number>', 'Only orphans whose top book has at most this many ratings')
   .option('--inspect', 'Print a per-orphan browser URL and classify each (multi-author / no id / genuinely missing)')
+  .option('--scrape', 'Ingest book-only authors (genuinely missing, with an authorId) into the author cache. Network + polite rate limiting.')
+  .option('--multiPage', 'With --scrape, crawl each author\'s full catalog (all pages) instead of the first page only')
   .action(async (options) => {
     try {
       await runAuthorOrphans(options);
@@ -550,7 +616,7 @@ Examples:
   $ npm run author-list-diff -- --sortBy averageRating --minRatings 100000 --limit 100
   $ ./authorListDiff.sh`)
   .option('--limit <number>', 'List size / ranking cutoff (default 100)', '100')
-  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default averageRating)', 'averageRating')
+  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves, catalogPages (default averageRating)', 'averageRating')
   .option('--minRatings <number>', 'Only include authors with at least this many ratings (default 100000)', '100000')
   .option('--maxRatings <number>', 'Only include authors with at most this many ratings')
   .action(async (userVoteUrl, options) => {
@@ -635,12 +701,14 @@ Examples:
   $ npm run year-in-books -- 2026 --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export
   $ npm run year-in-books -- 2026 --requireReviews  # only books with review text
   $ npm run year-in-books -- 2026 --live  # current year only: also sync recent reads from the live review-list page (catch-up since last CSV export)
+  $ npm run year-in-books -- 2026 --userId 5464134  # someone else's profile: build the whole year from their public review-list page — no CSV needed
   $ ./year-in-books.sh 2026`)
   .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
   .option('--requireReviews', 'Only count books that also have review text (default: any book with a Date Read in the year)')
   .option('--live', 'Current year only: walk the live review-list page (shelf=read) until it catches up to your last CSV export, and add any books read since then. Needs the stored login cookie + user id.')
+  .option('--userId <id>', 'Build the year from someone else\'s review-list page (read_at=YYYY) instead of a CSV export. Uses the stored login cookie (Goodreads redirects anonymous review-list requests to a Sign-in page). Publisher data is unavailable from the review-list page.')
   .action(async (year, options) => {
     try {
       await runYearInBooks({ ...options, year, export: options.export || options.import });
@@ -1153,6 +1221,54 @@ program
       await runBulkTagDiscovery(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run bulk tag discovery:'), (error as any).message);
+    }
+  });
+
+program
+  .command('gap-genre-tag-discovery')
+  .description('Scrape tag shelves for genres not yet scraped into tag_books. Genres are themselves Goodreads shelves (/shelf/show/<genre>), so this harvests the highest-value missing tag sets ("most books to least books" — goal 4), skipping genres already present in tag_books by default.')
+  .option('--count <number>', 'Max gap genres to process this run (default: all gaps)')
+  .option('--start <number>', '1-based index into the gap list to resume from (default 1)', '1')
+  .option('--minTags <number>', 'Minimum tag count threshold (abbreviates a shelf once book count drops below)', '0')
+  .option('--shelfPages <range>', 'Pages of each genre shelf to scan (default 1-25; e.g. "1-10")', '1-25')
+  .option('--sortBy <field>', 'Order gaps: member (default, most books first) or alpha', 'member')
+  .option('--force', 'Also re-scrape genres already present in tag_books')
+  .option('--dryRun', 'List the gap genres that would be scraped, without scraping')
+  .action(async (options) => {
+    try {
+      await runGapGenreTagDiscovery(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run gap genre tag discovery:'), (error as any).message);
+    }
+  });
+
+program
+  .command('genre-tag-pairings')
+  .description('Rank the top similar non-genre tags for each genre by book-set Jaccard similarity (pure local computation over tag_books — comparisons that reveal which scraped shelfs pair with which genre shelf).')
+  .option('--genre <name>', 'Only score this single genre (e.g. --genre dark-fantasy)')
+  .option('--limit <number>', 'Top-K tags to show per genre (default 10)', '10')
+  .option('--minMember <number>', 'Only genres with member_count >= this (default 0)')
+  .option('--allTags', 'Include tags that are also genres (default: only non-genre tags)')
+  .action(async (options) => {
+    try {
+      computeGenrePairings(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run genre-tag pairings:'), (error as any).message);
+    }
+  });
+
+program
+  .command('tag-pairings')
+  .description('Inverse of genre-tag-pairings: for each NON-genre tag, rank the top similar GENRE-tags by book-set Jaccard similarity (pure local over tag_books).')
+  .option('--tag <name>', 'Only score this single non-genre tag (e.g. --tag ya)')
+  .option('--limit <number>', 'Top-K genres to show per tag (default 5)', '5')
+  .option('--minBooks <number>', 'Only consider non-genre tags with >= this many books (default 0)')
+  .option('--maxResults <number>', 'Max non-genre tags to report (default all)')
+  .action(async (options) => {
+    try {
+      computeTagPairings(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run tag pairings:'), (error as any).message);
     }
   });
 

@@ -11,6 +11,7 @@ import {
   formatAuthorRef,
   formatBookRef,
   authorStatsPresent,
+  planBuildProgress,
   SUGGESTION_MIN_RATINGS,
 } from './authorListDiff.js';
 import type { SelectedAuthor } from './authorTopStats.js';
@@ -112,6 +113,33 @@ describe('diffVotesVsRanking', () => {
   });
 });
 
+describe('planBuildProgress', () => {
+  const ranking = dedupeAuthorsBySlug([
+    author('Top A', '10.a', '4.80', '500000'),
+    author('Top B', '20.b', '4.70', '400000'),
+    author('Top C', '30.c', '4.60', '120000'),
+  ]);
+
+  it('partitions covered, missing, and off-target votes', () => {
+    const votes = [
+      vote(1, 'b1', 'Book One', 'Top A', '10.a'),
+      vote(2, 'b2', 'Book Two', 'Top B', '20.b'),
+      vote(99, 'b9', 'Book Nine', 'Stray', '99.stray'),
+    ];
+    const { covered, missing, offTarget } = planBuildProgress(votes, ranking, 3);
+    expect(covered.map(c => c.name)).toEqual(['Top A', 'Top B']);
+    expect(missing.map(m => m.name)).toEqual(['Top C']);
+    expect(offTarget.map(o => o.position)).toEqual([99]);
+  });
+
+  it('reports nothing off-target when votes match slugs with different casing', () => {
+    const votes = [vote(1, 'b1', 'Book One', 'Top A', '10.A')];
+    const { covered, missing, offTarget } = planBuildProgress(votes, ranking, 3);
+    expect(covered.map(c => c.name)).toEqual(['Top A']);
+    expect(offTarget).toHaveLength(0);
+  });
+});
+
 describe('pickTopBook', () => {
   function book(id: string, title: string, ratings: number, avgRating?: string, isBad?: boolean): CachedBook {
     return {
@@ -152,6 +180,12 @@ describe('pickTopBook', () => {
     expect(pickTopBook(tied, '42')?.id).toBe('y');
   });
 
+  it('prefers a book with a work id on a rating tie, over a higher-rated titleless one', () => {
+    const withWork = { ...book('w', 'Zeta', 100, '3.9'), workId: '900' };
+    const withoutWork = { ...book('n', 'Alpha', 100, '4.9') };
+    expect(pickTopBook([withoutWork, withWork], '42')?.id).toBe('w');
+  });
+
   it('returns undefined when the author has no books', () => {
     expect(pickTopBook([book('a', 'Mine', 10)], '43')).toBeUndefined();
   });
@@ -186,16 +220,16 @@ describe('pickSuggestionBook', () => {
     };
   }
 
-  it('picks the highest-rated book with at least the ratings threshold', () => {
+  it('picks the most-rated book with at least the ratings threshold', () => {
     const books = [book('a', 'Popular But Mid', 50000, '3.9'), book('b', 'Best Loved', 2000, '4.6'), book('c', 'Tiny Gem', 900, '4.9')];
-    expect(pickSuggestionBook(books, '42')).toEqual({ book: books[1], qualified: true });
+    expect(pickSuggestionBook(books, '42')).toEqual({ book: books[0], qualified: true });
   });
 
-  it('breaks average-rating ties on more ratings, then title', () => {
+  it('breaks rating-count ties on higher average rating, then title', () => {
     const tied = [book('z', 'Zulu', 5000, '4.5'), book('y', 'Yankee', 8000, '4.5')];
     expect(pickSuggestionBook(tied, '42').book?.id).toBe('y');
 
-    const same = [book('b', 'Beta', 5000, '4.5'), book('a', 'Alpha', 5000, '4.5')];
+    const same = [book('b', 'Beta', 5000, '4.0'), book('a', 'Alpha', 5000, '4.5')];
     expect(pickSuggestionBook(same, '42').book?.id).toBe('a');
   });
 
@@ -206,7 +240,7 @@ describe('pickSuggestionBook', () => {
 
   it('honors a custom threshold', () => {
     const books = [book('a', 'Mid', 1500, '4.1'), book('b', 'Star', 1200, '4.7')];
-    expect(pickSuggestionBook(books, '42', SUGGESTION_MIN_RATINGS).book?.id).toBe('b');
+    expect(pickSuggestionBook(books, '42', SUGGESTION_MIN_RATINGS).book?.id).toBe('a');
     expect(pickSuggestionBook(books, '42', 2000)).toEqual({ book: books[0], qualified: false });
   });
 
@@ -216,6 +250,14 @@ describe('pickSuggestionBook', () => {
       book('b', 'Real Pick', 1000, '4.0'),
     ];
     expect(pickSuggestionBook(books, '42')).toEqual({ book: books[1], qualified: true });
+  });
+
+  it('prefers a book with a work id on a rating tie, even against a higher-rated one without', () => {
+    const withWork = { ...book('w', 'Second Edition', 5000, '3.9'), workId: '900' };
+    const withoutWork = { ...book('n', 'First Edition', 5000, '4.9') };
+    const pick = pickSuggestionBook([withoutWork, withWork], '42');
+    expect(pick.book?.id).toBe('w');
+    expect(pick.qualified).toBe(true);
   });
 });
 
@@ -269,13 +311,13 @@ describe('computeReplacements', () => {
   const ranking = dedupeAuthorsBySlug([author('Staying', '10.staying', '4.80', '500000')]);
 
   it('suggests a swap when the voted book is not the best qualified one', () => {
-    const booksByAuthor = new Map([['10', [book('old', 'Voted Book', 5000, '3.8'), book('new', 'Better Book', 4000, '4.6')]]]);
+    const booksByAuthor = new Map([['10', [book('old', 'Voted Book', 5000, '3.8'), book('new', 'Better Book', 6000, '4.6')]]]);
     const votes = [vote(1, 'old', 'Voted Book', 'Staying', '10.staying')]; // slot matches live rank
     expect(computeReplacements(votes, ranking, 1, booksByAuthor)).toEqual([
       {
         position: 1,
-        votedBook: { id: 'old', title: 'Voted Book' },
-        suggestedBook: book('new', 'Better Book', 4000, '4.6'),
+        votedBook: { id: 'old', title: 'Voted Book', ratings: '5000' },
+        suggestedBook: book('new', 'Better Book', 6000, '4.6'),
         author: 'Staying',
         authorId: '10',
       },
@@ -295,7 +337,7 @@ describe('computeReplacements', () => {
   });
 
   it('skips votes that already have a pending move', () => {
-    const booksByAuthor = new Map([['10', [book('old', 'Voted', 5000, '3.8'), book('new', 'Better', 4000, '4.6')]]]);
+    const booksByAuthor = new Map([['10', [book('old', 'Voted', 5000, '3.8'), book('new', 'Better', 6000, '4.6')]]]);
     const votes = [vote(5, 'old', 'Voted', 'Staying', '10.staying')]; // sits at #5, live rank #1
     expect(computeMoves(votes, ranking, 1)).toHaveLength(1);
     expect(computeReplacements(votes, ranking, 1, booksByAuthor)).toEqual([]);

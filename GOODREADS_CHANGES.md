@@ -3,6 +3,29 @@
 Record whenever Goodreads changes a page in a way that forces a code change.
 Newest entry on top. Timestamp format: `YYYY/MM/DD HH:MM` (local time).
 
+## 2026/09/02 08:45 — Review-list rows can carry a month-only Date Read
+
+- **Page / URL:** `https://www.goodreads.com/review/list/<userId>?shelf=read&read_at=YYYY`
+- **What changed:** Some rows show a month-only date (e.g. `"Feb 2026"`, `"Aug 2026"`)
+  in `.date_read_value` instead of the usual `"Mon DD, YYYY"`, when a specific day isn't
+  known. The old `parsePageDate` regex dropped these (returned `''`), so those books were
+  silently missing from `year-in-books --userId` (e.g. "Quicksilver: No Surrender"; 12 of
+  180 books for user 1147761 were dropped).
+- **Fix:** `src/reviewListSync.ts` `parsePageDate` now also matches `Mon YYYY` and
+  normalizes it to `YYYY/MM/01`, so the book still lands in the right year.
+
+## 2026/09/01 20:05 — Anonymous review-list requests redirect to Sign-in
+
+- **Page / URL:** `https://www.goodreads.com/review/list/<userId>` (any user's profile,
+  including our own), with or without `shelf=read&read_at=YYYY`.
+- **What changed:** Goodreads now serves a "Sign in" interstitial page (HTTP 200, ~13-15k
+  bytes, no `tr.bookalike.review` rows) to unauthenticated requests for review lists.
+  This affects both the existing review-list sync and the new
+  `year-in-books --userId <id>` live source.
+- **Fix:** `src/reviewListSync.ts` `fetchLiveYearReads` sends the stored config cookie
+  (`loadConfig().cookie`); `year-in-books` passes it through. The cookie still works for
+  viewing *other* users' public review lists.
+
 ## 2026/08/30 23:20 — Author-catalog crawl halted + per-run author page-1 cache
 
 - **Page / URL:** `https://www.goodreads.com/author/list/<authorId>`

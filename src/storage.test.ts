@@ -1,6 +1,6 @@
 import fs from 'fs-extra';
 import path from 'path';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Redirect storage to an isolated temp database BEFORE db.js is imported.
 // vi.hoisted runs before static imports are evaluated.
@@ -26,7 +26,17 @@ import {
   upsertAuthor,
   upsertBook,
   upsertTagBooks,
-  loadTagBooks
+  loadTagBooks,
+  recordAuthorScrapeFailure,
+  clearAuthorScrapeFailure,
+  loadAuthorScrapeFailure,
+  loadScrapeFailures,
+  upsertGenres,
+  loadGenres,
+  countGenres,
+  replaceGenreTagXref,
+  loadGenreTagXref,
+  loadXrefTagMap
 } from './storage.js';
 import type { AuthorCacheEntry, CachedBook } from './storage.js';
 
@@ -109,6 +119,26 @@ describe('author rows', () => {
     upsertAuthor('Overwrite Author', makeEntry({ id: '333', slug: '333.Overwrite_Author', numRatings: '10' }));
     upsertAuthor('Overwrite Author', makeEntry({ id: '333', slug: '333.Overwrite_Author', numRatings: '20' }));
     expect(getAuthor('Overwrite Author')!.numRatings).toBe('20');
+  });
+
+  it('first_seen defaults to lastSeen on insert and is preserved on update', () => {
+    upsertAuthor('First Seen Author', makeEntry({
+      id: '555', slug: '555.First_Seen', lastSeen: '2026-08-01T00:00:00.000Z',
+    }));
+    expect(getAuthor('First Seen Author')!.firstSeen).toBe('2026-08-01T00:00:00.000Z');
+    upsertAuthor('First Seen Author', makeEntry({
+      id: '555', slug: '555.First_Seen', lastSeen: '2026-08-20T00:00:00.000Z',
+    }));
+    const seen = getAuthor('First Seen Author')!;
+    expect(seen.lastSeen).toBe('2026-08-20T00:00:00.000Z');
+    expect(seen.firstSeen).toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  it('explicit firstSeen is honored on first insert', () => {
+    upsertAuthor('Explicit First Seen', makeEntry({
+      id: '557', slug: '557.Explicit_First_Seen', lastSeen: '2026-08-20T00:00:00.000Z', firstSeen: '2026-07-01T00:00:00.000Z',
+    }));
+    expect(getAuthor('Explicit First Seen')!.firstSeen).toBe('2026-07-01T00:00:00.000Z');
   });
 
   it('getAuthor returns undefined for unknown names', () => {
@@ -353,5 +383,126 @@ describe('state and config', () => {
     expect(loadConfig()).toEqual({});
     getDb().prepare(`INSERT INTO config (key, value) VALUES ('cookie', 'test-cookie') ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run();
     expect(loadConfig()).toEqual({ cookie: 'test-cookie' });
+  });
+});
+
+describe('author scrape-failure tracking', () => {
+  it('records a failure, increments the count across calls, and loads it back', () => {
+    clearAuthorScrapeFailure('51912681');
+    expect(loadAuthorScrapeFailure('51912681')).toBeUndefined();
+
+    recordAuthorScrapeFailure('51912681', 'ERR_BAD_REQUEST');
+    recordAuthorScrapeFailure('51912681', 'ERR_BAD_REQUEST');
+
+    const fail = loadAuthorScrapeFailure('51912681');
+    expect(fail?.authorId).toBe('51912681');
+    expect(fail?.failCount).toBe(2);
+    expect(fail?.lastError).toBe('ERR_BAD_REQUEST');
+    expect(fail?.firstSeen).toBeTruthy();
+    expect(fail?.lastSeen).toBeTruthy();
+  });
+
+  it('clearAuthorScrapeFailure removes the record', () => {
+    recordAuthorScrapeFailure('55', 'boom');
+    expect(loadAuthorScrapeFailure('55')?.failCount).toBe(1);
+    clearAuthorScrapeFailure('55');
+    expect(loadAuthorScrapeFailure('55')).toBeUndefined();
+  });
+
+  it('loadScrapeFailures returns all tracked ids with their count', () => {
+    clearAuthorScrapeFailure('111');
+    clearAuthorScrapeFailure('222');
+    recordAuthorScrapeFailure('111', 'e1');
+    recordAuthorScrapeFailure('222', 'e2');
+    recordAuthorScrapeFailure('222', 'e2b');
+
+    const all = loadScrapeFailures();
+    const byId = Object.fromEntries(all.map(f => [f.authorId, f.failCount]));
+    expect(byId['111']).toBe(1);
+    expect(byId['222']).toBe(2);
+  });
+});
+
+describe('genre catalog tracking', () => {
+  const clear = () => getDb().prepare(`DELETE FROM genres WHERE name IN ('scifi', 'scifi-2')`).run();
+  beforeEach(() => clear());
+
+  it('upsertGenres inserts new rows with first_seen + last_updated', () => {
+    const { inserted, updated } = upsertGenres([{ name: 'scifi', memberCount: 123 }]);
+    expect(inserted).toBe(1);
+    expect(updated).toBe(0);
+
+    const g = loadGenres().find(x => x.name === 'scifi')!;
+    expect(g.memberCount).toBe(123);
+    expect(g.firstSeen).toBeTruthy();
+    expect(g.lastUpdated).toBeTruthy();
+    expect(g.lastUpdated).toBe(g.firstSeen); // first insert sets both to now
+  });
+
+  it('re-upsert refreshes last_updated and member_count but keeps first_seen', async () => {
+    upsertGenres([{ name: 'scifi', memberCount: 100 }]);
+    const before = loadGenres().find(x => x.name === 'scifi')!;
+    await new Promise(r => setTimeout(r, 5));
+
+    const { inserted, updated } = upsertGenres([{ name: 'scifi', memberCount: 999 }]);
+    expect(inserted).toBe(0);
+    expect(updated).toBe(1);
+
+    const after = loadGenres().find(x => x.name === 'scifi')!;
+    expect(after.memberCount).toBe(999);
+    expect(after.firstSeen).toBe(before.firstSeen);
+    expect(after.lastUpdated >= before.lastUpdated).toBe(true);
+  });
+
+  it('countGenres reflects the number of distinct genres', () => {
+    upsertGenres([{ name: 'scifi', memberCount: 1 }, { name: 'scifi-2', memberCount: 2 }]);
+    expect(countGenres()).toBe(2);
+  });
+});
+
+describe('genre_tag_xref', () => {
+  const clear = () => getDb().prepare(`DELETE FROM genre_tag_xref WHERE genre_name IN ('science-fiction', 'non-fiction')`).run();
+  beforeEach(() => clear());
+
+  it('replaceGenreTagXref inserts the mapping rows', () => {
+    const r = replaceGenreTagXref('science-fiction', [
+      { tagName: 'sf', kind: 'cognate' },
+      { tagName: 'sci-fi', kind: 'cognate' },
+      { tagName: 'science-fiction', kind: 'cognate' },
+    ]);
+    expect(r.added).toBe(3);
+
+    const rows = loadGenreTagXref().filter(x => x.genreName === 'science-fiction');
+    expect(rows.map(x => x.tagName).sort()).toEqual(['sci-fi', 'science-fiction', 'sf']);
+    expect(rows.every(x => x.kind === 'cognate')).toBe(true);
+  });
+
+  it('re-running with the same set is idempotent (no adds/removes)', () => {
+    replaceGenreTagXref('non-fiction', [{ tagName: 'nonfiction', kind: 'cognate' }]);
+    const r = replaceGenreTagXref('non-fiction', [{ tagName: 'nonfiction', kind: 'cognate' }]);
+    expect(r.added).toBe(0);
+    expect(r.removed).toBe(0);
+  });
+
+  it('removes a stale alias no longer in the set', () => {
+    replaceGenreTagXref('science-fiction', [
+      { tagName: 'sf', kind: 'cognate' },
+      { tagName: 'scifi', kind: 'cognate' },
+    ]);
+    const r = replaceGenreTagXref('science-fiction', [
+      { tagName: 'sf', kind: 'cognate' },
+    ]);
+    expect(r.removed).toBe(1);
+    expect(loadGenreTagXref().filter(x => x.genreName === 'science-fiction').map(x => x.tagName)).toEqual(['sf']);
+  });
+
+  it('loadXrefTagMap maps each tag to its canonical genre', () => {
+    replaceGenreTagXref('science-fiction', [
+      { tagName: 'sf', kind: 'cognate' },
+      { tagName: 'scifi', kind: 'cognate' },
+    ]);
+    const map = loadXrefTagMap();
+    expect(map.get('sf')).toBe('science-fiction');
+    expect(map.get('scifi')).toBe('science-fiction');
   });
 });

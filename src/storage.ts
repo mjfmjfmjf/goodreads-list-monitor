@@ -51,6 +51,7 @@ export interface AuthorCacheEntry {
   id: string;
   slug: string;
   lastSeen: string;
+  firstSeen?: string;
   averageRating?: string;
   numRatings?: string;
   numReviews?: string;
@@ -431,6 +432,7 @@ function rowToAuthor(row: any): AuthorCacheEntry & { name: string } {
     id: row.id,
     slug: row.slug,
     lastSeen: row.last_seen,
+    firstSeen: row.first_seen ?? undefined,
     averageRating: row.average_rating != null ? String(row.average_rating) : undefined,
     numRatings: row.num_ratings ? String(row.num_ratings) : undefined,
     numReviews: row.num_reviews ? String(row.num_reviews) : undefined,
@@ -470,6 +472,7 @@ function bindAuthor(name: string, e: AuthorCacheEntry) {
     id: e.id,
     slug: e.slug,
     lastSeen: e.lastSeen,
+    firstSeen: e.firstSeen ?? null,
     averageRating: e.averageRating ? parseFloat(e.averageRating) : null,
     numRatings: parseNum(e.numRatings),
     numReviews: parseNum(e.numReviews),
@@ -481,10 +484,11 @@ function bindAuthor(name: string, e: AuthorCacheEntry) {
 }
 
 const AUTHOR_UPSERT_SQL = `
-  INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, fail_count, last_error)
-  VALUES (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @failCount, @lastError)
+  INSERT INTO authors (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, fail_count, last_error)
+  VALUES (@name, @id, @slug, @lastSeen, COALESCE(@firstSeen, @lastSeen), @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @failCount, @lastError)
   ON CONFLICT(name) DO UPDATE SET
     id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
+    first_seen=COALESCE(authors.first_seen, excluded.first_seen),
     average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
     num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
     catalog_pages=COALESCE(excluded.catalog_pages, catalog_pages),
@@ -504,15 +508,170 @@ export function recordAuthorFailure(name: string, reason: string): void {
   upsertAuthor(name, existing);
 }
 
+// ── Author scrape-failure tracking ─────────────────────────────
+// Persists author ids that failed to scrape (e.g. orphan ids that 404), so a
+// later run can skip re-trying the same bad ids instead of hammering them.
+
+export interface AuthorScrapeFailure {
+  authorId: string;
+  failCount: number;
+  lastError?: string;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export function recordAuthorScrapeFailure(authorId: string, reason: string): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+  const row = db.prepare('SELECT fail_count FROM author_scrape_failures WHERE author_id = ?').get(authorId) as any;
+  const failCount = (row?.fail_count ?? 0) + 1;
+  db.prepare(`
+    INSERT INTO author_scrape_failures (author_id, fail_count, last_error, first_seen, last_seen)
+    VALUES (@id, @failCount, @error, @now, @now)
+    ON CONFLICT(author_id) DO UPDATE SET
+      fail_count = excluded.fail_count,
+      last_error = excluded.last_error,
+      last_seen = excluded.last_seen
+  `).run({ id: authorId, failCount, error: reason.slice(0, 200), now });
+}
+
+export function clearAuthorScrapeFailure(authorId: string): void {
+  getDb().prepare('DELETE FROM author_scrape_failures WHERE author_id = ?').run(authorId);
+}
+
+export function loadAuthorScrapeFailure(authorId: string): AuthorScrapeFailure | undefined {
+  const row = getDb().prepare('SELECT * FROM author_scrape_failures WHERE author_id = ?').get(authorId) as any;
+  if (!row) return undefined;
+  return {
+    authorId: row.author_id,
+    failCount: row.fail_count,
+    lastError: row.last_error ?? undefined,
+    firstSeen: row.first_seen,
+    lastSeen: row.last_seen,
+  };
+}
+
+export function loadScrapeFailures(): AuthorScrapeFailure[] {
+  const rows = getDb().prepare('SELECT * FROM author_scrape_failures').all() as any[];
+  return rows.map(row => ({
+    authorId: row.author_id,
+    failCount: row.fail_count,
+    lastError: row.last_error ?? undefined,
+    firstSeen: row.first_seen,
+    lastSeen: row.last_seen,
+  }));
+}
+
+// ── Genre catalog tracking ──────────────────────────────────────
+// Genres are scraped from /genres/list (name = the hyphenated slug, e.g.
+// "science-fiction"; member_count = the "# books" Goodreads reports). Re-runs
+// refresh last_updated + member_count and keep first_seen fixed, so a genre
+// that stops appearing or stops being populated is visible as a stale row.
+
+export interface GenreRow {
+  name: string;
+  memberCount: number;
+  firstSeen: string;
+  lastUpdated: string;
+}
+
+// Returns the change summary for the run: how many were new vs refreshed.
+export function upsertGenres(genres: Array<{ name: string; memberCount: number }>): { inserted: number; updated: number } {
+  const db = getDb();
+  const now = new Date().toISOString();
+  let inserted = 0;
+  let updated = 0;
+  const stmt = db.prepare(`
+    INSERT INTO genres (name, member_count, first_seen, last_updated)
+    VALUES (@name, @count, @now, @now)
+    ON CONFLICT(name) DO UPDATE SET
+      member_count = excluded.member_count,
+      last_updated = excluded.last_updated
+  `);
+  const tx = db.transaction(() => {
+    for (const g of genres) {
+      const exists = (db.prepare('SELECT 1 AS x FROM genres WHERE name = ?').get(g.name) as any) !== undefined;
+      stmt.run({ name: g.name, count: g.memberCount, now });
+      if (exists) updated++; else inserted++;
+    }
+  });
+  tx();
+  return { inserted, updated };
+}
+
+export function loadGenres(): GenreRow[] {
+  const rows = getDb().prepare('SELECT * FROM genres ORDER BY name').all() as any[];
+  return rows.map(row => ({
+    name: row.name,
+    memberCount: row.member_count ?? 0,
+    firstSeen: row.first_seen,
+    lastUpdated: row.last_updated,
+  }));
+}
+
+export function countGenres(): number {
+  return (getDb().prepare('SELECT COUNT(*) AS c FROM genres').get() as any).c as number;
+}
+
+export interface GenreTagXrefRow {
+  genreName: string;
+  tagName: string;
+  kind: string;
+}
+
+// Seed/replace the xref mappings for a single canonical genre. `rows` is the
+// full desired tag set (tag_name -> kind) for that genre; any existing xref
+// rows for the genre not listed here are removed, so re-running is idempotent.
+export function replaceGenreTagXref(genre: string, tags: Array<{ tagName: string; kind: string }>): { added: number; removed: number } {
+  const db = getDb();
+  let added = 0;
+  let removed = 0;
+  const tx = db.transaction(() => {
+    const existing = (db.prepare('SELECT tag_name FROM genre_tag_xref WHERE genre_name = ?').all(genre) as any[]).map((r: any) => r.tag_name);
+    const want = new Set(tags.map(t => t.tagName));
+    for (const e of existing) {
+      if (!want.has(e)) {
+        db.prepare('DELETE FROM genre_tag_xref WHERE genre_name = ? AND tag_name = ?').run(genre, e);
+        removed++;
+      }
+    }
+    const upsert = db.prepare(`
+      INSERT INTO genre_tag_xref (genre_name, tag_name, kind)
+      VALUES (@g, @t, @k)
+      ON CONFLICT(genre_name, tag_name) DO UPDATE SET kind = excluded.kind
+    `);
+    for (const t of tags) {
+      const existed = (db.prepare('SELECT 1 AS x FROM genre_tag_xref WHERE genre_name = ? AND tag_name = ?').get(genre, t.tagName) as any) !== undefined;
+      upsert.run({ g: genre, t: t.tagName, k: t.kind });
+      if (!existed) added++;
+    }
+  });
+  tx();
+  return { added, removed };
+}
+
+export function loadGenreTagXref(): GenreTagXrefRow[] {
+  const rows = getDb().prepare('SELECT * FROM genre_tag_xref').all() as any[];
+  return rows.map(row => ({ genreName: row.genre_name, tagName: row.tag_name, kind: row.kind }));
+}
+
+export function loadXrefTagMap(): Map<string, string> {
+  // tag_name -> canonical genre_name
+  const map = new Map<string, string>();
+  for (const r of loadGenreTagXref()) map.set(r.tagName, r.genreName);
+  return map;
+}
+
 export function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {
   const db = getDb();
   let updated = false;
 
   const upsert = db.prepare(`
-    INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves)
-    VALUES (@name, @id, @slug, @lastSeen, NULL, 0, 0, 0)
+    INSERT INTO authors (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves)
+    VALUES (@name, @id, @slug, @lastSeen, @lastSeen, NULL, 0, 0, 0)
     ON CONFLICT(name) DO UPDATE SET
-      id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen
+      id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
+      first_seen=COALESCE(authors.first_seen, excluded.first_seen)
   `);
   const findById = db.prepare('SELECT name FROM authors WHERE id = ?');
 

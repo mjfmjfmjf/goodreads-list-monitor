@@ -42,6 +42,25 @@ export function buildReviewListUrl(userId: string, page: number, perPage = PER_P
   return `https://www.goodreads.com/review/list/${userId}?shelf=read&per_page=${perPage}&sort=date_read&order=d&page=${page}`;
 }
 
+// Filtered server-side to reads dated (or started) in the given year.
+export function buildReadAtUrl(userId: string, year: string, page: number, perPage = PER_PAGE): string {
+  return `https://www.goodreads.com/review/list/${userId}?shelf=read&read_at=${year}&per_page=${perPage}&sort=date_read&order=d&page=${page}`;
+}
+
+// Keeps rows whose Date Read falls in `year` (read_at also matches Date Started,
+// so that quirk must be filtered here) and dedupes by book id.
+export function liveEntriesForYear(rows: ReviewListRow[], year: string, seenIds: Set<string>): LibraryEntry[] {
+  const prefix = `${year}/`;
+  const entries: LibraryEntry[] = [];
+  for (const row of rows) {
+    if (!row.dateRead.startsWith(prefix)) continue;
+    if (seenIds.has(row.bookId)) continue;
+    seenIds.add(row.bookId);
+    entries.push(rowToEntry(row));
+  }
+  return entries;
+}
+
 // "Scieszka, Jon" → "Jon Scieszka" (match the CSV's First-Last Author column).
 export function flipAuthorName(author: string): string {
   const m = author.trim().match(/^([^,]+),\s*(.+)$/);
@@ -49,12 +68,49 @@ export function flipAuthorName(author: string): string {
 }
 
 // "Aug 31, 2026" → "2026/08/31" (the CSV Date Read format).
+// Goodreads also renders a month-only date (e.g. "Feb 2026") when a specific
+// day isn't known; that becomes "2026/02/01" so it still lands in the right year.
 export function parsePageDate(value: string): string {
-  const m = value.trim().match(/^([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})$/);
-  if (!m) return '';
-  const mon = MONTHS[m[1].toLowerCase()];
-  if (!mon) return '';
-  return `${m[3]}/${mon}/${m[2].padStart(2, '0')}`;
+  const trimmed = value.trim();
+  const full = trimmed.match(/^([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})$/);
+  if (full) {
+    const mon = MONTHS[full[1].toLowerCase()];
+    if (!mon) return '';
+    return `${full[3]}/${mon}/${full[2].padStart(2, '0')}`;
+  }
+  const monthOnly = trimmed.match(/^([A-Za-z]+)\s+(\d{4})$/);
+  if (monthOnly) {
+    const mon = MONTHS[monthOnly[1].toLowerCase()];
+    if (!mon) return '';
+    return `${monthOnly[2]}/${mon}/01`;
+  }
+  return '';
+}
+
+// Goodreads renders the reviewer's rating as static stars (title text) when
+// viewing someone else's list, and as our own interactive stars widget when
+// viewing our own list.
+const STATIC_RATING_LABELS: Record<string, string> = {
+  'did not like it': '1',
+  'it was ok': '2',
+  'liked it': '3',
+  'really liked it': '4',
+  'it was amazing': '5'
+};
+
+export function parseRowRating($el: cheerio.Cheerio<any>): string {
+  const ownRating = $el.find('.field.rating .stars').attr('data-rating');
+  if (typeof ownRating === 'string' && ownRating.trim()) return ownRating.trim();
+
+  // Other-user view: staticStars with a title like "liked it", and/or
+  // .staticStar.p10 spans (filled star) — count them if no title.
+  const title = ($el.find('.field.rating .staticStars').attr('title') || '').toLowerCase().trim();
+  if (STATIC_RATING_LABELS[title]) return STATIC_RATING_LABELS[title];
+
+  const filled = $el.find('.field.rating .staticStar.p10').length;
+  if (filled > 0) return String(filled);
+
+  return '';
 }
 
 export function parseReviewListPage(html: string): ReviewListRow[] {
@@ -69,8 +125,10 @@ export function parseReviewListPage(html: string): ReviewListRow[] {
     const author = flipAuthorName($el.find('.field.author a').first().text().trim());
     const dateRead = parsePageDate($el.find('.field.date_read .date_read_value').first().text());
 
-    const hiddenReview = $el.find(`#freeText${reviewId}`).text().trim();
-    const visibleReview = $el.find(`#freeTextContainer${reviewId}`).text().trim();
+    // Real Goodreads ids are freeTextreview{id} / freeTextContainerreview{id};
+    // fall back to freeText{id} / freeTextContainer{id} for safety.
+    const hiddenReview = $el.find(`#freeTextreview${reviewId}, #freeText${reviewId}`).first().text().trim();
+    const visibleReview = $el.find(`#freeTextContainerreview${reviewId}, #freeTextContainer${reviewId}`).first().text().trim();
     const review = hiddenReview || visibleReview;
 
     const pages = ($el.find('.field.num_pages').text().match(/\d+/) || [''])[0];
@@ -78,11 +136,16 @@ export function parseReviewListPage(html: string): ReviewListRow[] {
     const pubText = $el.find('.field.date_pub').text().replace(/\s+/g, ' ').trim();
     const published = (pubText.match(/\b(19|20)\d{2}\b/) || [''])[0];
 
+    // When viewing someone else's list the .field.shelves cell holds the
+    // viewer's own interactive rating/shelf widget, not the reviewer's shelves
+    // — the real reviewer shelves are absent there, so skip that cell.
     const shelves: string[] = [];
-    $el.find('.field.shelves .shelfLink').each((_, link) => {
-      const name = $(link).text().trim();
-      if (name && name !== 'read') shelves.push(name);
-    });
+    if ($el.find('.field.shelves .stars').length === 0) {
+      $el.find('.field.shelves .shelfLink').each((_, link) => {
+        const name = $(link).text().trim();
+        if (name && name !== 'read') shelves.push(name);
+      });
+    }
 
     rows.push({
       reviewId,
@@ -92,7 +155,7 @@ export function parseReviewListPage(html: string): ReviewListRow[] {
       dateRead,
       hasReview: review.length > 0,
       review,
-      myRating: ($el.find('.field.rating .stars').attr('data-rating') || '').trim(),
+      myRating: parseRowRating($el),
       pages,
       published,
       bookshelves: shelves.join(', ')
@@ -222,4 +285,74 @@ export async function maybeSyncLiveReads(
 
   const result = await syncLiveReads(library, { userId, cookie: config.cookie, year });
   return result;
+}
+
+export interface LiveYearResult {
+  entries: LibraryEntry[];
+  pagesFetched: number;
+  stoppedReason: 'empty' | 'max-pages' | 'error';
+  error?: string;
+}
+
+// Human-readable summary of a failed request for the live-walk logs.
+export function describeFetchError(error: any, timeoutMs = TIMEOUT): string {
+  const status = error?.response?.status;
+  if (status) return `got HTTP ${status}`;
+  if (error?.code === 'ECONNABORTED') return `timed out (no response after ${Math.round(timeoutMs / 1000)}s)`;
+  if (error?.code === 'ERR_FR_TOO_MANY_REDIRECTS') return `hit a redirect loop (anti-bot throttle)`;
+  return `failed (${error?.code || error?.message || 'unknown error'})`;
+}
+
+// Builds a full year's read list straight from the review-list page
+// (read_at=YYYY filter), no CSV export needed — usable for other people's
+// public profiles. Goodreads redirects anonymous review-list requests to a
+// "Sign in" interstitial, so the stored login cookie is required.
+export async function fetchLiveYearReads(
+  userId: string,
+  year: string,
+  opts: { maxPages?: number; cookie?: string } = {}
+): Promise<LiveYearResult> {
+  const maxPages = opts.maxPages || MAX_PAGES;
+  const seenIds = new Set<string>();
+  const entries: LibraryEntry[] = [];
+
+  let pagesFetched = 0;
+  for (let page = 1; page <= maxPages; page++) {
+    pagesFetched = page;
+    let html: string;
+    console.log(chalk.gray(`   Fetching review-list page ${page} (read_at=${year}, user ${userId})...`));
+    try {
+      const headers: any = { 'User-Agent': USER_AGENT };
+      if (opts.cookie) headers['Cookie'] = opts.cookie;
+      const response = await fetchWithRetry(
+        buildReadAtUrl(userId, year, page),
+        { headers, timeout: TIMEOUT },
+        2,
+        (error, attempt, willRetry) => {
+          const detail = describeFetchError(error);
+          if (willRetry) {
+            console.log(chalk.yellow(`   ⚠️  Page ${page} ${detail} — retrying (attempt ${attempt + 1})...`));
+          } else {
+            console.log(chalk.red(`   ⛔ Page ${page} ${detail} — giving up.`));
+          }
+        }
+      );
+      html = String(response.data);
+    } catch (error: any) {
+      return { entries, pagesFetched, stoppedReason: 'error', error: error.message };
+    }
+
+    const rows = parseReviewListPage(html);
+    if (rows.length === 0) {
+      return { entries, pagesFetched, stoppedReason: 'empty' };
+    }
+
+    entries.push(...liveEntriesForYear(rows, year, seenIds));
+
+    // With read_at=YYYY, deeper pages are still within the year, so keep going
+    // until we get an empty page or hit the page cap.
+    if (page < maxPages) await delay();
+  }
+
+  return { entries, pagesFetched, stoppedReason: 'max-pages' };
 }

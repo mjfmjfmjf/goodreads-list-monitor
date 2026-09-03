@@ -22,6 +22,7 @@
     "scrape-best-of-year": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts scrape-best-of-year",
     "gen-best-of-year-config": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts gen-best-of-year-config",
     "field-coverage": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts field-coverage",
+    "genre-list": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts genre-list",
     "monitor-yearly-highly-rated-lists": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts monitor-yearly-highly-rated-lists",
     "monitor-top-rated-list": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts monitor-top-rated-list",
     "monitor-top-standalones": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts monitor-top-standalones",
@@ -33,6 +34,7 @@
     "title-char-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts title-char-histogram",
     "tag-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-histogram",
     "tag-coverage": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-coverage",
+    "tag-first-page-picks": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-first-page-picks",
     "title-first-word-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts title-first-word-histogram",
     "backfill-series-pos": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts backfill-series-pos",
     "backfill-pages": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts backfill-pages",
@@ -71,7 +73,10 @@
     "color-legend": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts color-legend",
     "test": "vitest run --config vitest.config.mjs",
     "test:coverage": "vitest run --config vitest.config.mjs --coverage",
-    "test:integration": "vitest run --config vitest.config.integration.mjs"
+    "test:integration": "vitest run --config vitest.config.integration.mjs",
+    "gap-genre-tag-discovery": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts gap-genre-tag-discovery",
+    "genre-tag-pairings": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts genre-tag-pairings",
+    "tag-pairings": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-pairings"
   },
   "keywords": [],
   "author": "",

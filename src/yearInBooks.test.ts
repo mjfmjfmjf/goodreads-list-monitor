@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { topStarLevel, parseRating, readingDays, renderStats } from './yearInBooks.js';
+import { topStarLevel, parseRating, readingDays, renderStats, computeTagCounts } from './yearInBooks.js';
 import { LibraryEntry } from './libraryExport.js';
 
 function entry(myRating: string, overrides: Partial<LibraryEntry> = {}): LibraryEntry {
@@ -96,5 +96,66 @@ describe('renderStats per-day', () => {
   it('omits per-day line without perDay context', () => {
     const lines = renderStats([entry('5', { pages: '300' })]);
     expect(lines.some(l => l.includes('Per day'))).toBe(false);
+  });
+});
+
+describe('computeTagCounts', () => {
+  const tagRow = (tagName: string, bookId: string) => ({
+    tagName,
+    bookId,
+    harvestedAt: '2026-01-01T00:00:00.000Z',
+  });
+
+  it('counts how many books share each tag, biggest first', () => {
+    const entries = [
+      entry('5', { id: '1' }),
+      entry('5', { id: '2' }),
+      entry('5', { id: '3' }),
+    ];
+    const rows = [
+      tagRow('fantasy', '1'),
+      tagRow('fantasy', '2'),
+      tagRow('science-fiction', '1'),
+      tagRow('mystery', '1'),
+    ];
+    const counts = computeTagCounts(entries, rows);
+    expect(counts).toEqual([
+      { tag: 'fantasy', count: 2, pct: 66.66666666666666 },
+      { tag: 'mystery', count: 1, pct: 33.33333333333333 },
+      { tag: 'science-fiction', count: 1, pct: 33.33333333333333 },
+    ]);
+  });
+
+  it('does not double-count a book that appears multiple times in one tag', () => {
+    const entries = [entry('5', { id: '1' })];
+    const rows = [
+      tagRow('fantasy', '1'),
+      tagRow('fantasy', '1'),
+      tagRow('fantasy', '1'),
+    ];
+    expect(computeTagCounts(entries, rows)).toEqual([{ tag: 'fantasy', count: 1, pct: 100 }]);
+  });
+
+  it('breaks ties alphabetically', () => {
+    const entries = [entry('5', { id: '1' })];
+    const rows = [tagRow('zebra', '1'), tagRow('alpha', '1')];
+    const counts = computeTagCounts(entries, rows);
+    expect(counts.map(c => c.tag)).toEqual(['alpha', 'zebra']);
+  });
+
+  it('ignores books (and tags) not present in the year entries', () => {
+    const entries = [entry('5', { id: '1' })];
+    const rows = [
+      tagRow('fantasy', '1'),
+      tagRow('fantasy', '99'),
+      tagRow('history', '99'),
+    ];
+    const counts = computeTagCounts(entries, rows);
+    expect(counts).toEqual([{ tag: 'fantasy', count: 1, pct: 100 }]);
+  });
+
+  it('returns an empty list when no year book is tagged', () => {
+    const entries = [entry('5', { id: '1' })];
+    expect(computeTagCounts(entries, [tagRow('fantasy', '99')])).toEqual([]);
   });
 });

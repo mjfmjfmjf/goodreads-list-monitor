@@ -115,6 +115,15 @@ describe('classifyOrphan / looksLikeNameConcat', () => {
     expect(looksLikeNameConcat('Georges BlondJohn SteinbeckJames A. MichenerHelen Fowler')).toBe(true);
   });
 
+  it('flags role-suffix run-ons like (Author)Name concatenations', () => {
+    expect(looksLikeNameConcat('Heinrich Harrer (Author)Dalai Lama XIV')).toBe(true);
+    expect(looksLikeNameConcat('Bell (Translator)Zhu')).toBe(true);
+  });
+
+  it('does not flag a role suffix on an otherwise single name', () => {
+    expect(looksLikeNameConcat('Richard Graves (Translator)')).toBe(false);
+  });
+
   it('does not flag a normal single name', () => {
     expect(looksLikeNameConcat('John Green')).toBe(false);
     expect(looksLikeNameConcat('Paolo Cognetti')).toBe(false);

@@ -15,10 +15,11 @@ import {
   parseYear,
   CharField
 } from './library.js';
-import { loadBookCache, BookCache } from './storage.js';
+import { loadBookCache, BookCache, loadTagBooks, TagBookRow } from './storage.js';
 import { getYear, formatBookLink } from './utils.js';
 import { groupFavoriteAuthors } from './favoriteAuthors.js';
-import { maybeSyncLiveReads } from './reviewListSync.js';
+import { maybeSyncLiveReads, fetchLiveYearReads } from './reviewListSync.js';
+import { loadConfig } from './storage.js';
 
 export interface YearInBooksOptions {
   year?: string;
@@ -26,6 +27,7 @@ export interface YearInBooksOptions {
   library?: string;
   requireReviews?: boolean;
   live?: boolean;
+  userId?: string;
 }
 
 const CHAR_FIELDS: CharField[] = ['title', 'authorLast', 'authorFirst'];
@@ -359,6 +361,56 @@ export function renderBookshelves(ctx: SectionContext): string[] {
   return lines;
 }
 
+export interface TagCountRow {
+  tag: string;
+  count: number;
+  pct: number;
+}
+
+// Tally how many of the year's books belong to each tag in the tag_books
+// table (the tagDiscovery/tagAudit shelves). Lookup is by book id. Returns
+// tags sorted by biggest count first, then alphabetically.
+export function computeTagCounts(entries: LibraryEntry[], tagRows: TagBookRow[]): TagCountRow[] {
+  const tagsByBook = new Map<string, Set<string>>();
+  for (const row of tagRows) {
+    let tags = tagsByBook.get(row.bookId);
+    if (!tags) {
+      tags = new Set();
+      tagsByBook.set(row.bookId, tags);
+    }
+    tags.add(row.tagName);
+  }
+
+  const counts = new Map<string, number>();
+  for (const entry of entries) {
+    const tags = tagsByBook.get(entry.id);
+    if (!tags) continue;
+    for (const tag of tags) counts.set(tag, (counts.get(tag) || 0) + 1);
+  }
+
+  const total = entries.length;
+  return Array.from(counts.entries())
+    .map(([tag, count]) => ({ tag, count, pct: total > 0 ? (count / total) * 100 : 0 }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+}
+
+export function renderTags(ctx: SectionContext): string[] {
+  const rows = loadTagBooks();
+  const tags = computeTagCounts(ctx.entries, rows);
+  const taggedBooks = new Set(rows.map(r => r.bookId));
+
+  if (tags.length === 0) return [chalk.gray('   (no tags found for books read this year)')];
+
+  const covered = ctx.entries.filter(e => taggedBooks.has(e.id)).length;
+  const lines: string[] = [];
+  lines.push(`   ${chalk.white(tags.length.toLocaleString())} distinct tags across ${chalk.white(covered.toLocaleString())} of ${chalk.white(ctx.entries.length.toLocaleString())} books`);
+  lines.push(chalk.gray(DIVIDER));
+  for (const { tag, count, pct } of tags) {
+    lines.push(`   ${chalk.white(tag)}: ${chalk.yellow(count.toLocaleString())} (${pct.toFixed(1)}%)`);
+  }
+  return lines;
+}
+
 export function renderPublishers(ctx: SectionContext): string[] {
   const entries = ctx.entries;
   const counts = new Map<string, number>();
@@ -398,7 +450,8 @@ export const SECTIONS: Section[] = [
   { key: 'distribution', title: '📊 Distribution', render: renderDistribution },
   { key: 'five-star', title: (ctx) => topRatedTitle(ctx.entries), render: renderTopRated },
   { key: 'favorite-authors', title: '🏆 Favorite authors', render: renderFavoriteAuthors },
-  { key: 'bookshelves', title: '🏷️ Bookshelves', render: renderBookshelves },
+  { key: 'tags', title: '🏷️ Tags', render: renderTags },
+  { key: 'bookshelves', title: '📚 Bookshelves', render: renderBookshelves },
   { key: 'publishers', title: '🏢 Publishers', render: renderPublishers }
 ];
 
@@ -415,34 +468,63 @@ export async function renderSections(sections: Section[], ctx: SectionContext): 
 }
 
 export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<void> {
-  const library = await getLibrary(options);
-
   let year = options.year || '';
-  if (!year) {
-    year = mostRecentReviewYear(library);
-    console.log(chalk.gray(`   (No --year given; using most recent review year: ${year})`));
+  let library: LibraryExport;
+  let liveSourceNote = '';
+
+  if (options.userId) {
+    if (!year) {
+      year = String(new Date().getFullYear());
+      console.log(chalk.gray(`   (No --year given; using current year: ${year})`));
+    }
+    const config = loadConfig();
+    const result = await fetchLiveYearReads(options.userId, year, { cookie: config.cookie });
+    if (result.stoppedReason === 'error' || result.entries.length === 0) {
+      console.error(chalk.red.bold(
+        result.error
+          ? `Error: Live review-list fetch failed for user ${options.userId}: ${result.error}`
+          : `No books read in ${year} for user ${options.userId} (or the review list requires the login cookie / is private).`
+      ));
+      process.exit(1);
+    }
+    library = {
+      sourcePath: `live review-list (user ${options.userId}, read_at ${year})`,
+      totalEntries: result.entries.length,
+      reviewedEntries: result.entries.filter(e => e.hasReview).length,
+      reviewedById: new Set(result.entries.map(e => e.id)),
+      reviewedByTitleAuthor: new Set(),
+      entries: result.entries
+    };
+    liveSourceNote = chalk.gray(`   Source: live review-list page for user ${chalk.white(options.userId)} (${result.pagesFetched} page${result.pagesFetched === 1 ? '' : 's'} walked) — no CSV export needed. Publisher data is not on the review-list page, so the Publishers section will be empty.`);
+  } else {
+    library = await getLibrary(options);
+
+    if (!year) {
+      year = mostRecentReviewYear(library);
+      console.log(chalk.gray(`   (No --year given; using most recent review year: ${year})`));
+    }
+
+    if (options.live && year === String(new Date().getFullYear())) {
+      const sync = await maybeSyncLiveReads(library, year);
+      if (sync && sync.entries.length > 0) {
+        const known = new Set(library.entries.map(e => e.id));
+        const merged = sync.entries.filter(e => !known.has(e.id));
+        if (merged.length > 0) {
+          const liveNote = chalk.green(
+            `\n   ✳️  Live review-list sync: +${merged.length} book${merged.length === 1 ? '' : 's'} read since your last CSV export (${sync.pagesFetched} page${sync.pagesFetched === 1 ? '' : 's'} walked; ${sync.stoppedReason === 'caught-up' ? 'caught up' : sync.stoppedReason}).`
+          );
+          library.entries.push(...merged);
+          console.log(liveNote);
+        }
+      } else if (sync) {
+        console.log(chalk.gray(`   (Live review-list sync: no new reads since your last CSV export — ${sync.pagesFetched} page${sync.pagesFetched === 1 ? '' : 's'} walked.)`));
+      }
+    }
   }
+
   if (!/^\d{4}$/.test(year)) {
     console.error(chalk.red.bold(`Error: Invalid year "${year}". Use --year <YYYY> or a cached library with Date Read values.`));
     process.exit(1);
-  }
-
-  let liveNote = '';
-  if (options.live && year === String(new Date().getFullYear())) {
-    const sync = await maybeSyncLiveReads(library, year);
-    if (sync && sync.entries.length > 0) {
-      const known = new Set(library.entries.map(e => e.id));
-      const merged = sync.entries.filter(e => !known.has(e.id));
-      if (merged.length > 0) {
-        liveNote = chalk.green(
-          `\n   ✳️  Live review-list sync: +${merged.length} book${merged.length === 1 ? '' : 's'} read since your last CSV export (${sync.pagesFetched} page${sync.pagesFetched === 1 ? '' : 's'} walked; ${sync.stoppedReason === 'caught-up' ? 'caught up' : sync.stoppedReason}).`
-        );
-        library.entries.push(...merged);
-        console.log(liveNote);
-      }
-    } else if (sync) {
-      console.log(chalk.gray(`   (Live review-list sync: no new reads since your last CSV export — ${sync.pagesFetched} page${sync.pagesFetched === 1 ? '' : 's'} walked.)`));
-    }
   }
 
   const requireReviews = options.requireReviews === true;
@@ -466,6 +548,7 @@ export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<
   ];
 
   console.log(chalk.cyan.bold(`\n📚 Year in Books — ${year}`));
+  if (liveSourceNote) console.log(liveSourceNote);
   console.log(chalk.gray(requireReviews
     ? `   ${readEntries.length.toLocaleString()} books read (${reviewedEntries.length.toLocaleString()} reviewed) — read shelf + review text required, year from Date Read`
     : `   ${readEntries.length.toLocaleString()} books read (${reviewedEntries.length.toLocaleString()} reviewed) — read shelf, year from Date Read`));

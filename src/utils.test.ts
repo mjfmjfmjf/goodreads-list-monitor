@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, formatBookLink } from './utils.js';
+import { formatDuration, formatBookLink, isConnectivityError } from './utils.js';
+
+describe('isConnectivityError', () => {
+  it('recognizes DNS / connection-level error codes', () => {
+    expect(isConnectivityError({ code: 'ENOTFOUND' })).toBe(true);
+    expect(isConnectivityError({ code: 'ECONNRESET' })).toBe(true);
+    expect(isConnectivityError({ code: 'EAI_AGAIN' })).toBe(true);
+    expect(isConnectivityError({ code: 'ETIMEDOUT' })).toBe(true);
+  });
+
+  it('rejects throttling / HTTP-level errors and empty values', () => {
+    expect(isConnectivityError({ message: 'Request failed with status code 403' })).toBe(false);
+    expect(isConnectivityError({ response: { status: 429 } })).toBe(false);
+    expect(isConnectivityError(undefined)).toBe(false);
+    expect(isConnectivityError(new Error('boom'))).toBe(false);
+  });
+});
 
 describe('formatDuration', () => {
   it('formats sub-minute runs', () => {

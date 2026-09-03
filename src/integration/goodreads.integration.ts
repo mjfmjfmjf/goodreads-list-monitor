@@ -4,7 +4,8 @@ import path from 'path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { delay } from '../utils.js';
 import { loadLibraryExportCache } from '../libraryExport.js';
-import { loadAuthorCache } from '../storage.js';
+import { loadAuthorCache, loadConfig, loadState } from '../storage.js';
+import { fetchLiveYearReads } from '../reviewListSync.js';
 import {
   scrapeTopShelves,
   scrapeShelfBooks,
@@ -29,8 +30,6 @@ process.env.GOODREADS_STRICT_THROTTLE = '1';
 
 const SHELF_TAG = 'science-fiction';
 const LIST_PAGE_SIZE = 100;
-
-import { loadState } from '../storage.js';
 
 interface ListInfo {
   id: string;
@@ -179,6 +178,42 @@ describe('list pagination (from monitored lists in state.json)', () => {
     expect(books.length).toBeGreaterThan(0);
     expect(books.length).toBeLessThanOrEqual(LIST_PAGE_SIZE);
     console.log(`   ${twoPageList.title} with maxPages=1 -> fetched ${books.length}`);
+  });
+});
+
+describe('live review-list year read (no CSV needed)', () => {
+  it('walks read_at=<current year> pages for the stored user and maps rows to entries', { timeout: 90_000 }, async () => {
+    const config = loadConfig();
+    expect(config.cookie, 'config.json needs a Goodreads login cookie').toBeTruthy();
+    const state = loadState();
+    const userId = state.userId;
+    expect(userId, 'state.json needs userId').toBeTruthy();
+
+    const year = String(new Date().getFullYear());
+    const result = await fetchLiveYearReads(userId, year, { maxPages: 2, cookie: config.cookie });
+
+    if (result.stoppedReason === 'error') throw new Error(`Live review-list fetch error: ${result.error}`);
+    expect(result.entries.length).toBeGreaterThan(0);
+    for (const entry of result.entries.slice(0, 5)) {
+      expect(entry.dateRead.startsWith(`${year}/`)).toBe(true);
+      expect(entry.shelf).toBe('read');
+      expect(entry.title).toBeTruthy();
+    }
+    console.log(`   read_at=${year}: ${result.entries.length} reads so far this year from ${result.pagesFetched} page(s)`);
+  });
+
+  it('parses real freeTextreview ids, so reviews and star ratings are read', { timeout: 90_000 }, async () => {
+    const config = loadConfig();
+    const state = loadState();
+    const year = String(new Date().getFullYear());
+    const result = await fetchLiveYearReads(state.userId, year, { maxPages: 2, cookie: config.cookie });
+
+    if (result.stoppedReason === 'error') throw new Error(`Live review-list fetch error: ${result.error}`);
+    const reviewed = result.entries.filter(e => e.hasReview).length;
+    const rated = result.entries.filter(e => parseFloat(e.myRating) > 0).length;
+    console.log(`   parsed: ${reviewed}/${result.entries.length} with reviews, ${rated}/${result.entries.length} rated`);
+    expect(reviewed).toBeGreaterThan(0);
+    expect(rated).toBeGreaterThan(0);
   });
 });
 

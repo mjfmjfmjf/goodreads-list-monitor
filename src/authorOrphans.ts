@@ -1,6 +1,13 @@
 import chalk from 'chalk';
-import { loadBookCache, loadAuthorCache } from './storage.js';
-import type { CachedBook, AuthorCache } from './storage.js';
+import { loadBookCache, loadAuthorCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, AUTHOR_FAIL_LIMIT, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures } from './storage.js';
+import type { CachedBook, AuthorCache, AuthorCacheEntry } from './storage.js';
+import { scrapeAuthorStats } from './scraper.js';
+import { delay } from './utils.js';
+
+// After this many consecutive failures, stop re-trying an orphan author id on
+// future runs (persisted in the author_scrape_failures table).
+const AUTHOR_SCRAPE_FAIL_LIMIT = 3;
+
 
 export interface AuthorOrphan {
   rawName: string;
@@ -19,6 +26,8 @@ export interface AuthorOrphansOptions {
   minRatings?: string;
   maxRatings?: string;
   inspect?: boolean;
+  scrape?: boolean;
+  multiPage?: boolean;
 }
 
 const parseRatings = (b?: CachedBook): number =>
@@ -36,16 +45,22 @@ export function normalizeAuthorName(raw: string): string {
 }
 
 // Heuristic for "this looks like multiple authors concatenated into one string"
-// without a separator — e.g. "Jane AustenAnthea Bell", "John  GreenJeff Woodman".
-// We do NOT try to split it; we only flag it so the user can review those
-// separately from genuinely-missing single authors.
+// without a separator — e.g. "Jane AustenAnthea Bell", "John  GreenJeff Woodman",
+// or a role-suffixed run-on like "Heinrich Harrer (Author)Dalai Lama XIV" (the
+// ")" followed by a capitalized name is a second author's start). We do NOT try
+// to split it; we only flag it so the user can review those separately from
+// genuinely-missing single authors.
 export function looksLikeNameConcat(s: string): boolean {
   const n = normalizeAuthorName(s);
   // Detect a run-together boundary: a letter/digit immediately followed by an
   // uppercase letter where a space/separator normally belongs. E.g.
   // "AustenAnthea" -> nA, "SteinbeckJames" -> kJ, "MichenerHelen" -> rH.
   // A normal "First Last" has a space there, so it won't match.
-  return /[a-zÀ-ÿ0-9'][A-ZÀ-Þ]/.test(n);
+  if (/[a-zÀ-ÿ0-9'][A-ZÀ-Þ]/.test(n)) return true;
+  // A role-suffix run-on: a closing paren/bracket immediately followed by a
+  // capitalized name, e.g. "(Author)Dalai", "(Translator)Zhu".
+  if (/[)\]][A-ZÀ-Þ]/.test(n)) return true;
+  return false;
 }
 
 // Classify an orphan into one of three actionable buckets.
@@ -151,6 +166,123 @@ export function annotateKnownSlugs(
   }
 }
 
+// Fallback display name from an author slug (e.g. "39739220" -> "39739220").
+const fallbackNameFromSlug = (slug: string): string =>
+  slug.split('.').slice(1).join('.').replace(/_/g, ' ');
+
+// Ingest book-only authors ("missing" orphans, which have an authorId) into the
+// author cache, running scrapeAuthorStats which — with multiPage — crawls the
+// author's whole catalog. Stays polite: a small delay between authors and
+// per-page delays already inside scrapeAuthorStats.
+export async function runOrphanScrape(
+  orphans: AuthorOrphan[],
+  options: AuthorOrphansOptions
+): Promise<void> {
+  // Only genuinely-missing orphans (with an authorId) are scrapeable; skip the
+  // multi-author / no-id buckets. Then apply the same min/max ratings + sort +
+  // limit so --limit targets the top-N scrapeable orphans, not just whatever
+  // falls inside the all-orphans top slice.
+  const candidates = applyOrphanFilters(
+    orphans.filter(o => o.category === 'missing' && !!o.authorId),
+    options
+  );
+
+  // Drop ids that have already failed enough times (persisted across runs) so
+  // we never hammer the same bad author ids: hit the fail limit -> stale 404.
+  const toScrape: AuthorOrphan[] = [];
+  let skipped = 0;
+  for (const o of candidates) {
+    const fail = loadAuthorScrapeFailure(o.authorId!);
+    if (fail && (fail.failCount ?? 0) >= AUTHOR_SCRAPE_FAIL_LIMIT) {
+      skipped++;
+      continue;
+    }
+    toScrape.push(o);
+  }
+
+  console.log(chalk.gray(`   Scraping ${toScrape.length} book-only authors with an authorId (${options.multiPage ? 'crawling ALL catalog pages' : 'first page only'})` + (skipped > 0 ? `; skipping ${skipped} previously-failed ids` : '') + '.'));
+  if (toScrape.length === 0) {
+    console.log(chalk.yellow('   Nothing to scrape.'));
+    return;
+  }
+
+  let failed = 0;
+  let noStats = 0;
+  let updated = 0;
+  let totalInserted = 0;
+  let totalEnriched = 0;
+  const start = Date.now();
+  const crawlAllPages = !!options.multiPage;
+
+  for (let i = 0; i < toScrape.length; i++) {
+    const orphan = toScrape[i];
+    const authorId = orphan.authorId!;
+    try {
+      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${orphan.normalizedName} (${authorId})`));
+      let failReason = 'no_stats_line';
+      const result = await scrapeAuthorStats(authorId, (r) => { failReason = r; }, crawlAllPages);
+      if (!result) {
+        noStats++;
+        console.log(chalk.yellow(`   ⚠️ No stats line found for ${orphan.normalizedName}`));
+        recordAuthorScrapeFailure(authorId, failReason);
+        recordAuthorFailure(fallbackNameFromSlug(authorId), failReason);
+        continue;
+      }
+      // Success — clear any prior failure record for this id.
+      clearAuthorScrapeFailure(authorId);
+      const stats = result.stats;
+      totalInserted += result.booksInserted;
+      totalEnriched += result.booksEnriched;
+
+      const slug = stats.slug || authorId;
+      const id = slug.split('.')[0];
+      const name = stats.name || fallbackNameFromSlug(slug);
+
+      const found = findAuthorBySlug(slug);
+      const key = found?.key ?? name;
+      const entry: AuthorCacheEntry = found?.entry ?? {
+        id,
+        slug,
+        lastSeen: new Date().toISOString(),
+        firstSeen: new Date().toISOString(),
+      };
+      entry.failCount = 0;
+      entry.lastError = undefined;
+      const prevCatalogPages = entry.catalogPages;
+      if (result.catalogPages) entry.catalogPages = result.catalogPages;
+      const changed = updateAuthorStats(entry, stats) || entry.catalogPages !== prevCatalogPages;
+      const fmt = (cur?: string, was?: string) =>
+        `${cur ?? 'n/a'}${was !== undefined && was !== cur ? chalk.gray(` (prev ${was})`) : ''}`;
+
+      console.log(
+        `   ${chalk.green.bold(fmt(stats.numRatings, entry.numRatings))} ratings · ` +
+        `${chalk.yellow(fmt(stats.numReviews, entry.numReviews))} reviews · ` +
+        `${chalk.cyan(fmt(stats.numShelves, entry.numShelves))} shelves · ` +
+        `Avg ${fmt(stats.averageRating, entry.averageRating)}` +
+        (result.catalogPages ? chalk.gray(` · ~${result.catalogPages} catalog page${result.catalogPages === 1 ? '' : 's'}`) : '')
+      );
+      if (changed) {
+        updated++;
+        upsertAuthor(key, entry);
+        console.log(chalk.green.bold(`   ✅ Author cache updated (${key})`));
+      } else {
+        entry.lastSeen = new Date().toISOString();
+        upsertAuthor(key, entry);
+        console.log(chalk.gray(`   (No change - values already current; refreshed last_seen)`));
+      }
+    } catch (error) {
+      failed++;
+      recordAuthorScrapeFailure(authorId, String((error as any)?.message || error));
+      console.error(chalk.red.bold(`   ❌ Failed for ${orphan.normalizedName} (${authorId}): ${(error as any).message}`));
+    }
+    await delay(2000, 5000);
+  }
+
+  const duration = ((Date.now() - start) / 1000).toFixed(1);
+  console.log(chalk.cyan.bold(`\n🏁 Done. Processed ${toScrape.length} book-only authors, updated ${updated} (${noStats} no stats line, ${failed} failures, ${duration}s)` + (skipped > 0 ? `; skipped ${skipped} previously-failed ids` : '') + '.'));
+  console.log(chalk.cyan.bold(`📚 Books harvested: +${totalInserted.toLocaleString()} new · ${totalEnriched.toLocaleString()} enriched`));
+}
+
 const formatNum = (n: number): string => n.toLocaleString('en-US');
 
 const CATEGORY_LABEL: Record<OrphanCategory, string> = {
@@ -171,6 +303,16 @@ export async function runAuthorOrphans(options: AuthorOrphansOptions = {}): Prom
 
   const books = Object.values(bookCache);
   const { orphans } = selectAuthorOrphans(books, authorCache);
+  const scrape = !!options.scrape;
+
+  if (scrape) {
+    console.log(chalk.cyan.bold('\n🕷️  Scraping book-only authors into the author cache'));
+    console.log(chalk.gray(`   Distinct orphan authors (normalized): ${formatNum(orphans.length)}`));
+    console.log(chalk.gray(''));
+    await runOrphanScrape(orphans, options);
+    return;
+  }
+
   const filtered = applyOrphanFilters(orphans, options);
   annotateKnownSlugs(filtered, authorCache);
   const inspect = !!options.inspect;
@@ -195,6 +337,14 @@ export async function runAuthorOrphans(options: AuthorOrphansOptions = {}): Prom
       `${CATEGORY_COLOR['no-id'](CATEGORY_LABEL['no-id'])} ${formatNum(bucketCounts['no-id'])}, ` +
       `${CATEGORY_COLOR.missing(CATEGORY_LABEL.missing)} ${formatNum(bucketCounts.missing)}]`;
   console.log(chalk.gray(`   Buckets: ${bump}`));
+
+  // Surface orphan ids that have failed to scrape enough times that a --scrape
+  // run would skip them — so the user knows why those "missing" authors won't
+  // be auto-fetched.
+  const skipFailures = loadScrapeFailures().filter(f => (f.failCount ?? 0) >= AUTHOR_SCRAPE_FAIL_LIMIT);
+  if (skipFailures.length > 0) {
+    console.log(chalk.gray(`   Skipped on --scrape: ${chalk.yellow(formatNum(skipFailures.length))} author id${skipFailures.length === 1 ? '' : 's'} previously failed to scrape (≥${AUTHOR_SCRAPE_FAIL_LIMIT} strikes) — use a higher --limit or inspect manually`));
+  }
   console.log(chalk.gray(`   Legend: ${CATEGORY_COLOR.concat('multi-author (concat string)')} · ${CATEGORY_COLOR['no-id']('no author id')} · ${CATEGORY_COLOR.missing('genuinely missing, scrapeable')}`));
 
   const RANK = 'RANK'.length;

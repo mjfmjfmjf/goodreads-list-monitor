@@ -133,6 +133,7 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
 
   const rows = await loadTagBooks();
   const db = getDb();
+  const genreSet = new Set<string>((db.prepare('SELECT name FROM genres').all() as any[]).map(r => r.name));
   const ids = [...new Set(rows.map(r => r.bookId))];
   const ratingsByBook = new Map<string, number>();
   for (const id of ids) {
@@ -153,15 +154,15 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
     return;
   }
 
-  const maxLen = Math.max(...chosen.map(r => r.tag.length), 'tag'.length);
+  const maxLen = Math.max(...chosen.map(r => r.tag.length + (genreSet.has(r.tag) ? 8 : 0)), 'tag'.length);
   const RANK_W = 3;
   const TAG_W = 14;
   const BOOKS_W = 10;
+  const ADDED_W = 9;
   const MISS_W = 10;
   const RATING_W = 12;
   const PCT_W = 8;
   const COL_SP = 3;
-
   const padTag = (t: string) => t.padEnd(maxLen, ' ');
   const padCell = (s: string, w: number) => s.padStart(w, ' ');
   const formatCompact = (n?: number): string => {
@@ -176,12 +177,13 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
     padTag('tag'),
     padCell('books unique', BOOKS_W),
     padCell('avg ratings', RATING_W),
+    padCell('added', ADDED_W),
     padCell('combined', TAG_W),
     padCell('missing', MISS_W),
     padCell('coverage %', PCT_W),
   ].join(' '.repeat(COL_SP));
   const header = `   ${headerCells}`;
-  const divCols = 7;
+  const divCols = 8;
   const divider = chalk.gray('   ' + '-'.repeat(headerCells.length + COL_SP * (divCols - 1)));
   console.log(chalk.gray(header));
   console.log(divider);
@@ -216,9 +218,10 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
 
     const line = [
       padCell(rank, RANK_W),
-      padTag(row.tag),
+      padTag(genreSet.has(row.tag) ? `${row.tag} (genre)` : row.tag),
       padCell(tagBooks, BOOKS_W),
       avgRatings,
+      padCell(row.newBooks.toLocaleString(), ADDED_W),
       padCell(combined, TAG_W),
       padCell(missing, MISS_W),
       pctColored,
@@ -229,6 +232,7 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
   console.log(divider);
   console.log(chalk.gray('   books unique = number of books on that tag that appear in exactly one tag (tag-histogram "single")'));
   console.log(chalk.gray('   avg ratings = average rating count across the tag\'s books (tie-breaker when tags add the same new books)'));
+  console.log(chalk.gray('   added = new (uncovered) books this tag adds beyond all prior tags'));
   console.log(chalk.gray('   combined = unique books covered after including this tag · coverage % = combined / all unique books'));
   console.log(chalk.gray('   missing = unique books still not covered after this tag (total unique books − combined)'));
   console.log();

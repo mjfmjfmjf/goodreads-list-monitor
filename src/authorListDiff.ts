@@ -115,7 +115,8 @@ export function diffVotesVsRanking(votes: UserVoteEntry[], ranked: RankedAuthor[
 }
 
 // Pick the cached book with the most ratings for an author id. Bad books are
-// excluded; ties break on higher average rating, then title.
+// excluded; ties break on presence of a work id (prefer one we can resolve to a
+// work over an anomalous grouping), then higher average rating, then title.
 export function pickTopBook(books: CachedBook[], authorId: string): CachedBook | undefined {
   const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
 
@@ -123,16 +124,20 @@ export function pickTopBook(books: CachedBook[], authorId: string): CachedBook |
   for (const book of books) {
     if (!book.authorId || book.authorId !== authorId) continue;
     if (book.isBad) continue;
-    if (
-      !best ||
-      parseNum(book.ratings) > parseNum(best.ratings) ||
-      (parseNum(book.ratings) === parseNum(best.ratings) &&
-        (parseFloat(book.avgRating || '0') > parseFloat(best.avgRating || '0') ||
-          (parseFloat(book.avgRating || '0') === parseFloat(best.avgRating || '0') &&
-            book.title.localeCompare(best.title) < 0)))
-    ) {
+    if (!best) {
       best = book;
+      continue;
     }
+    const a = book;
+    const b = best;
+    const better =
+      parseNum(a.ratings) > parseNum(b.ratings) ||
+      (parseNum(a.ratings) === parseNum(b.ratings) &&
+        (workScore(a) > workScore(b) ||
+          (workScore(a) === workScore(b) &&
+            (parseFloat(a.avgRating || '0') > parseFloat(b.avgRating || '0') ||
+              parseFloat(a.avgRating || '0') === parseFloat(b.avgRating || '0') && a.title.localeCompare(b.title) < 0))));
+    if (better) best = book;
   }
   return best;
 }
@@ -143,6 +148,9 @@ export const SUGGESTION_MIN_RATINGS = 1000;
 
 const bookRatingsCount = (b: CachedBook): number => parseInt((b.ratings || '').replace(/,/g, ''), 10) || 0;
 const bookAvgScore = (b: CachedBook): number => parseFloat(b.avgRating || '0') || 0;
+// A book with a work id maps cleanly to a Goodreads work; one without is an
+// anomalous grouping and should lose tie-breaks against a well-formed edition.
+const workScore = (b: CachedBook): number => (b.workId ? 1 : 0);
 
 export interface BookSuggestion {
   book?: CachedBook;
@@ -151,16 +159,18 @@ export interface BookSuggestion {
   qualified: boolean;
 }
 
-// Highest average rating among books with >= minRatings (ties: more ratings,
-// then title). If no book clears the bar, fall back to the most-rated one and
-// flag it so callers can mark the suggestion as low-confidence.
+// Most-rated book among those with >= minRatings (ties: prefer one with a work
+// id, then higher average rating, then title). If no book clears the bar, fall
+// back to the most-rated one and flag it so callers can mark the suggestion as
+// low-confidence.
 export function pickSuggestionBook(books: CachedBook[], authorId: string, minRatings: number = SUGGESTION_MIN_RATINGS): BookSuggestion {
   const eligible = books.filter(b => b.authorId === authorId && !b.isBad);
   const strong = eligible.filter(b => bookRatingsCount(b) >= minRatings);
   if (strong.length > 0) {
     const best = [...strong].sort((a, b) =>
-      bookAvgScore(b) - bookAvgScore(a) ||
       bookRatingsCount(b) - bookRatingsCount(a) ||
+      workScore(b) - workScore(a) ||
+      bookAvgScore(b) - bookAvgScore(a) ||
       a.title.localeCompare(b.title)
     )[0];
     return { book: best, qualified: true };
@@ -220,7 +230,7 @@ export function computeMoves(votes: UserVoteEntry[], ranked: RankedAuthor[], lim
 
 export interface ReplacementInstruction {
   position: number;
-  votedBook: { id: string; title: string };
+  votedBook: { id: string; title: string; ratings?: string };
   suggestedBook: CachedBook;
   author: string;
   authorId?: string;
@@ -248,9 +258,10 @@ export function computeReplacements(
     const suggestion = pickSuggestionBook(booksByAuthor.get(authorId) || [], authorId, minRatings);
     if (!suggestion.qualified || !suggestion.book) continue;
     if (suggestion.book.id === vote.bookId) continue;
+    const votedCached = (booksByAuthor.get(authorId) || []).find(b => b.id === String(vote.bookId));
     replacements.push({
       position: vote.position,
-      votedBook: { id: vote.bookId, title: vote.title },
+      votedBook: { id: vote.bookId, title: vote.title, ratings: votedCached?.ratings },
       suggestedBook: suggestion.book,
       author: vote.author,
       authorId: vote.authorId,
@@ -267,6 +278,81 @@ export function authorStatsPresent(entry: AuthorCacheEntry | undefined): boolean
 }
 
 const formatRatings = (n: number): string => n.toLocaleString('en-US');
+
+// Partition the target top-N and the current votes for a list still being
+// built: which top-N authors are already voted (covered), which are not yet
+// (missing), and which votes fall outside the top-N entirely (off-target).
+export function planBuildProgress(
+  votes: UserVoteEntry[],
+  ranked: RankedAuthor[],
+  limit: number
+): { covered: RankedAuthor[]; missing: RankedAuthor[]; offTarget: UserVoteEntry[] } {
+  const top = ranked.slice(0, limit);
+  const topIds = new Set<string>();
+  for (const r of top) topIds.add(String(r.id || r.slug?.split('.')[0] || ''));
+
+  const votedOn = new Set<string>();
+  for (const v of votes) {
+    for (const k of [v.authorId, v.authorSlug].map(authorKey).filter(Boolean)) {
+      if (/^\d+$/.test(k)) votedOn.add(k);
+    }
+  }
+
+  const covered: RankedAuthor[] = [];
+  const missing: RankedAuthor[] = [];
+  for (const r of top) {
+    (votedOn.has(String(r.id || r.slug?.split('.')[0] || '')) ? covered : missing).push(r);
+  }
+
+  const offTarget = votes.filter(v => {
+    const id = [v.authorId, v.authorSlug].map(authorKey).filter(Boolean).find(k => /^\d+$/.test(k)) as string | undefined;
+    return id !== undefined && !topIds.has(String(id));
+  });
+
+  return { covered, missing, offTarget };
+}
+
+// While a list is still being built (fewer votes than the target size, no
+// established membership), the full membership check is noise: every partially
+// placed vote looks "out of position" and everything unvoted looks "missing".
+// Instead show progress toward the target top-N and hand back paste-ready
+// additions for the authors still to vote.
+async function runBuildMode(opts: {
+  votes: UserVoteEntry[];
+  ranked: RankedAuthor[];
+  limit: number;
+  sortBy: string;
+  minRatings: string;
+  booksByAuthor: Map<string, CachedBook[]>;
+}): Promise<void> {
+  const { votes, ranked, limit, sortBy, minRatings, booksByAuthor } = opts;
+  const { covered, missing, offTarget } = planBuildProgress(votes, ranked, limit);
+
+  console.log(chalk.cyan.bold(`\n📊 List build progress`));
+  console.log(chalk.gray(`   Goal: top ${limit} authors by ${sortBy} (min ratings ${minRatings})`));
+  console.log(chalk.gray(`   Voted so far: ${votes.length} of ${limit} → ${covered.length} of the top ${limit} covered, ${missing.length} still to add`));
+  console.log(chalk.gray('------------------------------------------'));
+
+  if (offTarget.length > 0) {
+    console.log(chalk.yellow.bold(`\n⚠️  Voted author(s) not in the top ${limit}:`));
+    for (const v of offTarget) {
+      console.log(`   #${String(v.position).padStart(3)}: "${v.title}" by ${v.author}${v.authorId ? ` [ID: ${v.authorId}]` : ''}`);
+    }
+    console.log(chalk.gray('   These votes fall outside the target ranking; consider replacing them.'));
+  }
+
+  console.log(chalk.green.bold(`\n✨ Still to add (${missing.length}):`));
+  for (const r of missing) {
+    const id = r.id || r.slug?.split('.')[0] || '';
+    const { book } = id ? pickSuggestionBook(booksByAuthor.get(id) || [], id) : { book: undefined };
+    const bookText = book ? ` ${formatBookRef(book)}` : '';
+    const workText = book ? (book.workId ? chalk.gray(` (work ${book.workId})`) : chalk.gray(' (no work id)')) : '';
+    console.log(`   add ${formatAuthorRef({ name: r.name, id: r.id })}${bookText}${workText} - to #${r.rank}`);
+  }
+
+  console.log(chalk.gray('\n   Note: your existing votes were left in place for now; the top-N are what to work toward.'));
+  console.log('');
+}
 
 async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?: string }): Promise<void> {
   const userVoteRef = options.userVoteUrl || '10400982';
@@ -312,6 +398,13 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
     const list = booksByAuthor.get(book.authorId);
     if (list) list.push(book);
     else booksByAuthor.set(book.authorId, [book]);
+  }
+
+  // From-scratch list: until the votes page has (roughly) a full list, treat
+  // this as a build target, not an established list to audit.
+  if (votes.length < limit) {
+    await runBuildMode({ votes, ranked, limit, sortBy, minRatings, booksByAuthor });
+    return;
   }
 
   const freedPositions = verifiable.map(d => d.position);
@@ -379,7 +472,8 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
       console.log(
         `   add at position ${position}: ${author.name}` +
         chalk.gray(` (#${author.rank}, ${author.id ? `[ID: ${author.id}]` : ''})`) +
-        `\n         → ${suggestionText(book, qualified)}`
+        `\n         → ${suggestionText(book, qualified)}` +
+        (book ? chalk.gray(book.workId ? ` (work ${book.workId})` : ' (no work id)') : '')
       );
     }
   }
@@ -387,10 +481,13 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
   if (replacements.length > 0) {
     console.log(chalk.yellow.bold(`\n🔄 Better book available for voted authors (${replacements.length}):`));
     for (const r of replacements) {
+      const work = r.suggestedBook.workId ? `, work ${r.suggestedBook.workId}` : ', no work id';
+      const votedRatings = r.votedBook.ratings ? formatRatings(bookRatingsCount({ ratings: r.votedBook.ratings } as CachedBook)) : '?';
       console.log(
         `   at #${r.position}: ${r.author}` +
-        chalk.gray(` — swap "${r.votedBook.title}" [ID: ${r.votedBook.id}]`) +
-        `\n         → ${suggestionText(r.suggestedBook, true)}`
+        `\n         voted: "${r.votedBook.title}" [${r.votedBook.id}] — ${votedRatings} ratings` +
+        `\n         → "${r.suggestedBook.title}" [${r.suggestedBook.id}${work}] — ${formatRatings(bookRatingsCount(r.suggestedBook))} ratings` +
+        chalk.gray(` (avg ${r.suggestedBook.avgRating || '?'})`)
       );
     }
   }
@@ -410,7 +507,7 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
     const position = suggestedPositions[i];
     const { book } = author.id ? pickSuggestionBook(booksByAuthor.get(author.id) || [], author.id) : { book: undefined };
     if (book) {
-      console.log(`   add ${formatAuthorRef(author)} ${formatBookRef(book)} - to #${position}`);
+      console.log(`   add ${formatAuthorRef(author)} ${formatBookRef(book)} - to #${position}` + chalk.gray(book.workId ? ` (work ${book.workId})` : ' (no work id)'));
     } else {
       console.log(`   add ${formatAuthorRef(author)} - to #${position}`);
     }
@@ -421,7 +518,8 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
   for (const r of replacements) {
     console.log(
       `   replace ${formatAuthorRef({ name: r.author, id: r.authorId })} ${formatBookRef({ title: r.votedBook.title, id: r.votedBook.id })}` +
-      ` with ${formatBookRef(r.suggestedBook)}`
+      ` with ${formatBookRef(r.suggestedBook)}` +
+      chalk.gray(r.suggestedBook.workId ? ` (work ${r.suggestedBook.workId})` : ' (no work id)')
     );
   }
 

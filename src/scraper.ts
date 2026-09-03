@@ -4,7 +4,7 @@ import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
-import { delay, fetchWithRetry, formatDate } from './utils.js';
+import { delay, fetchWithRetry, formatDate, isConnectivityError } from './utils.js';
 import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks } from './storage.js';
 import type { AuthorStats } from './storage.js';
 
@@ -169,6 +169,66 @@ export async function scrapeTopShelves(page = 1): Promise<string[]> {
   return tags;
 }
 
+export interface GenreListEntry {
+  name: string;      // Goodreads genre shelf name, e.g. "science-fiction"
+  memberCount: number; // the "# books" reported next to the genre
+}
+
+// Scrape a single page of the genre-shelf list (/genres/list?page=N).
+// Each genre is a `div.shelfStat` with a `a[href^="/genres/"]` name link and a
+// `div.smallText.greyText` "N books" count.
+export function parseGenreListPage($: cheerio.CheerioAPI, html: string): { genres: GenreListEntry[]; hasNext: boolean } {
+  const genres: GenreListEntry[] = [];
+  $('div.shelfStat').each((_, element) => {
+    const link = $(element).find('a[href^="/genres/"]').first();
+    const href = link.attr('href') || '';
+    const rawName = (href.split('/genres/')[1] || '').split('?')[0].trim();
+    if (!rawName) return;
+    // Names can be percent-encoded (e.g. "%E6%BC%AB%E7%94%BB" = 漫画); decode.
+    let name = decodeURIComponent(rawName);
+    try { name = decodeURIComponent(name); } catch { /* already plain */ }
+    const countEl = $(element).find('div.smallText.greyText').first().text();
+    const countMatch = countEl.match(/([\d,]+)\s*books/);
+    const memberCount = countMatch ? parseInt(countMatch[1].replace(/,/g, ''), 10) || 0 : 0;
+    genres.push({ name, memberCount });
+  });
+  const nextBtn = $('.next_page');
+  const hasNext = nextBtn.length > 0 && !nextBtn.hasClass('disabled');
+  return { genres, hasNext };
+}
+
+// Crawl the full /genres/list catalog (about 17 pages, ~100 genres/page).
+export async function scrapeGenreList(maxPages = 30): Promise<GenreListEntry[]> {
+  const configData = await loadConfig();
+  const all: GenreListEntry[] = [];
+  const seen = new Set<string>();
+
+  for (let page = 1; page <= maxPages; page++) {
+    const url = `https://www.goodreads.com/genres/list?page=${page}`;
+    const headers: any = { 'User-Agent': USER_AGENT };
+    if (configData.cookie) headers['Cookie'] = configData.cookie;
+
+    const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
+    const $ = cheerio.load(response.data);
+    const { genres, hasNext } = parseGenreListPage($, String(response.data));
+
+    let added = 0;
+    for (const g of genres) {
+      if (!seen.has(g.name)) {
+        seen.add(g.name);
+        all.push(g);
+        added++;
+      }
+    }
+    console.log(chalk.gray(`   Page ${page}: ${genres.length} genres (${added} new, ${all.length} cumulative).`));
+
+    if (!hasNext) break;
+    await delay(2000, 6000);
+  }
+
+  return all;
+}
+
 export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, startPage = 1): Promise<BookMetadata[]> {
   const configData = await loadConfig();
   let allBooks: BookMetadata[] = [];
@@ -292,6 +352,13 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
       }
     } catch (error) {
       console.error(chalk.red.bold(`   ❌ Error fetching shelf page ${page}:`), (error as any).message);
+      // A connectivity failure (DNS, connection refused/reset, timeouts) means
+      // the whole network path is down — continuing would only produce more
+      // empty shelves. Propagate so the harness can abort instead of treating
+      // this as a legitimately empty shelf.
+      if (isConnectivityError(error)) {
+        throw error;
+      }
       break;
     }
   }

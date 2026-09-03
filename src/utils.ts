@@ -9,9 +9,37 @@ export async function delay(min = 100, max = 2000): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Connectivity-level failures (DNS lookup, connection refused/reset, network
+// unreachable, timeouts) mean the host is not reachable at all — unlike a
+// throttled HTTP response, every subsequent request is doomed too, so callers
+// should abort rather than burn time pretending a shelf is empty.
+const CONNECTIVITY_ERROR_CODES = new Set([
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'ETIMEDOUT',
+  'ECONNABORTED',
+  'EINVAL', // sometimes surfaced by the getaddrinfo layer
+]);
+
+export function isConnectivityError(err: any): boolean {
+  return Boolean(err && typeof err.code === 'string' && CONNECTIVITY_ERROR_CODES.has(err.code));
+}
+
 const STRICT_THROTTLE_MODE = (): boolean => process.env.GOODREADS_STRICT_THROTTLE === '1';
 
-export async function fetchWithRetry(url: string, config: AxiosRequestConfig, retries = 5): Promise<AxiosResponse> {
+// Optional sink for per-attempt failure info when a fetch falls back to retries.
+export type FetchRetryCallback = (error: any, attempt: number, willRetry: boolean) => void;
+
+export async function fetchWithRetry(
+  url: string,
+  config: AxiosRequestConfig,
+  retries = 5,
+  onFailure?: FetchRetryCallback
+): Promise<AxiosResponse> {
   let lastError: any;
   
   for (let i = 0; i < retries; i++) {
@@ -68,6 +96,7 @@ export async function fetchWithRetry(url: string, config: AxiosRequestConfig, re
       // Retry on 5xx (Server Errors), 202 interstitials, or timeouts
       const isRetryable = (status >= 500 && status <= 599) || error.code === 'ECONNABORTED' || error.isRetryable;
       
+      onFailure?.(error, i, isRetryable && i < retries - 1);
       if (isRetryable) {
         continue;
       }

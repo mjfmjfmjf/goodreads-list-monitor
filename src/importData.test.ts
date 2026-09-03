@@ -32,13 +32,13 @@ describe('decodeBookRow', () => {
   });
 });
 
-const authorHeaders = ['name', 'id', 'slug', 'last_seen', 'average_rating', 'num_ratings', 'num_reviews', 'num_shelves', 'catalog_pages', 'last_error'];
+const authorHeaders = ['name', 'id', 'slug', 'last_seen', 'first_seen', 'average_rating', 'num_ratings', 'num_reviews', 'num_shelves', 'catalog_pages', 'last_error'];
 
 describe('decodeAuthorRow', () => {
   it('decodes typed author fields', () => {
-    const row = decodeAuthorRow(authorHeaders, ['George Orwell', '3706', '3706.George_Orwell', '2026-08-28', '4.13', '11249733', '365731', '19310363', '46', null]);
+    const row = decodeAuthorRow(authorHeaders, ['George Orwell', '3706', '3706.George_Orwell', '2026-08-28', '2026-08-01', '4.13', '11249733', '365731', '19310363', '46', null]);
     expect(row).toEqual({
-      name: 'George Orwell', id: '3706', slug: '3706.George_Orwell', lastSeen: '2026-08-28',
+      name: 'George Orwell', id: '3706', slug: '3706.George_Orwell', lastSeen: '2026-08-28', firstSeen: '2026-08-01',
       averageRating: 4.13, numRatings: 11249733, numReviews: 365731, numShelves: 19310363,
       catalogPages: 46, lastError: undefined,
     });
@@ -103,11 +103,19 @@ describe('mergeBook', () => {
 
 describe('mergeAuthor', () => {
   it('fills blank fields, keeps good ones, updates last_seen', () => {
-    const existing = { id: '9', slug: '9.known', lastSeen: '2026-01-01', numRatings: 100, averageRating: 4.0 };
+    const existing = { id: '9', slug: '9.known', lastSeen: '2026-01-01', firstSeen: '2026-01-01', numRatings: 100, averageRating: 4.0 };
     const inc = { name: 'n', id: '9', slug: '9.known', lastSeen: '2026-08-28', numRatings: 50, averageRating: 3.0 };
     const out = mergeAuthor(existing, inc);
     expect(out.numRatings).toBe(100);
     expect(out.averageRating).toBe(4.0);
     expect(out.lastSeen).toBe('2026-08-28');
+    expect(out.firstSeen).toBe('2026-01-01');
+  });
+
+  it('takes first_seen from incoming when existing has none', () => {
+    const existing = { id: '9', slug: '9.known', lastSeen: '2026-01-01' };
+    const inc = { name: 'n', id: '9', slug: '9.known', lastSeen: '2026-08-28', firstSeen: '2026-08-01' };
+    const out = mergeAuthor(existing, inc);
+    expect(out.firstSeen).toBe('2026-08-01');
   });
 });

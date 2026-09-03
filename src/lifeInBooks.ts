@@ -12,6 +12,7 @@ import {
   renderFavoriteAuthors,
   renderPublishers,
   renderBookshelves,
+  renderTags,
   parseRating,
   readingDays
 } from './yearInBooks.js';
@@ -91,8 +92,9 @@ const SECTIONS: Section[] = [
   { key: 'year-by-year', title: '📅 Year by year', render: renderYearByYear },
   { key: 'distribution', title: '📊 Distribution', render: renderDistribution },
   { key: 'favorite-authors', title: '🏆 Favorite authors', render: renderFavoriteAuthors },
+  { key: 'tags', title: '🏷️ Tags', render: renderTags },
   { key: 'publishers', title: '🏢 Publishers', render: renderPublishers },
-  { key: 'bookshelves', title: '🏷️ Bookshelves', render: renderBookshelves }
+  { key: 'bookshelves', title: '📚 Bookshelves', render: renderBookshelves }
 ];
 
 export async function runLifeInBooks(options: LifeInBooksOptions = {}): Promise<void> {

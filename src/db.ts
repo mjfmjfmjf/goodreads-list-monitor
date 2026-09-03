@@ -95,7 +95,8 @@ function initSchema(db: Database.Database) {
       average_rating REAL,
       num_ratings INTEGER DEFAULT 0,
       num_reviews INTEGER DEFAULT 0,
-      num_shelves INTEGER DEFAULT 0
+      num_shelves INTEGER DEFAULT 0,
+      first_seen TEXT
     );
 
     CREATE TABLE IF NOT EXISTS config (
@@ -122,6 +123,29 @@ function initSchema(db: Database.Database) {
       PRIMARY KEY (tag_name, book_id)
     );
 
+    CREATE TABLE IF NOT EXISTS author_scrape_failures (
+      author_id TEXT PRIMARY KEY,
+      fail_count INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT,
+      first_seen TEXT NOT NULL,
+      last_seen TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS genres (
+      name TEXT PRIMARY KEY,
+      member_count INTEGER DEFAULT 0,
+      first_seen TEXT NOT NULL,
+      last_updated TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS genre_tag_xref (
+      genre_name TEXT NOT NULL,
+      tag_name   TEXT NOT NULL,
+      kind       TEXT NOT NULL DEFAULT 'exact',
+      PRIMARY KEY (genre_name, tag_name)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_genre_tag_xref_tag ON genre_tag_xref(tag_name);
     CREATE INDEX IF NOT EXISTS idx_tag_books_position ON tag_books(tag_name, position);
     CREATE INDEX IF NOT EXISTS idx_books_ratings ON books(ratings DESC);
     CREATE INDEX IF NOT EXISTS idx_books_author ON books(author);
@@ -143,6 +167,16 @@ function initSchema(db: Database.Database) {
   }
   if (!authorCols.some((c: any) => c.name === 'last_error')) {
     db.exec('ALTER TABLE authors ADD COLUMN last_error TEXT');
+  }
+  if (!authorCols.some((c: any) => c.name === 'first_seen')) {
+    // Capture when we first saw an author. Existing rows predate the column,
+    // so backfill them with the day before their last_seen as a close proxy.
+    db.exec('ALTER TABLE authors ADD COLUMN first_seen TEXT');
+    db.exec(`
+      UPDATE authors
+      SET first_seen = strftime('%Y-%m-%dT%H:%M:%S', datetime(last_seen, '-1 day'))
+      WHERE first_seen IS NULL AND last_seen IS NOT NULL
+    `);
   }
   const tagCols = db.prepare('PRAGMA table_info(tag_books)').all() as any[];
   if (!tagCols.some((c: any) => c.name === 'shelved')) {

@@ -167,6 +167,7 @@ export interface AuthorImportRow {
   id?: string;
   slug?: string;
   lastSeen?: string;
+  firstSeen?: string;
   averageRating?: number | null;
   numRatings?: number | null;
   numReviews?: number | null;
@@ -187,6 +188,7 @@ export function decodeAuthorRow(headers: string[], fields: (string | null)[]): A
     id: get('id') ?? undefined,
     slug: get('slug') ?? undefined,
     lastSeen: get('last_seen') ?? undefined,
+    firstSeen: get('first_seen') ?? undefined,
     averageRating: toFloat(get('average_rating')),
     numRatings: toInt(get('num_ratings')),
     numReviews: toInt(get('num_reviews')),
@@ -360,11 +362,12 @@ export async function importAuthorsFile(
 ): Promise<{ total: number }> {
   const upsertStmt = db.prepare(`
     INSERT INTO authors
-      (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, last_error)
+      (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, last_error)
     VALUES
-      (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @lastError)
+      (@name, @id, @slug, @lastSeen, @firstSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @lastError)
     ON CONFLICT(name) DO UPDATE SET
       id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
+      first_seen=COALESCE(authors.first_seen, excluded.first_seen),
       average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
       num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
       catalog_pages=excluded.catalog_pages, last_error=excluded.last_error
@@ -384,6 +387,7 @@ export async function importAuthorsFile(
       id: mergedAuthor.id,
       slug: mergedAuthor.slug,
       lastSeen: mergedAuthor.lastSeen,
+      firstSeen: mergedAuthor.firstSeen ?? null,
       averageRating: mergedAuthor.averageRating,
       numRatings: mergedAuthor.numRatings,
       numReviews: mergedAuthor.numReviews,
@@ -407,7 +411,7 @@ export async function importAuthorsFile(
 
 // Fill-blank-only for authors (status fields like last_seen are always updated).
 export interface ExistingAuthor {
-  id?: string; slug?: string; lastSeen?: string; averageRating?: number | null; numRatings?: number | null;
+  id?: string; slug?: string; lastSeen?: string; firstSeen?: string; averageRating?: number | null; numRatings?: number | null;
   numReviews?: number | null; numShelves?: number | null; catalogPages?: number | null; lastError?: string;
 }
 export function mergeAuthor(existing: ExistingAuthor | undefined, inc: AuthorImportRow): ExistingAuthor {
@@ -417,6 +421,7 @@ export function mergeAuthor(existing: ExistingAuthor | undefined, inc: AuthorImp
     id: pickStr(existing?.id, inc.id, ''),
     slug: pickStr(existing?.slug, inc.slug, ''),
     lastSeen: !isBlank(inc.lastSeen) ? inc.lastSeen! : (existing?.lastSeen ?? ''),
+    firstSeen: !isBlank(inc.firstSeen) ? inc.firstSeen! : (existing?.firstSeen ?? undefined),
     averageRating: pickNum2(existing?.averageRating ?? null, inc.averageRating ?? null),
     numRatings: pickNum2(existing?.numRatings ?? null, inc.numRatings ?? null),
     numReviews: pickNum2(existing?.numReviews ?? null, inc.numReviews ?? null),
