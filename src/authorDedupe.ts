@@ -178,7 +178,7 @@ export async function runAuthorDedupe(options: { apply?: boolean }): Promise<voi
   }
 
   const backup = await import('./db.js');
-  backup.backupDb();
+  await backup.backupDb();
   const result = applyConsolidation(db);
   console.log(chalk.green(`\n   ✅ Merged ${result.mergedRows} rows, renamed ${result.renamed}.`));
   if (result.skippedCollisions.length > 0) {

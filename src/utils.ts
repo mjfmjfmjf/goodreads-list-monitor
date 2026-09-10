@@ -9,6 +9,16 @@ export async function delay(min = 100, max = 2000): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Parse an env-driven delay range ("min,max" / "min:max" / "min-max"), falling
+// back to the given defaults for the two supported pacing profiles.
+export function parseDelayRange(env: string | undefined, defMin: number, defMax: number): [number, number] {
+  if (env) {
+    const m = env.match(/^\s*(\d+)\s*[,:-]\s*(\d+)\s*$/);
+    if (m) return [parseInt(m[1], 10), parseInt(m[2], 10)];
+  }
+  return [defMin, defMax];
+}
+
 // Connectivity-level failures (DNS lookup, connection refused/reset, network
 // unreachable, timeouts) mean the host is not reachable at all — unlike a
 // throttled HTTP response, every subsequent request is doomed too, so callers

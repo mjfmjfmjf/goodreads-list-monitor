@@ -31,6 +31,12 @@
 - The add-book live lookup is rate-limited to AT MOST once per minute (state in
   `os.tmpdir()/goodreads-addbook-lookup.json`). Do not bypass this.
 - Never loop an unbounded retry on 202/403 — back off and report.
+- Author-page crawls are ANONYMOUS by default: `scrapeAuthorStats` sends no
+  cookie unless `--withCookie` or `GR_USE_COOKIE=1`. Anonymous pacing is faster
+  than cookie-authenticated: author gap ~1.0–1.8s (vs 2.0–5.0s), page gap
+  ~0.9–1.7s (vs 2.0–4.0s). Override with `GR_AUTHOR_DELAY_MS="min,max"` and
+  `GR_PAGE_DELAY_MS="min,max"`. Author pages are public; we verified cookie and
+  anonymous returns are byte-identical.
 - The integration suite runs in STRICT throttle mode
   (`GOODREADS_STRICT_THROTTLE=1`): on a 202/403/429 it gives up immediately
   (no retry/backoff) so a throttled run fails fast with a clear message.

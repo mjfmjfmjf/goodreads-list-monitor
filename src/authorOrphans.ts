@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { loadBookCache, loadAuthorCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, AUTHOR_FAIL_LIMIT, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures, AUTHOR_SCRAPE_FAIL_LIMIT } from './storage.js';
 import type { CachedBook, AuthorCache, AuthorCacheEntry } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
-import { delay } from './utils.js';
+import { delay, parseDelayRange } from './utils.js';
 
 
 export interface AuthorOrphan {
@@ -24,6 +24,8 @@ export interface AuthorOrphansOptions {
   inspect?: boolean;
   scrape?: boolean;
   multiPage?: boolean;
+  includeConcat?: boolean;
+  withCookie?: boolean;
 }
 
 const parseRatings = (b?: CachedBook): number =>
@@ -166,6 +168,23 @@ export function annotateKnownSlugs(
 const fallbackNameFromSlug = (slug: string): string =>
   slug.split('.').slice(1).join('.').replace(/_/g, ' ');
 
+// Select the orphans eligible for a scrape. A dirty multi-author run-together
+// name is normally a blocker (we can't know which name to cache), but with
+// `includeConcat` an authorId is enough: the URL is built purely from the id
+// and the cache key comes from the scraped page's canonical name/slug, so a
+// concat-with-id scrapes exactly as safely as a clean "missing" orphan.
+export function selectScrapeCandidates(
+  orphans: AuthorOrphan[],
+  options: AuthorOrphansOptions
+): AuthorOrphan[] {
+  return orphans.filter(
+    (o) =>
+      (o.category === 'missing' ||
+        (o.category === 'concat' && !!options.includeConcat)) &&
+      !!o.authorId
+  );
+}
+
 // Ingest book-only authors ("missing" orphans, which have an authorId) into the
 // author cache, running scrapeAuthorStats which — with multiPage — crawls the
 // author's whole catalog. Stays polite: a small delay between authors and
@@ -174,14 +193,12 @@ export async function runOrphanScrape(
   orphans: AuthorOrphan[],
   options: AuthorOrphansOptions
 ): Promise<void> {
-  // Only genuinely-missing orphans (with an authorId) are scrapeable; skip the
-  // multi-author / no-id buckets. Then apply the same min/max ratings + sort +
-  // limit so --limit targets the top-N scrapeable orphans, not just whatever
-  // falls inside the all-orphans top slice.
-  const candidates = applyOrphanFilters(
-    orphans.filter(o => o.category === 'missing' && !!o.authorId),
-    options
-  );
+  // Only orphans with an authorId are scrapeable; skip the multi-author /
+  // no-id buckets unless --includeConcat opts the id-bearing concats back in.
+  // Then apply the same min/max ratings + sort + limit so --limit targets the
+  // top-N scrapeable orphans, not just whatever falls inside the all-orphans
+  // top slice.
+  const candidates = applyOrphanFilters(selectScrapeCandidates(orphans, options), options);
 
   // Drop ids that have already failed enough times (persisted across runs) so
   // we never hammer the same bad author ids: hit the fail limit -> stale 404.
@@ -196,7 +213,7 @@ export async function runOrphanScrape(
     toScrape.push(o);
   }
 
-  console.log(chalk.gray(`   Scraping ${toScrape.length} book-only authors with an authorId (${options.multiPage ? 'crawling ALL catalog pages' : 'first page only'})` + (skipped > 0 ? `; skipping ${skipped} previously-failed ids` : '') + '.'));
+  console.log(chalk.gray(`   Scraping ${toScrape.length} book-only authors with an authorId (${options.multiPage ? 'crawling ALL catalog pages' : 'first page only'}${options.includeConcat ? '; including multi-author names with an id' : ''})` + (skipped > 0 ? `; skipping ${skipped} previously-failed ids` : '') + '.'));
   if (toScrape.length === 0) {
     console.log(chalk.yellow('   Nothing to scrape.'));
     return;
@@ -216,7 +233,7 @@ export async function runOrphanScrape(
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${orphan.normalizedName} (${authorId})`));
       let failReason = 'no_stats_line';
-      const result = await scrapeAuthorStats(authorId, (r) => { failReason = r; }, crawlAllPages);
+      const result = await scrapeAuthorStats(authorId, (r) => { failReason = r; }, crawlAllPages, undefined, !!options.withCookie);
       if (!result) {
         noStats++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${orphan.normalizedName}`));
@@ -271,7 +288,14 @@ export async function runOrphanScrape(
       recordAuthorScrapeFailure(authorId, String((error as any)?.message || error));
       console.error(chalk.red.bold(`   ❌ Failed for ${orphan.normalizedName} (${authorId}): ${(error as any).message}`));
     }
-    await delay(2000, 5000);
+    // Anonymous crawls (no cookie) run at a faster but still polite cadence;
+    // GR_AUTHOR_DELAY_MS overrides either profile ("min,max").
+    const [authorDelayMin, authorDelayMax] = parseDelayRange(
+      process.env.GR_AUTHOR_DELAY_MS,
+      options.withCookie ? 2000 : 1000,
+      options.withCookie ? 5000 : 1800
+    );
+    await delay(authorDelayMin, authorDelayMax);
   }
 
   const duration = ((Date.now() - start) / 1000).toFixed(1);

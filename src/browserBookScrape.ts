@@ -88,6 +88,9 @@ export async function cooldown(durationMs: number): Promise<void> {
 }
 
 export function ensureScrapeTables(): void {
+  // browser_scrape / book_page are created by the schema init in db.ts; kept
+  // here for safety against older DB connections. CREATE IF NOT EXISTS is a
+  // no-op when they already exist.
   const db = getDb();
   db.exec(`
     CREATE TABLE IF NOT EXISTS browser_scrape (

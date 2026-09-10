@@ -4,7 +4,7 @@ import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
-import { delay, fetchWithRetry, formatDate, isConnectivityError, isDbLockError } from './utils.js';
+import { delay, fetchWithRetry, formatDate, isConnectivityError, isDbLockError, parseDelayRange } from './utils.js';
 import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_SCRAPE_FAIL_LIMIT, persistShelfPageCount } from './storage.js';
 import type { AuthorStats } from './storage.js';
 
@@ -1268,13 +1268,17 @@ export async function scrapeAuthorStats(
   authorSlug: string,
   onError?: (reason: string) => void,
   crawlAllPages = false,
-  sort?: string
+  sort?: string,
+  useCookie = false
 ): Promise<AuthorStatsResult | undefined> {
   const url = buildAuthorListUrl(authorSlug, sort);
   const config = await loadConfig();
+  // Author pages are public; send the login cookie only when explicitly opted in
+  // (CLI --withCookie or GR_USE_COOKIE=1) so our long crawls stay anonymous.
+  const sendCookie = useCookie || process.env.GR_USE_COOKIE === '1';
   try {
     const headers: any = { 'User-Agent': USER_AGENT };
-    if (config.cookie) headers['Cookie'] = config.cookie;
+    if (sendCookie && config.cookie) headers['Cookie'] = config.cookie;
 
     const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
     const $ = cheerio.load(response.data);
@@ -1297,8 +1301,15 @@ export async function scrapeAuthorStats(
     }
 
     if (crawlAllPages && catalogPages > 1) {
+      // Anonymous crawls stay polite but far faster than cookie-authenticated
+      // ones; GR_PAGE_DELAY_MS overrides either profile ("min,max").
+      const [pageDelayMin, pageDelayMax] = parseDelayRange(
+        process.env.GR_PAGE_DELAY_MS,
+        sendCookie ? 2000 : 900,
+        sendCookie ? 4000 : 1700
+      );
       for (let page = 2; page <= catalogPages; page++) {
-        await delay(2000, 4000);
+        await delay(pageDelayMin, pageDelayMax);
         // A "database is locked" (SQLITE_BUSY) comes from another process holding
         // the write lock — transient, worth retrying a few times with backoff.
         // Only a real network/Goodreads/4xx failure should abort the crawl.

@@ -69,7 +69,7 @@ import { runNextBooks } from './nextBooks.js';
 import { runBookSweep } from './bookSweep.js';
 import { runReadme, runColorLegend } from './readme.js';
 import { loadState, saveState, loadConfig } from './storage.js';
-import { backupDbSync, getDb } from './db.js';
+import { backupDb, getDb } from './db.js';
 
 const program = new Command();
 
@@ -487,6 +487,7 @@ Examples:
   .option('--maxRatings <number>', 'Only consider books with at most this many ratings')
   .option('--skip', 'Skip authors whose stats are already captured in the author cache')
   .option('--minAge <number>', 'Re-scrape only authors whose stats are older than N days (skips fresher ones)')
+  .option('--withCookie', 'Send the login cookie on author-page requests. Author pages need no auth, so crawls are anonymous by default and run faster; use this to opt back into cookie-authenticated pacing.')
   .action(async (n, options) => {
     const count = parseInt(n, 10);
     if (isNaN(count) || count <= 0) {
@@ -550,13 +551,18 @@ Examples:
   $ npm run author-orphans -- --scrape --limit 25
   # Same, but crawl each author's full multi-page catalog:
   $ npm run author-orphans -- --scrape --multiPage --limit 10
-  $ ./authorOrphans.sh --scrape --multiPage --limit 10`)
+  $ ./authorOrphans.sh --scrape --multiPage --limit 10
+  # Also ingest multi-author run-together names that still carry an authorId
+  # (scraped by id; cache key comes from the scraped page):
+  $ npm run author-orphans -- --scrape --multiPage --includeConcat --limit 50`)
   .option('--limit <number>', 'Show top N orphans (default 50)')
   .option('--minRatings <number>', 'Only orphans whose top book has at least this many ratings')
   .option('--maxRatings <number>', 'Only orphans whose top book has at most this many ratings')
   .option('--inspect', 'Print a per-orphan browser URL and classify each (multi-author / no id / genuinely missing)')
   .option('--scrape', 'Ingest book-only authors (genuinely missing, with an authorId) into the author cache. Network + polite rate limiting.')
   .option('--multiPage', 'With --scrape, crawl each author\'s full catalog (all pages) instead of the first page only')
+  .option('--includeConcat', 'With --scrape, also ingest multi-author run-together names that carry an authorId. The scraper builds the URL from the id alone and keys the cache from the canonical page name, so a dirty name does not block it.')
+  .option('--withCookie', 'Send the login cookie on author-page requests. Author pages need no auth, so crawls are anonymous by default and run faster; use this to opt back into cookie-authenticated pacing (GR_AUTHOR_DELAY_MS/GR_PAGE_DELAY_MS override delays; GR_USE_COOKIE=1 works too).')
   .action(async (options) => {
     try {
       await runAuthorOrphans(options);
@@ -586,6 +592,7 @@ Examples:
   .option('--rescanMissing', 'Target only authors with no stats yet')
   .option('--multiPage', 'Target authors with null or ≥2 catalog pages (skip single-page catalogs); crawls all pages')
   .option('--onlyUntouched', 'With --multiPage, target only authors that have never been multi-page-crawled (no catalogPages yet). Use with --minAge 0 to grind exactly the remaining first-pass tail.')
+  .option('--withCookie', 'Send the login cookie on author-page requests. Author pages need no auth, so crawls are anonymous by default and run faster; use this to opt back into cookie-authenticated pacing (GR_AUTHOR_DELAY_MS/GR_PAGE_DELAY_MS override delays; GR_USE_COOKIE=1 works too).')
   .option('--sort <field>', 'Goodreads author-list sort order: popularity (default), title, original_publication_year, average_rating, number_of_pages')
   .option('--minYear <year>', 'Find authors with a book published in/after this year; sorts by original_publication_year (unless --sort given) and reads the first page only')
   .action(async (options) => {
@@ -600,6 +607,7 @@ program
   .command('author-one <urlOrSlug>')
   .description('Scrape the overall stats (avg rating, ratings, reviews, shelves) for a single author page and update the author cache. Accepts a full author URL, a slug like 14018357.Steve_the_Noob, or a numeric author ID. Add --multiPage to also crawl the author\'s full back catalog (all pages of their works list).')
   .option('--multiPage', 'Crawl the author\'s entire catalog (all pages of their works list) instead of the first page only')
+  .option('--withCookie', 'Send the login cookie on author-page requests. Author pages need no auth, so crawls are anonymous by default and run faster; use this to opt back into cookie-authenticated pacing.')
   .addHelpText('after', `
 Examples:
   $ npm run author-one -- 14018357.Steve_the_Noob
@@ -609,7 +617,7 @@ Examples:
   $ ./authorOne.sh 8777 --multiPage`)
   .action(async (urlOrSlug, options) => {
     try {
-      await runAuthorOne(urlOrSlug, { multiPage: !!options.multiPage });
+      await runAuthorOne(urlOrSlug, { multiPage: !!options.multiPage, withCookie: !!options.withCookie });
     } catch (error) {
       console.error(chalk.red.bold('Failed to update single author:'), (error as any).message);
     }
@@ -1143,7 +1151,7 @@ Examples:
 
 program
   .command('export-data <basename>')
-  .description('Export the library-data tables (books, authors, tag_books, genres, genre_tag_xref) as timestamped, gzipped CSV files for sharing. Sanitized: config (live session cookies) , lists, and author_scrape_failures are EXCLUDED. basename is a mandatory identifier, e.g. mjf. Writes to the current directory by default.')
+  .description('Export the library-data tables (books, authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists) as timestamped, gzipped CSV files for sharing. Sanitized: config (live session cookies), browser_scrape / author_scrape_failures checkpoints, and list_scrapes / list_walk bookkeeping are EXCLUDED. basename is a mandatory identifier, e.g. mjf. Writes to the current directory by default.')
   .option('--out <dir>', 'Output directory (default: current directory)', '')
   .addHelpText('after', `
 Examples:
@@ -1167,23 +1175,27 @@ Examples:
 
 program
   .command('import-data')
-  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, tag_books, genres, genre_tag_xref). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad. Config/list/author_scrape_failures are not exported and not imported. Updates the schema automatically (current spec).')
+  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad (book_page keeps the newest scrape per book; lists seen_book_ids are union-merged). Config, browser_scrape, author_scrape_failures, list_scrapes, and list_walk are not exported and not imported. Updates the schema automatically (current spec).')
   .option('--books <file>', 'Path to the books .csv.gz file')
   .option('--authors <file>', 'Path to the authors .csv.gz file')
   .option('--tagBooks <file>', 'Path to the tag_books .csv.gz file')
   .option('--genres <file>', 'Path to the genres .csv.gz file')
   .option('--xref <file>', 'Path to the genre_tag_xref .csv.gz file')
+  .option('--bookPage <file>', 'Path to the book_page .csv.gz file (browser-scraped page details; newest scraped_at wins)')
+  .option('--tagStats <file>', 'Path to the tag_stats .csv.gz file (shelf crawl state)')
+  .option('--lists <file>', 'Path to the lists .csv.gz file (list discovery/ingest state; seen_book_ids unioned)')
   .option('--ratingPolicy <policy>', 'How to handle avg_rating on existing books: "keep" (fill-blank-only, default) or "update" (overwrite with imported value)', 'keep')
   .addHelpText('after', `
 Examples:
   $ npm run import-data -- --books mjf_books_*.csv.gz --authors mjf_authors_*.csv.gz
   $ npm run import-data -- --tagBooks mjf_tag_books_*.csv.gz --genres mjf_genres_*.csv.gz --xref mjf_genre_tag_xref_*.csv.gz
+  $ npm run import-data -- --bookPage mjf_book_page_*.csv.gz --tagStats mjf_tag_stats_*.csv.gz --lists mjf_lists_*.csv.gz
   $ npm run import-data -- --books books.csv.gz --authors authors.csv.gz --ratingPolicy update
   $ ./importData.sh --books books.csv.gz --authors authors.csv.gz --ratingPolicy update`)
   .action(async (options) => {
     try {
       const policy = options.ratingPolicy === 'update' ? 'update' : 'keep';
-      const files = [options.books, options.authors, options.tagBooks, options.genres, options.xref].filter(Boolean);
+      const files = [options.books, options.authors, options.tagBooks, options.genres, options.xref, options.bookPage, options.tagStats, options.lists].filter(Boolean);
       for (const f of files) {
         printAnalysis(await analyzeCsv(f));
       }
@@ -1193,6 +1205,9 @@ Examples:
         tagBooksFile: options.tagBooks,
         genresFile: options.genres,
         xrefFile: options.xref,
+        bookPageFile: options.bookPage,
+        tagStatsFile: options.tagStats,
+        listsFile: options.lists,
         ratingPolicy: policy,
       });
       printImportResult(counts, policy);
@@ -1576,10 +1591,15 @@ program
 
 program
   .command('backup')
-  .description('Backup the SQLite database (keeps last 7 daily backups)')
-  .action(() => {
-    backupDbSync();
-    console.log(chalk.green.bold('✅ Database backed up to backups/'));
+  .description('Backup the SQLite database via its consistent-snapshot backup API (keeps last 7 daily backups)')
+  .action(async () => {
+    try {
+      await backupDb();
+      console.log(chalk.green.bold('✅ Database backed up to backups/'));
+    } catch (err: any) {
+      console.error(chalk.red(`Backup failed: ${err.message}`));
+      process.exitCode = 1;
+    }
   });
 
 async function checkTokenExpiration() {

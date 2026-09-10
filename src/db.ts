@@ -184,36 +184,24 @@ export function getDb(): Database.Database {
   return _db;
 }
 
-export function backupDb(): void {
+export function backupDb(): Promise<void> {
   const db = getDb();
   fs.ensureDirSync(BACKUP_DIR);
 
   const today = new Date().toISOString().slice(0, 10);
   const dest = path.join(BACKUP_DIR, `goodreads.db.${today}`);
 
-  // Use SQLite's backup API for a consistent snapshot (safe during writes)
-  db.backup(dest).then(() => {
+  // The SQLite backup API refuses to overwrite an existing destination, so
+  // clear any same-day file first (safe: a fresh snapshot replaces it).
+  fs.removeSync(dest);
+  fs.removeSync(dest + '-wal');
+  fs.removeSync(dest + '-shm');
+
+  // Use SQLite's backup API for a consistent snapshot (safe during writes,
+  // replays WAL state; the resulting file is self-contained, no -wal/-shm).
+  return db.backup(dest).then(() => {
     rotateBackups();
-  }).catch((err: any) => {
-    console.error(`Backup failed: ${err.message}`);
   });
-}
-
-export function backupDbSync(): void {
-  const db = getDb();
-  fs.ensureDirSync(BACKUP_DIR);
-
-  const today = new Date().toISOString().slice(0, 10);
-  const dest = path.join(BACKUP_DIR, `goodreads.db.${today}`);
-
-  // Synchronous: copy the main db + WAL for a consistent snapshot
-  fs.copySync(DB_PATH, dest);
-  const wal = DB_PATH + '-wal';
-  const shm = DB_PATH + '-shm';
-  if (fs.existsSync(wal)) fs.copySync(wal, dest + '-wal');
-  if (fs.existsSync(shm)) fs.copySync(shm, dest + '-shm');
-
-  rotateBackups();
 }
 
 function rotateBackups(): void {
@@ -357,6 +345,34 @@ function initSchema(db: Database.Database) {
       list_name TEXT,
       first_scraped TEXT NOT NULL,
       last_scraped TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS browser_scrape (
+      book_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      http INTEGER,
+      bytes INTEGER,
+      elapsed_ms INTEGER,
+      scraped_at TEXT NOT NULL,
+      error TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS book_page (
+      book_id TEXT PRIMARY KEY,
+      publisher TEXT,
+      isbn13 TEXT,
+      isbn10 TEXT,
+      asin TEXT,
+      format TEXT,
+      language TEXT,
+      description TEXT,
+      series TEXT,
+      reviews_count TEXT,
+      ratings_dist TEXT,
+      currently_reading INTEGER,
+      to_read INTEGER,
+      editions_count INTEGER,
+      scraped_at TEXT NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_genre_tag_xref_tag ON genre_tag_xref(tag_name);

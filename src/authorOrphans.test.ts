@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeAuthorName, selectAuthorOrphans, applyOrphanFilters, classifyOrphan, looksLikeNameConcat, authorListUrl } from './authorOrphans.js';
+import { normalizeAuthorName, selectAuthorOrphans, applyOrphanFilters, classifyOrphan, looksLikeNameConcat, authorListUrl, selectScrapeCandidates } from './authorOrphans.js';
 import type { CachedBook, AuthorCache } from './storage.js';
 
 const book = (author: string, ratings: string, opts: { id?: string; title?: string } = {}): CachedBook => ({
@@ -160,5 +160,34 @@ describe('applyOrphanFilters', () => {
     expect(applyOrphanFilters(all, { minRatings: '5000' }).map(o => o.normalizedName)).toEqual(['D', 'A', 'B']);
     expect(applyOrphanFilters(all, { maxRatings: '5000' }).map(o => o.normalizedName)).toEqual(['B', 'C']);
     expect(applyOrphanFilters(all, { limit: '2' }).map(o => o.normalizedName)).toEqual(['D', 'A']);
+  });
+});
+
+describe('selectScrapeCandidates', () => {
+  const orphan = (category: 'missing' | 'concat' | 'no-id', authorId?: string): any => ({
+    rawName: 'n', normalizedName: 'n', topTitle: 't', topRatings: 1,
+    knownSlug: false, category, authorId,
+  });
+
+  it('includes clean missing orphans with an authorId', () => {
+    expect(selectScrapeCandidates([orphan('missing', '630')], {})).toHaveLength(1);
+  });
+
+  it('excludes concat orphans without --includeConcat', () => {
+    expect(selectScrapeCandidates([orphan('concat', '2983340')], {})).toHaveLength(0);
+  });
+
+  it('includes concat orphans that carry an authorId when --includeConcat is set', () => {
+    const out = selectScrapeCandidates([orphan('concat', '2983340')], { includeConcat: true });
+    expect(out).toHaveLength(1);
+    expect(out[0].authorId).toBe('2983340');
+  });
+
+  it('still excludes concat orphans without an authorId even with --includeConcat', () => {
+    expect(selectScrapeCandidates([orphan('concat')], { includeConcat: true })).toHaveLength(0);
+  });
+
+  it('never includes no-id orphans', () => {
+    expect(selectScrapeCandidates([orphan('no-id')], { includeConcat: true })).toHaveLength(0);
   });
 });

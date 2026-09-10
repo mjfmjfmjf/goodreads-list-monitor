@@ -5,13 +5,14 @@ import path from 'path';
 import chalk from 'chalk';
 
 // Sanitized CSV+gzip export of the shareable library-data tables (books,
-// authors, tag_books, genres, genre_tag_xref). Deliberately EXCLUDES config
-// (live session cookies / userId), lists, and author_scrape_failures
-// (operational scrape-bookkeeping). Not network-bound; reads directly from the
-// local DB and streams to disk so the ~1M-row books table doesn't inflate memory.
+// authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists).
+// Deliberately EXCLUDES config (live session cookies / userId), browser_scrape
+// and author_scrape_failures (operational scrape checkpoints), list_scrapes and
+// list_walk (crawl bookkeeping). Not network-bound; reads directly from the
+// local DB and streams to disk so the ~4M-row books table doesn't inflate memory.
 
 // Ordered list of tables to export; the order is the display/reporting order.
-export const EXPORT_TABLES = ['books', 'authors', 'tag_books', 'genres', 'genre_tag_xref'] as const;
+export const EXPORT_TABLES = ['books', 'authors', 'tag_books', 'genres', 'genre_tag_xref', 'book_page', 'tag_stats', 'lists'] as const;
 
 function pickle(value: unknown): string {
   if (value == null) return '';
@@ -123,5 +124,5 @@ export function printExportResult(r: ExportBatchResult, outDir: string): void {
     const bytes = statSync(f.path).size;
     console.log(chalk.white(`  ${path.basename(f.path)}   ${f.count.toLocaleString('en-US')} rows   ${fmtBytes(bytes)}`));
   }
-  console.log(chalk.gray('   (config with session cookies, lists, and author_scrape_failures intentionally excluded)'));
+  console.log(chalk.gray('   (config with session cookies, browser_scrape / author_scrape_failures checkpoints, and list_scrapes / list_walk bookkeeping intentionally excluded)'));
 }

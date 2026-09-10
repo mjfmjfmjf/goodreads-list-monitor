@@ -1,13 +1,14 @@
 import chalk from 'chalk';
 import { loadBookCache, loadAuthorCache, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
-import { delay } from './utils.js';
+import { delay, parseDelayRange } from './utils.js';
 
 export interface AuthorTopBooksOptions {
   minRatings?: string;
   maxRatings?: string;
   skip?: boolean;
   minAge?: string;
+  withCookie?: boolean;
 }
 
 const parseRatingsNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
@@ -105,7 +106,7 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${author.name} (${author.slug})`));
       let failReason = 'no_stats_line';
-      const result = await scrapeAuthorStats(author.slug, (r) => { failReason = r; });
+      const result = await scrapeAuthorStats(author.slug, (r) => { failReason = r; }, false, undefined, !!options.withCookie);
       if (!result) {
         failed++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${author.name}`));
@@ -165,7 +166,14 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
       failed++;
       console.error(chalk.red.bold(`   ❌ Failed for ${author.name}: ${(error as any).message}`));
     }
-    await delay(2000, 5000);
+    // Anonymous crawls (no cookie) run at a faster but still polite cadence;
+    // GR_AUTHOR_DELAY_MS overrides either profile ("min,max").
+    const [authorDelayMin, authorDelayMax] = parseDelayRange(
+      process.env.GR_AUTHOR_DELAY_MS,
+      options.withCookie ? 2000 : 1000,
+      options.withCookie ? 5000 : 1800
+    );
+    await delay(authorDelayMin, authorDelayMax);
   }
 
   const duration = ((Date.now() - start) / 1000).toFixed(1);

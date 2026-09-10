@@ -3,13 +3,14 @@ import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks
 import { selectAuthors } from './authorTopStats.js';
 import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.js';
 import { scrapeAuthorStats } from './scraper.js';
-import { delay } from './utils.js';
+import { delay, parseDelayRange } from './utils.js';
 
 export interface AuthorRescanOptions extends AuthorTopStatsOptions {
   minAge?: string;
   rescanMissing?: boolean;
   multiPage?: boolean;
   onlyUntouched?: boolean;
+  withCookie?: boolean;
   sort?: string;
   minYear?: string;
 }
@@ -145,7 +146,7 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${snapshotEntry.slug})`));
       let failReason = 'no_stats_line';
-      const result = await scrapeAuthorStats(snapshotEntry.slug, (r) => { failReason = r; }, crawlAllPages, listSort);
+      const result = await scrapeAuthorStats(snapshotEntry.slug, (r) => { failReason = r; }, crawlAllPages, listSort, !!options.withCookie);
       if (!result) {
         noStats++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${name}`));
@@ -207,7 +208,14 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
       failed++;
       console.error(chalk.red.bold(`   ❌ Failed for ${name}: ${(error as any).message}`));
     }
-    await delay(2000, 5000);
+    // Anonymous crawls (no cookie) run at a faster but still polite cadence;
+    // GR_AUTHOR_DELAY_MS overrides either profile ("min,max").
+    const [authorDelayMin, authorDelayMax] = parseDelayRange(
+      process.env.GR_AUTHOR_DELAY_MS,
+      options.withCookie ? 2000 : 1000,
+      options.withCookie ? 5000 : 1800
+    );
+    await delay(authorDelayMin, authorDelayMax);
   }
 
   const duration = ((Date.now() - start) / 1000).toFixed(1);
