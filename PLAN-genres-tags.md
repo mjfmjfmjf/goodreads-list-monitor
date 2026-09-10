@@ -18,8 +18,9 @@ first-class, deduped genre catalog — we only have scattered, uneven genre data
 
 - `emrys_tags`: a separate Emrys import, per-book `genre_name` + `member_count`
   (not a Goodreads genre catalog; suffix of a different pipeline).
-- `books.genres`: a JSON column, but only **211** of 2.16M books are populated.
-- `tag_books`: 908,749 rows / **728** distinct tags — the Goodreads tag-shelf
+- `books.genres`: a JSON column, but only **422** of 2.89M books are populated
+  (211 from the browser book-scrape, 211 pre-existing).
+- `tag_books`: 1,550,809 rows / **1,245** distinct tags — the Goodreads tag-shelf
   scrape we already run. This is the primary "shelf" data.
 
 The genre list is valuable because Genres are the canonical Goodreads taxonomy,
@@ -173,11 +174,65 @@ ordered, covered set of names to scrape.
 - Genre list URL is paged: `/genres/list?page=1` … the user reports **17 pages**.
 - `member_count` (the "# books" per genre) is visible in the page HTML.
 - 728 distinct tags already exist in `tag_books`; 908,749 tag-book rows.
-- Only 211 books carry `books.genres` JSON; the genre catalog would be a far
+- Only 422 books carry `books.genres` JSON (211 from the browser book-scrape,
+  211 pre-existing); the genre catalog would be a far
   more complete source than that column.
 - Tag names are already lowercased/hyphenated (e.g. `science-fiction`,
   `fantasy`, `young-adult`); genre names are Title Case with spaces. Need a
   normalization function for exact-match comparison.
+
+## Findings: what our own genre data looks like (2026/09/05)
+
+Analyzed `books.genres` (the browser-scrape column) + `tag_books` + the catalog
+to characterize what we've captured so far.
+
+**Coverage is still tiny.** 422/2,887,850 books have `books.genres` (~0.015%), of
+which 211 come from the browser book-scrape. `books.tags` (year/shelf JSON) on
+319,775. `tag_books` has grown to 1,550,809 rows / **1,245 distinct tags** — but
+its top tags are *year-read/rating shelves* (`2008…2023`, `1001`, `2-stars`,
+`1st-grade`): shelf data, not genres.
+
+**Browser-harvest quality is good.** ~7.9 names/book, Title-Case, deduped,
+NAV_GENRES nav-noise filtered, edition-stable (HP Sorcerer/Philosopher identical;
+Hunger Games, Mockingbird, Gatsby, Fault in our Stars match across editions).
+Cross-source QC on 23995249 matched 9/10 live-page genres against our DB tags.
+Spot-check Jane Eyre (book 10210): captured
+`[Classics, Fiction, Romance, Gothic, Historical Fiction, Literature, Historical,
+Audiobook, School, Classic Literature]` = **10/10 exact** vs the live widget, and
+**every one slug-maps into the 1,674-genre catalog** (Classic Literature→142,989,
+School→644,616, Audiobook→5.8M, Classics→5.98M, Gothic→331,161).
+
+**KEY FINDING: `books.genres` is a member-shelf list, not the curated taxonomy.**
+The book page's "Genres" widget shows the book's top *member shelves*, and our
+267 distinct names include both true genres (Fiction 352, Classics 174, Romance
+167, Young Adult 130…) and personal/vibe shelves (Audiobook 214, Magic 41, School
+48, Harry Potter 16, Enemies To Lovers 16, Jane Austen 13, Read For School 13,
+Book Club 26). 265/267 slug-match the catalog — only `Nonfiction` and `Kids`
+don't (catalog prefers `non-fiction`/`childrens`) — so the *concept* of the two
+vocabularies differs even as spellings align. This explains why ~86% of catalog
+genres had no exact tag match: the per-book shelf list and the curated list speak
+different levels of granularity.
+
+**Cross-reference is still thin.** Only 238 `genre_tag_xref` links (224 exact +
+14 cognate) connect the 1,674 catalog genres and 1,245 tags.
+
+**Emrys comparison — same data type, different trust boundary.** Emrys's genre
+column is also shelf data, but his enrichment **collided**: one shelf profile
+(Laurann Dohner / Sci Fi|147…) got attached to ~10 unrelated work_ids, confirmed
+verbatim in his raw CSV (row for 23995249 contradicts its own `tags` column). Our
+per-book shelf list is scraped live from each book's own page, so it's clean and
+per-book; his was keyed wrong somewhere in his join/caching.
+
+**Implications**
+1. The browser harvest is reliable — keep it as the source for books lacking
+   genres; no source change needed.
+2. The real gap isn't scraping more per-book shelves; it's **normalizing
+   shelves → catalog genres** (extend the goal-3 xref / cognate pipeline). Until
+   then `books.genres` and `genres` (the catalog) can't be compared directly.
+3. `NAV_GENRES` silently drops real genres (Biography, History, Science,
+   Science Fiction, Fantasy, Graphic Novels, Food, Book Club, Nonfiction) from
+   `books.genres` — revisit whether that's still desirable now that the column
+   feeds downstream analysis.
 
 ## Open questions / decisions
 

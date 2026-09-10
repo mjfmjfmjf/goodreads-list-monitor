@@ -29,17 +29,17 @@ function parseAuthorInput(input: string): { id: string; slug: string } | undefin
 const fallbackNameFromSlug = (slug: string): string =>
   slug.split('.').slice(1).join('.').replace(/_/g, ' ');
 
-export async function runAuthorOne(input: string): Promise<void> {
+export async function runAuthorOne(input: string, options: { multiPage?: boolean } = {}): Promise<void> {
   const parsed = parseAuthorInput(input);
   if (!parsed) {
     console.error(chalk.red.bold(`Error: could not parse "${input}" as a Goodreads author URL, slug, or ID.`));
     return;
   }
 
-  console.log(chalk.cyan.bold(`\n👤 Author Stats: fetching ${parsed.slug}`));
+  console.log(chalk.cyan.bold(`\n👤 Author Stats: fetching ${parsed.slug}${options.multiPage ? ' (full catalog crawl)' : ''}`));
 
   let failReason = 'no_stats_line';
-  const result = await scrapeAuthorStats(parsed.slug, (r) => { failReason = r; });
+  const result = await scrapeAuthorStats(parsed.slug, (r) => { failReason = r; }, !!options.multiPage);
   if (!result) {
     console.log(chalk.yellow(`   ⚠️ No stats line found for ${parsed.slug}`));
     recordAuthorFailure(fallbackNameFromSlug(parsed.slug), failReason);

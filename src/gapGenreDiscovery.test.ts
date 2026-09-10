@@ -8,7 +8,7 @@ vi.hoisted(() => {
 
 import { closeDb, getDb } from './db.js';
 import { getGapGenres } from './gapGenreDiscovery.js';
-import { upsertGenres, upsertTagBooks } from './storage.js';
+import { upsertGenres, upsertTagBooks, backfillTagPageEstimates } from './storage.js';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 
@@ -52,5 +52,14 @@ describe('getGapGenres', () => {
     expect(gaps.map(g => g.name)).toContain('fantasy');
     const f = gaps.find(g => g.name === 'fantasy')!;
     expect(f.scraped).toBe(true);
+  });
+
+  it('exposes the probable shelf page count from tag_stats', () => {
+    upsertGenres([{ name: 'pagey-genre', memberCount: 880 }]);
+    upsertTagBooks('pagey-genre', Array.from({ length: 500 }, (_, i) => ({ id: `p${i}`, position: i + 1, shelved: 1 })));
+    backfillTagPageEstimates();
+
+    const pagey = getGapGenres({ force: true }).find(g => g.name === 'pagey-genre')!;
+    expect(pagey.pages).toBe(10); // ceil(500/50)
   });
 });

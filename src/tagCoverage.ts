@@ -154,7 +154,6 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
     return;
   }
 
-  const maxLen = Math.max(...chosen.map(r => r.tag.length + (genreSet.has(r.tag) ? 8 : 0)), 'tag'.length);
   const RANK_W = 3;
   const TAG_W = 14;
   const BOOKS_W = 10;
@@ -163,14 +162,19 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
   const RATING_W = 12;
   const PCT_W = 8;
   const COL_SP = 3;
-  const padTag = (t: string) => t.padEnd(maxLen, ' ');
+  // Approximate terminal display width: CJK and fullwidth chars occupy 2 columns.
+  const charWidth = (ch: string): number =>
+    /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE1F\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/.test(ch) ? 2 : 1;
+  const displayWidth = (s: string): number =>
+    [...s].reduce((w, ch) => w + charWidth(ch), 0);
+  const padTag = (t: string) => t + ' '.repeat(Math.max(0, maxLen - displayWidth(t)));
   const padCell = (s: string, w: number) => s.padStart(w, ' ');
   const formatCompact = (n?: number): string => {
     if (n == null) return '—';
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-    return String(n);
+    return Math.round(n).toLocaleString('en-US');
   };
+
+  const maxLen = Math.max(...chosen.map(r => displayWidth(r.tag) + (genreSet.has(r.tag) ? 8 : 0)), 'tag'.length);
 
   const headerCells = [
     padCell('#', RANK_W),

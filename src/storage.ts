@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { parseSeriesPos } from './seriesPos.js';
-import { getDb } from './db.js';
+import { getDb, TAG_PAGE_ESTIMATE_BACKFILL_SQL } from './db.js';
 
 export interface ListState {
   title: string;
@@ -30,6 +30,7 @@ export interface CachedBook {
   isBad?: boolean;
   failCount?: number;
   workId?: string;
+  firstSeen?: string;
 }
 
 export interface State {
@@ -128,6 +129,7 @@ function rowToBook(row: any): CachedBook {
     isBad: row.is_bad === 1,
     failCount: row.fail_count || undefined,
     workId: row.work_id || undefined,
+    firstSeen: row.first_seen || undefined,
   };
 }
 
@@ -143,15 +145,16 @@ export function loadBookCache(): BookCache {
 }
 
 const BOOK_UPSERT_SQL = `
-  INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count, work_id)
-  VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount, @workId)
+  INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count, work_id, first_seen)
+  VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount, @workId, COALESCE(@firstSeen, @lastUpdated))
   ON CONFLICT(id) DO UPDATE SET
     title=excluded.title, author=excluded.author, author_id=excluded.author_id,
     ratings=excluded.ratings, avg_rating=excluded.avg_rating, published=excluded.published,
     pages=excluded.pages, series_pos=excluded.series_pos, genres=excluded.genres,
     last_updated=excluded.last_updated, tags=excluded.tags,
     requires_auth=excluded.requires_auth, is_bad=excluded.is_bad, fail_count=excluded.fail_count,
-    work_id=COALESCE(excluded.work_id, work_id)
+    work_id=COALESCE(excluded.work_id, work_id),
+    first_seen=COALESCE(books.first_seen, excluded.first_seen)
 `;
 
 function bindBook(book: CachedBook) {
@@ -172,6 +175,7 @@ function bindBook(book: CachedBook) {
     isBad: book.isBad ? 1 : 0,
     failCount: book.failCount ?? null,
     workId: book.workId || null,
+    firstSeen: book.firstSeen || null,
   };
 }
 
@@ -186,6 +190,11 @@ export function getBook(id: string): CachedBook | undefined {
 
 export function countBooks(): number {
   const row = getDb().prepare('SELECT COUNT(*) AS c FROM books').get() as any;
+  return row?.c ?? 0;
+}
+
+export function countAuthors(): number {
+  const row = getDb().prepare('SELECT COUNT(*) AS c FROM authors').get() as any;
   return row?.c ?? 0;
 }
 
@@ -355,6 +364,87 @@ export function loadTagBooks(tag?: string, bookId?: string): TagBookRow[] {
   }));
 }
 
+// ── Tag shelf page stats ─────────────────────────────────────────
+// Per-tag knowledge about how many pages its Goodreads shelf actually has.
+// `last_page_seen` is measured from the shelf's own pagination footer during a
+// scrape; `estimate_page` is a probable value backfilled for tags scraped
+// before that measurement existed (harvest-derived or member-count-guess).
+
+export interface TagStatsRow {
+  tagName: string;
+  lastPageSeen: number | null;
+  estimatePage: number | null;
+  estimateSource: string | null;
+  updated: string;
+}
+
+export function persistShelfPageCount(tag: string, pages: number): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO tag_stats (tag_name, last_page_seen, updated)
+    VALUES (@tagName, @pages, @now)
+    ON CONFLICT(tag_name) DO UPDATE SET
+      last_page_seen = excluded.last_page_seen,
+      updated = excluded.updated
+  `).run({ tagName: tag, pages, now });
+}
+
+export function getKnownShelfPages(tag: string): number | null {
+  const row = getDb().prepare(
+    'SELECT COALESCE(last_page_seen, estimate_page) AS pages FROM tag_stats WHERE tag_name = ?'
+  ).get(tag) as any;
+  return row && typeof row.pages === 'number' ? row.pages : null;
+}
+
+export function loadTagStats(tag?: string): TagStatsRow[] {
+  const db = getDb();
+  const rows = tag !== undefined
+    ? db.prepare('SELECT * FROM tag_stats WHERE tag_name = ?').all(tag)
+    : db.prepare('SELECT * FROM tag_stats ORDER BY tag_name').all();
+  return (rows as any[]).map(r => ({
+    tagName: r.tag_name,
+    lastPageSeen: r.last_page_seen ?? null,
+    estimatePage: r.estimate_page ?? null,
+    estimateSource: r.estimate_source ?? null,
+    updated: r.updated,
+  }));
+}
+
+// Re-runs the tag_stats estimate backfill against the current DB (idempotent:
+// rows already present, including measured last_page_seen values, are kept).
+export function backfillTagPageEstimates(): void {
+  getDb().exec(TAG_PAGE_ESTIMATE_BACKFILL_SQL);
+}
+
+// ── List scrapes ────────────────────────────────────────────────
+// Record which lists have been scraped all the way to the end, so repeat
+// walks can skip recently-harvested lists without re-crawling them.
+
+export interface ListScrapeRow {
+  listId: string;
+  listName: string;
+  firstScraped: string;
+  lastScraped: string;
+}
+
+export function upsertListScrape(listId: string, listName: string | null, now = new Date().toISOString()): void {
+  getDb().prepare(`
+    INSERT INTO list_scrapes (list_id, list_name, first_scraped, last_scraped)
+    VALUES (@listId, @listName, @now, @now)
+    ON CONFLICT(list_id) DO UPDATE SET
+      list_name = COALESCE(excluded.list_name, list_scrapes.list_name),
+      last_scraped = excluded.last_scraped
+  `).run({ listId, listName, now });
+}
+
+export function loadListScrape(listId: string): ListScrapeRow | undefined {
+  const row = getDb().prepare('SELECT * FROM list_scrapes WHERE list_id = ?').get(listId) as any;
+  return row
+    ? { listId: row.list_id, listName: row.list_name, firstScraped: row.first_scraped, lastScraped: row.last_scraped }
+    : undefined;
+}
+
 export interface SyncBooksOutcome {
   inserted: number;
   updated: number;
@@ -511,6 +601,11 @@ export function recordAuthorFailure(name: string, reason: string): void {
 // ── Author scrape-failure tracking ─────────────────────────────
 // Persists author ids that failed to scrape (e.g. orphan ids that 404), so a
 // later run can skip re-trying the same bad ids instead of hammering them.
+
+// After this many consecutive failures, stop re-trying an author id on future
+// runs. Shared by the orphan-author sweeps and the single-book author-page
+// lookups (scrapeBookByAuthorPage).
+export const AUTHOR_SCRAPE_FAIL_LIMIT = 3;
 
 export interface AuthorScrapeFailure {
   authorId: string;

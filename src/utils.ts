@@ -29,6 +29,53 @@ export function isConnectivityError(err: any): boolean {
   return Boolean(err && typeof err.code === 'string' && CONNECTIVITY_ERROR_CODES.has(err.code));
 }
 
+// SQLite "database is locked" (SQLITE_BUSY) — another process holds the write
+// lock. Transient and worth retrying; it's not a network or content failure.
+export function isDbLockError(err: any): boolean {
+  if (!err) return false;
+  if (err.code === 'SQLITE_BUSY' || err.code === 'SQLITE_BUSY_SNAPSHOT') return true;
+  const msg = String(err.message || err);
+  return /database is locked|database table is locked/i.test(msg);
+}
+
+// Retry a DB write on SQLITE_BUSY with backoff. Under concurrent heavy writers a
+// transient "database is locked" is common; the caller's write should be
+// idempotent so a retry is safe. Throws the last error after the retries are
+// exhausted.
+export function withDbLockRetry<T>(fn: () => T, retries = 7, delayMs = [3000, 6000, 12000, 20000, 30000, 60000, 120000]): T {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isDbLockError(err) || attempt === retries) throw err;
+      const sleepFor = delayMs[Math.min(attempt, delayMs.length - 1)] ?? 30000;
+      const start = Date.now();
+      // Blocking wait (synchronous fn) so we don't need async plumbing.
+      while (Date.now() - start < sleepFor) { /* busy-wait */ }
+    }
+  }
+  throw lastErr;
+}
+
+// Async variant for async DB writes (e.g. syncBooksToCache): real setTimeout
+// backoff so the event loop stays responsive.
+export async function withDbLockRetryAsync<T>(fn: () => Promise<T>, retries = 4, delayMs = [3000, 6000, 12000, 30000]): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isDbLockError(err) || attempt === retries) throw err;
+      const sleepFor = delayMs[Math.min(attempt, delayMs.length - 1)] ?? 30000;
+      await new Promise(resolve => setTimeout(resolve, sleepFor));
+    }
+  }
+  throw lastErr;
+}
+
 const STRICT_THROTTLE_MODE = (): boolean => process.env.GOODREADS_STRICT_THROTTLE === '1';
 
 // Optional sink for per-attempt failure info when a fetch falls back to retries.

@@ -19,4 +19,4 @@ cd "$(dirname "$0")"
 VOTES="${1:-11136110}"
 shift 2>/dev/null || true
 
-npm run author-list-diff -- "$VOTES" --sortBy catalogPages --limit 100 --minRatings 0 "$@"
+npm run author-list-diff -- "$VOTES" --sortBy catalogPages --limit 100 --minRatings 0 --noQualifyBook "$@"

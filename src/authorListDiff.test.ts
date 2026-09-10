@@ -7,6 +7,8 @@ import {
   assignSuggestedPositions,
   computeMoves,
   computeReplacements,
+  computeUnqualifiedRemovals,
+  authorHasQualifyingBook,
   stripSeriesSuffix,
   formatAuthorRef,
   formatBookRef,
@@ -356,6 +358,93 @@ describe('authorStatsPresent', () => {
 
   it('is true once both stats exist', () => {
     expect(authorStatsPresent({ ...base, averageRating: '4.4', numRatings: '143371' } as any)).toBe(true);
+  });
+});
+
+describe('authorHasQualifyingBook', () => {
+  function book(id: string, title: string, ratings: number): CachedBook {
+    return {
+      id,
+      title,
+      author: 'Someone',
+      authorId: '10',
+      ratings: String(ratings),
+      avgRating: '4.5',
+      published: '2020',
+      lastUpdated: '2026-08-22T00:00:00Z',
+    };
+  }
+
+  const booksByAuthor = new Map([
+    ['10', [book('a', 'Strong', 5000)]],
+    ['20', [book('b', 'Thin', 900)]],
+    ['30', []],
+  ]);
+
+  it('is true when the author has at least one book at/above the bar', () => {
+    expect(authorHasQualifyingBook(booksByAuthor, '10')).toBe(true);
+  });
+
+  it('is false when every book is below the bar', () => {
+    expect(authorHasQualifyingBook(booksByAuthor, '20')).toBe(false);
+  });
+
+  it('is false for an unknown author (no cached books)', () => {
+    expect(authorHasQualifyingBook(booksByAuthor, '30')).toBe(false);
+    expect(authorHasQualifyingBook(booksByAuthor, '999')).toBe(false);
+  });
+});
+
+describe('computeUnqualifiedRemovals', () => {
+  function book(id: string, title: string, ratings: number, authorId = '10'): CachedBook {
+    return {
+      id,
+      title,
+      author: 'Someone',
+      authorId,
+      ratings: String(ratings),
+      avgRating: '4.5',
+      published: '2020',
+      lastUpdated: '2026-08-22T00:00:00Z',
+    };
+  }
+
+  const ranking = dedupeAuthorsBySlug([
+    author('Qualified', '10.qualified', '4.80', '500000'),
+    author('Thin Voter', '20.thin', '4.70', '400000'),
+    author('Outside', '30.outside', '4.60', '120000'),
+  ]);
+
+  it('flags only in-limit voted authors whose best book is below the bar', () => {
+    const booksByAuthor = new Map([
+      ['10', [book('a', 'Strong', 5000)]],
+      ['20', [book('b', 'Thin', 900, '20')]],
+    ]);
+    const votes = [
+      vote(1, 'b1', 'Book One', 'Qualified', '10.qualified'),
+      vote(2, 'b2', 'Book Two', 'Thin Voter', '20.thin'),
+    ];
+    expect(computeUnqualifiedRemovals(votes, ranking, 2, booksByAuthor)).toEqual([
+      { position: 2, bookId: 'b2', title: 'Book Two', author: 'Thin Voter', authorId: '20', currentRank: 2 },
+    ]);
+  });
+
+  it('leaves out-of-limit voters to the dropped path', () => {
+    const booksByAuthor = new Map([['30', [book('c', 'Thin', 900, '30')]]]);
+    const votes = [vote(5, 'b5', 'Book Five', 'Outside', '30.outside')];
+    expect(computeUnqualifiedRemovals(votes, ranking, 2, booksByAuthor)).toEqual([]);
+  });
+
+  it('returns nothing when every in-limit author qualifies', () => {
+    const booksByAuthor = new Map([
+      ['10', [book('a', 'Strong', 5000)]],
+      ['20', [book('b', 'Decent', 1500, '20')]],
+    ]);
+    const votes = [
+      vote(1, 'b1', 'Book One', 'Qualified', '10.qualified'),
+      vote(2, 'b2', 'Book Two', 'Thin Voter', '20.thin'),
+    ];
+    expect(computeUnqualifiedRemovals(votes, ranking, 2, booksByAuthor)).toEqual([]);
   });
 });
 

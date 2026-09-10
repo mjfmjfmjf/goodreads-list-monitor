@@ -1,5 +1,29 @@
 [
   {
+    "nickname": "2010 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2010 Average Rating of 4.50 and above with at least 1000 ratings",
+    "id": "421599",
+    "url": "https://www.goodreads.com/list/show/421599",
+    "criteria": {
+      "minAvg": 4.50,
+      "min": 1000,
+      "minYear": 2010,
+      "maxYear": 2010
+    }
+  },
+  {
+    "nickname": "2011 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2011 Average Rating of 4.50 and above with at least 1000 ratings",
+    "id": "421481",
+    "url": "https://www.goodreads.com/list/show/421481",
+    "criteria": {
+      "minAvg": 4.50,
+      "min": 1000,
+      "minYear": 2011,
+      "maxYear": 2011
+    }
+  },
+  {
     "nickname": "2012 Average Rating of 4.50 and above with at least 1000 ratings",
     "officialTitle": "2012 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "420796",
@@ -60,7 +84,7 @@
     }
   },
   {
-    "nickname": "2017 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2017 Average Rating of 4.50 and above with at least 1000 ratings",
     "officialTitle": "2017 Average Rating of 4.40 and above with at least 1000 ratings",
     "id": "418349",
     "url": "https://www.goodreads.com/list/show/418349",
@@ -113,67 +137,67 @@
     "id": "418217",
     "url": "https://www.goodreads.com/list/show/418205",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2021,
       "maxYear": 2021
     }
   },
   {
-    "nickname": "2022 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2022 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2022 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2022 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "418205",
     "url": "https://www.goodreads.com/list/show/418205",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2022,
       "maxYear": 2022
     }
   },
   {
-    "nickname": "2023 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2023 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2023 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2023 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "418174",
     "url": "https://www.goodreads.com/list/show/418174",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2023,
       "maxYear": 2023
     }
   },
   {
-    "nickname": "2024 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2024 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2024 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2024 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "250123",
     "url": "https://www.goodreads.com/list/show/250123",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2024,
       "maxYear": 2024
     }
   },
   {
-    "nickname": "2025 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2025 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2025 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2025 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "419829",
     "url": "https://www.goodreads.com/list/show/419829",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2025,
       "maxYear": 2025
     }
   },
   {
-    "nickname": "2026 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2026 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2026 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2026 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "419830",
     "url": "https://www.goodreads.com/list/show/419830",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2026,
       "maxYear": 2026

@@ -1,16 +1,24 @@
 import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// runLifeInBooks boots the book cache + reads a library CSV, so each call is
-// ~3.5s on its own; under the parallel unit-suite run that routinely exceeds
-// vitest's 5000ms default. Give the slow tests a generous timeout.
+// Redirect storage to an isolated temp database BEFORE db.js is imported.
+// vi.hoisted runs before static imports are evaluated.
+vi.hoisted(() => {
+  const tmp = process.env.TMPDIR || process.env.TMP || '/tmp';
+  process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-lifestats-${process.pid}-${Date.now()}.db`;
+});
+
+const DB_FILE = process.env.GOODREADS_DB_PATH!;
+const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'goodreads-lifestats-'));
+
+// The temp DB is empty, so runLifeInBooks is fast; keep a generous timeout
+// in case the machine is under load when the suite runs.
 const SLOW_TIMEOUT = 30_000;
 import { runLifeInBooks } from './lifeInBooks.js';
 import { runPublisherStats } from './publisherStats.js';
 
-const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'goodreads-lifestats-'));
 const CSV_FILE = path.join(TMP_DIR, 'library.csv');
 const EMPTY_CSV = path.join(TMP_DIR, 'empty.csv');
 
@@ -44,6 +52,10 @@ beforeAll(() => {
 afterAll(() => {
   process.chdir(realCwd);
   fs.removeSync(TMP_DIR);
+  delete process.env.GOODREADS_DB_PATH;
+  fs.existsSync(DB_FILE) && fs.removeSync(DB_FILE);
+  fs.existsSync(DB_FILE + '-wal') && fs.removeSync(DB_FILE + '-wal');
+  fs.existsSync(DB_FILE + '-shm') && fs.removeSync(DB_FILE + '-shm');
 });
 
 const CSV_ROWS = [

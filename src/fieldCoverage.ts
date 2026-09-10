@@ -37,6 +37,57 @@ export function formatCoverageLine(stat: FieldStat): string {
 export async function runFieldCoverage(): Promise<void> {
   const db = getDb();
 
+  // Browser-scraper tables (book_page / browser_scrape / list_walk) may not
+  // exist until the first --engine browser or list-walk run creates them.
+  const hasTable = (t: string): boolean =>
+    !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(t);
+
+  const bookPageTotals = hasTable('book_page')
+    ? (db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN publisher IS NOT NULL THEN 1 ELSE 0 END) AS 'publisher',
+      SUM(CASE WHEN isbn13 IS NOT NULL THEN 1 ELSE 0 END) AS 'isbn13',
+      SUM(CASE WHEN isbn10 IS NOT NULL THEN 1 ELSE 0 END) AS 'isbn10',
+      SUM(CASE WHEN asin IS NOT NULL THEN 1 ELSE 0 END) AS 'asin',
+      SUM(CASE WHEN format IS NOT NULL THEN 1 ELSE 0 END) AS 'format',
+      SUM(CASE WHEN language IS NOT NULL THEN 1 ELSE 0 END) AS 'language',
+      SUM(CASE WHEN description IS NOT NULL THEN 1 ELSE 0 END) AS 'description',
+      SUM(CASE WHEN series IS NOT NULL THEN 1 ELSE 0 END) AS 'series',
+      SUM(CASE WHEN reviews_count IS NOT NULL THEN 1 ELSE 0 END) AS 'reviews_count',
+      SUM(CASE WHEN ratings_dist IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_dist',
+      SUM(CASE WHEN currently_reading IS NOT NULL THEN 1 ELSE 0 END) AS 'currently_reading',
+      SUM(CASE WHEN to_read IS NOT NULL THEN 1 ELSE 0 END) AS 'to_read',
+      SUM(CASE WHEN editions_count IS NOT NULL THEN 1 ELSE 0 END) AS 'editions_count'
+    FROM book_page
+  `).get() as any)
+    : null;
+
+  const browserScrapeTotals = hasTable('browser_scrape')
+    ? (db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) AS 'ok',
+      SUM(CASE WHEN status='throttled' THEN 1 ELSE 0 END) AS 'throttled',
+      SUM(CASE WHEN status='missing' THEN 1 ELSE 0 END) AS 'missing',
+      SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS 'error'
+    FROM browser_scrape
+  `).get() as any)
+    : null;
+
+  const listWalkTotals = hasTable('list_walk')
+    ? (db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS 'done',
+      SUM(CASE WHEN status='started' THEN 1 ELSE 0 END) AS 'started',
+      SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS 'error',
+      SUM(CASE WHEN total_books IS NOT NULL THEN 1 ELSE 0 END) AS 'total_books',
+      SUM(CASE WHEN walkable_books IS NOT NULL THEN 1 ELSE 0 END) AS 'walkable_books'
+    FROM list_walk
+  `).get() as any)
+    : null;
+
   const bookTotals = db.prepare(`
     SELECT
       COUNT(*) AS total,
@@ -146,5 +197,38 @@ export async function runFieldCoverage(): Promise<void> {
   console.log('  ' + formatCoverageLine({ field: 'shelved', populated: shelvedPop, total: tagTotal }));
   const shelvedAvg = tagTotals.shelved_avg != null ? Number(tagTotals.shelved_avg).toFixed(1) : '—';
   console.log(`  ${'shelved min'.padEnd(14)} : ${chalk.yellow((tagTotals.shelved_min ?? '—').toLocaleString?.() ?? '—')}  max ${chalk.yellow((tagTotals.shelved_max ?? '—').toLocaleString?.() ?? '—')}  avg ${chalk.yellow(shelvedAvg)}`);
+
+  if (bookPageTotals && Number(bookPageTotals.total) > 0) {
+    console.log(chalk.cyan.bold(`\n📊 Browser book-page field coverage:`));
+    console.log(chalk.gray('----------------------------------------------------------------------'));
+    for (const stat of computeFieldStats(bookPageTotals, Number(bookPageTotals.total))) {
+      console.log('  ' + formatCoverageLine(stat));
+    }
+  }
+
+  if (browserScrapeTotals && Number(browserScrapeTotals.total) > 0) {
+    console.log(chalk.cyan.bold(`\n📊 Browser-scrape checkpoint coverage:`));
+    console.log(chalk.gray('----------------------------------------------------------------------'));
+    console.log(chalk.gray(`  total rows          : ${Number(browserScrapeTotals.total).toLocaleString()}`));
+    for (const status of ['ok', 'throttled', 'missing', 'error']) {
+      const pop = Number(browserScrapeTotals[status]) || 0;
+      console.log('  ' + formatCoverageLine({ field: status, populated: pop, total: Number(browserScrapeTotals.total) }));
+    }
+  }
+
+  if (listWalkTotals && Number(listWalkTotals.total) > 0) {
+    console.log(chalk.cyan.bold(`\n📊 Scraped-list ledger coverage:`));
+    console.log(chalk.gray('----------------------------------------------------------------------'));
+    console.log(chalk.gray(`  total lists         : ${Number(listWalkTotals.total).toLocaleString()}`));
+    for (const status of ['done', 'started', 'error']) {
+      const pop = Number(listWalkTotals[status]) || 0;
+      console.log('  ' + formatCoverageLine({ field: status, populated: pop, total: Number(listWalkTotals.total) }));
+    }
+    console.log(
+      `  ${'total_books'.padEnd(14)} : ${chalk.yellow(((Number(listWalkTotals.total_books) || 0)).toLocaleString().padStart(7))}` +
+      ` ${chalk.gray(`· ${((Number(listWalkTotals.walkable_books) || 0)).toLocaleString()} walkable`)}`
+    );
+  }
+
   console.log();
 }

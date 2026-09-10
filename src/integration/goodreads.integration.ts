@@ -15,6 +15,8 @@ import {
   scrapeBookDetails,
   BookMetadata
 } from '../scraper.js';
+import { runBrowserBookScrape, ensureScrapeTables } from '../browserBookScrape.js';
+import { getDb } from '../db.js';
 
 // ── Live integration tests ────────────────────────────────────────────────
 // These hit real Goodreads pages (about a dozen requests per run) and assert
@@ -245,4 +247,98 @@ describe('add-book single lookup', () => {
       }
     }
   );
+});
+
+// ── browser-book-scrape (live harvest) ─────────────────────────────────────
+// These write to the real goodreads.db (one book row + the book_page /
+// browser_scrape tables), which is the tool's intended purpose. They run under
+// STRICT throttle: on a 202/403/429 the run aborts immediately and the failing
+// test just means "cooldown", not a parser change.
+describe('browser-book-scrape (live, axios engine)', () => {
+  it('harvests the highest-ratings book missing genres and writes rich fields', { timeout: 120_000 }, async () => {
+    const db = getDb();
+    // The prod DB is shared across suites and runs, so the current top
+    // candidate may already carry an ok checkpoint from a past run which
+    // would make this pass skip instead of harvest. Clear it so this pass
+    // genuinely scrapes the book the tool would pick.
+    if (db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='browser_scrape'`).get()) {
+      const top = db.prepare(
+        `SELECT id FROM books WHERE is_bad = 0 AND requires_auth = 0
+         AND (genres IS NULL OR genres = '' OR genres = '[]' OR genres = 'null')
+         ORDER BY ratings DESC, id ASC LIMIT 1`
+      ).get() as any;
+      if (top) db.prepare('DELETE FROM browser_scrape WHERE book_id = ?').run(top.id);
+    }
+    const summary = await runBrowserBookScrape({
+      limit: 1,
+      skipHas: ['genres'],
+      sort: 'ratingsDesc',
+      engine: 'axios',
+      cooldownMs: 60_000,
+    });
+    expect(summary.ok).toBe(1);
+    expect(summary.throttled).toBe(0);
+
+    const cp = db.prepare('SELECT * FROM browser_scrape ORDER BY scraped_at DESC LIMIT 1').get() as any;
+    expect(cp).toBeTruthy();
+    expect(cp.status).toBe('ok');
+
+    const page = db.prepare('SELECT * FROM book_page WHERE book_id = ?').get(cp.book_id) as any;
+    expect(page).toBeTruthy();
+    expect(page.publisher).toBeTruthy();
+    expect(page.isbn13 || page.isbn || page.asin).toBeTruthy();
+    expect(page.ratings_dist).toBeTruthy();
+    expect(page.currently_reading ?? page.to_read).toBeTruthy();
+    console.log(`   Harvested ${cp.book_id}: publisher=${page.publisher} currentlyReading=${page.currently_reading ?? '-'} toRead=${page.to_read ?? '-'}`);
+  });
+
+  it('skips the already-scraped book on the next pass (checkpoint resume)', { timeout: 60_000 }, async () => {
+    const db = getDb();
+    // Deterministic checkpoint test: fabricate a candidate that still lacks
+    // genres plus an ok checkpoint, then confirm the run skips it. No live
+    // request, so it is immune to Goodreads state sharing/throttling.
+    const scratchId = '999119991';
+    const existing = db.prepare('SELECT * FROM books WHERE id = ?').get(scratchId) as any;
+    ensureScrapeTables();
+    db.prepare(`
+      INSERT INTO books (id, title, author, ratings, genres, last_updated)
+      VALUES (@id, @title, 'N/A', '9999999995', NULL, @updated)
+      ON CONFLICT(id) DO UPDATE SET title=excluded.title, author=excluded.author,
+        ratings=excluded.ratings, genres=excluded.genres, last_updated=excluded.last_updated
+    `).run({ id: scratchId, title: 'Integration Scratch Candidate', updated: new Date().toISOString() });
+    db.prepare(
+      `INSERT INTO browser_scrape (book_id, status, http, bytes, elapsed_ms, scraped_at)
+       VALUES (?, 'ok', 200, 0, 0, ?)`
+    ).run(scratchId, new Date().toISOString());
+    try {
+      const summary = await runBrowserBookScrape({
+        limit: 1,
+        skipHas: ['genres'],
+        sort: 'ratingsDesc',
+        engine: 'axios',
+        cooldownMs: 60_000,
+      });
+      expect(summary.total).toBe(1);
+      expect(summary.skipped).toBe(1);
+      expect(summary.ok).toBe(0);
+      expect(summary.processed).toBe(0);
+    } finally {
+      db.prepare('DELETE FROM browser_scrape WHERE book_id = ?').run(scratchId);
+      db.prepare('DELETE FROM book_page WHERE book_id = ?').run(scratchId);
+      if (existing) {
+        db.prepare(`
+          UPDATE books SET title=@title, author=@author, ratings=@ratings, genres=@genres
+          WHERE id = @id
+        `).run({
+          id: scratchId,
+          title: existing.title,
+          author: existing.author,
+          ratings: existing.ratings,
+          genres: existing.genres,
+        });
+      } else {
+        db.prepare('DELETE FROM books WHERE id = ?').run(scratchId);
+      }
+    }
+  });
 });

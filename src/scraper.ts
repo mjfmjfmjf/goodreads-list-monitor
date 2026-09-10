@@ -4,8 +4,8 @@ import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
-import { delay, fetchWithRetry, formatDate, isConnectivityError } from './utils.js';
-import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks } from './storage.js';
+import { delay, fetchWithRetry, formatDate, isConnectivityError, isDbLockError } from './utils.js';
+import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_SCRAPE_FAIL_LIMIT, persistShelfPageCount } from './storage.js';
 import type { AuthorStats } from './storage.js';
 
 let structuralWarningIssued = false;
@@ -14,6 +14,19 @@ let structuralWarningIssued = false;
 // page 1 — that page's contents (all books on it) are cached per authorId so
 // later lookups for a different book by the same author skip the network entirely.
 const authorPage1Cache = new Map<string, AuthorListBook[]>();
+
+// Author ids that failed with a permanent error (e.g. HTTP 400) earlier in this
+// run. A permanent failure won't change seconds later, so every book by the
+// same author is skipped instead of re-fetching the same doomed author page.
+const failedAuthorPagesRun = new Set<string>();
+
+// A permanent 4xx (but not throttle-class 429, which is transient) means the
+// author page will not work on retry — only these count toward the persisted
+// three-strikes skip. 202/403/429/5xx/timeouts/redirect loops do not.
+export function isPermanentAuthorPageFailure(error: any): boolean {
+  const status = error?.response?.status;
+  return typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+}
 
 async function handleStructuralWarning(message: string) {
   if (structuralWarningIssued) {
@@ -229,6 +242,26 @@ export async function scrapeGenreList(maxPages = 30): Promise<GenreListEntry[]> 
   return all;
 }
 
+/**
+ * Extract the page numbers Goodreads itself renders in the shelf pagination
+ * footer (e.g. `<a href="/shelf/show/tag?page=21">21</a>`). The last element is
+ * the shelf's true final page for a logged-in scrape; an empty array means the
+ * footer was absent (logged-out/blocked page), in which case the caller falls
+ * back to its maxPages bound.
+ */
+export function extractShelfPageLinks($: cheerio.CheerioAPI, tag: string): number[] {
+  const pages: number[] = [];
+  $('a[href*="/shelf/show/' + tag + '?page="]').each((_, el) => {
+    const href = $(el).attr('href') ?? '';
+    const match = href.match(/[?&]page=(\d+)(?:[&#]|$)/);
+    if (match) {
+      const n = parseInt(match[1], 10);
+      if (Number.isFinite(n) && n > 0) pages.push(n);
+    }
+  });
+  return [...new Set(pages)].sort((a, b) => a - b);
+}
+
 export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, startPage = 1): Promise<BookMetadata[]> {
   const configData = await loadConfig();
   let allBooks: BookMetadata[] = [];
@@ -237,12 +270,19 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
   // Position is 1-based global shelf order. When reading a partial shelf that
   // doesn't start at page 1, assume 50 books per unread preceding page.
   let bookPos = Math.max(0, (startPage - 1) * 50);
+  // Follow the pagination links Goodreads renders instead of guessing page
+  // URLs: reusing the anchor hrefs keeps the crawl browser-like, and the last
+  // advertised page tells us when to stop before hitting the roll-over pages.
+  let totalPages: number | null = null;
+  let nextHref: string | null = null;
 
   for (let page = startPage; page <= maxPages; page++) {
     if (thresholdReached) break;
+    // Never request a page past the shelf's true last page (short shelves).
+    if (totalPages !== null && page > totalPages) break;
 
     console.log(chalk.cyan.bold(`🌐 Scraping shelf "${tag}" page ${page}...`));
-    const url = `https://www.goodreads.com/shelf/show/${tag}?page=${page}`;
+    const url = nextHref ?? `https://www.goodreads.com/shelf/show/${tag}?page=${page}`;
     
     try {
       const axiosConfig: any = {
@@ -260,11 +300,36 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
 
       const response = await fetchWithRetry(url, axiosConfig);
       const $ = cheerio.load(response.data);
+
+      // Honor the pagination footer Goodreads actually rendered for this page.
+      const footerPages = extractShelfPageLinks($, tag);
+      if (footerPages.length > 0) {
+        const newTotal = footerPages[footerPages.length - 1];
+        totalPages = Math.max(totalPages ?? 0, newTotal);
+        if (startPage > totalPages) {
+          console.log(chalk.yellow(`   ⚠️ Requested scan starts at page ${startPage}, but shelf "${tag}" only has ${totalPages} page(s). Nothing to scan.`));
+          break;
+        }
+      }
+      const nextAnchor = $('a[rel="next"][href]').first();
+      let relNext: string | null = nextAnchor.attr('href') ?? null;
+      if (relNext) {
+        const nextPageMatch = relNext.match(/[?&]page=(\d+)/);
+        // Only follow the immediate next page's link; never let a stale/anomalous
+        // anchor jump the crawl forward or off the shelf URL.
+        if (!nextPageMatch || parseInt(nextPageMatch[1], 10) !== page + 1) relNext = null;
+      }
+      nextHref = relNext ? (relNext.startsWith('http') ? relNext : `https://www.goodreads.com${relNext}`) : null;
+
       const pageBooks: BookMetadata[] = [];
       const items = $('.elementList');
 
       if (items.length === 0) {
-        console.log(chalk.gray(`   (No more books found on shelf. Stopping at page ${page}.)`));
+        if (page === 1) {
+          console.log(chalk.red.bold(`   ⚠️  Shelf "${tag}" returned no books on page 1 — the tag shelf may not exist (check spelling), or the tag/listId arguments may be swapped.`));
+        } else {
+          console.log(chalk.gray(`   (No more books found on shelf. Stopping at page ${page}.)`));
+        }
         break;
       }
 
@@ -318,7 +383,7 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
           const published = yearMatch ? (yearMatch[1] || yearMatch[0]) : 'Unknown';
 
           const fullText = $el.text().replace(/\s+/g, ' ');
-          const tagMatch = fullText.match(/shelved ([\d,]+) times/i);
+          const tagMatch = fullText.match(/shelved ([\d,]+) times?/i);
           const tagCount = tagMatch ? parseInt(tagMatch[1].replace(/,/g, ''), 10) : null;
 
           if (i === 0 || i === items.length - 1) {
@@ -344,6 +409,15 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
       lastPageFirstId = firstIdOnThisPage;
 
       allBooks = allBooks.concat(pageBooks);
+
+      // Short shelf: stop at the last page Goodreads advertises instead of
+      // crawling the roll-over pages. (There is no delay or further fetch.)
+      if (totalPages !== null && page >= totalPages) {
+        if (totalPages < maxPages) {
+          console.log(chalk.gray(`   (Shelf "${tag}" has only ${totalPages} real page${totalPages === 1 ? '' : 's'} — stopping instead of crawling to page ${maxPages}.)`));
+        }
+        break;
+      }
 
       if (!thresholdReached && page < maxPages) {
         const waitMin = configData.cookie ? 4000 : 2000;
@@ -381,6 +455,16 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
     upsertTagBooks(tag, uniqueBooks.map(b => ({ id: b.id, position: b.position, shelved: b.tagCount })));
   } catch (error) {
     // Ignore tag-membership persistence errors in scraper
+  }
+
+  // Persist the shelf's real last page (from its pagination footer) so future
+  // runs know the actual page count instead of trusting maxPages/estimates.
+  if (totalPages !== null) {
+    try {
+      persistShelfPageCount(tag, totalPages);
+    } catch (error) {
+      // Ignore page-count persistence errors in scraper
+    }
   }
 
   // Automatically sync authors to cache
@@ -507,7 +591,11 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
         hasNext = false;
       }
     } catch (error) {
+      const status = (error as any)?.response?.status;
       console.error(chalk.red.bold(`   ❌ Non-fatal error fetching list ${listId} page ${page}:`), (error as any).message);
+      if (page === 1 && (status === 404 || status === 410)) {
+        console.log(chalk.yellow(`   ⚠️  List "${listId}" doesn't exist (HTTP ${status}) — is that a real list id, and in the right position? Expects <tag> <listId>, e.g. "space-opera 78971".`));
+      }
       break;
     }
   }
@@ -522,6 +610,8 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
     }
   }
 
+  console.log(chalk.gray(`   ✅ List ${listId}: ${uniqueBooks.length} unique books across ${page} page${page === 1 ? '' : 's'}.`));
+
   // Automatically sync authors to cache
   try {
     const authorCache = await loadAuthorCache();
@@ -531,6 +621,97 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
   }
 
   return uniqueBooks;
+}
+
+export interface TagListEntry {
+  id: string;
+  slug: string;
+  url: string;
+}
+
+// Parse one page of the Listopia by-tag index (e.g. https://www.goodreads.com/list/tag/2024).
+// Lists are linked as /list/show/<id>.<slug>; pagination is a bare .next_page
+// chain (same pattern as list/show pages), so the function returns the next
+// page number (or null on the last page) rather than a full page footer.
+// Pure + unit-testable.
+export function parseTagListPage($: cheerio.CheerioAPI, tag: string): { lists: TagListEntry[]; nextPage: number | null } {
+  const lists: TagListEntry[] = [];
+  const seen = new Set<string>();
+
+  $('a[href*="/list/show/"]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const match = href.match(/\/list\/show\/([^?#]+)/);
+    if (!match) return;
+    let segment = decodeURIComponent(match[1]);
+    try { segment = decodeURIComponent(segment); } catch { /* already plain */ }
+    const idMatch = segment.match(/^(\d+)/);
+    if (!idMatch || seen.has(idMatch[1])) return;
+    seen.add(idMatch[1]);
+    lists.push({
+      id: idMatch[1],
+      slug: segment.slice(idMatch[1].length).replace(/^\./, ''),
+      url: href.split('?')[0],
+    });
+  });
+
+  let nextPage: number | null = null;
+  const nextAnchor = $('a.next_page[href]').first();
+  const nextHref = nextAnchor.attr('href') || '';
+  const nextMatch = nextHref.match(/[?&]page=(\d+)/);
+  if (nextMatch && !nextAnchor.hasClass('disabled')) {
+    const n = parseInt(nextMatch[1], 10);
+    if (Number.isFinite(n) && n > 0) nextPage = n;
+  }
+  return { lists, nextPage };
+}
+
+export interface ListsByTagOptions {
+  startPage?: number;
+  maxPages?: number;
+}
+
+// Walk the Listopia by-tag index, following the pagination links until the
+// last real page ("process all the lists paged at the bottom" by default).
+// Dedupes lists by id across pages. Adds politeness delays between pages.
+export async function scrapeListsByTag(tag: string, options: ListsByTagOptions = {}): Promise<TagListEntry[]> {
+  const configData = await loadConfig();
+  const startPage = options.startPage ?? 1;
+  const maxPages = options.maxPages ?? Infinity;
+  const all: TagListEntry[] = [];
+  const seenIds = new Set<string>();
+  let page = startPage;
+
+  for (;;) {
+    if (page > maxPages) break;
+    const url = `https://www.goodreads.com/list/tag/${encodeURIComponent(tag)}${page === 1 ? '' : `?page=${page}`}`;
+    const headers: any = { 'User-Agent': USER_AGENT };
+    if (configData.cookie) headers['Cookie'] = configData.cookie;
+
+    try {
+      const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
+      const $ = cheerio.load(response.data);
+      const parsed = parseTagListPage($, tag);
+      let added = 0;
+      for (const l of parsed.lists) {
+        if (!seenIds.has(l.id)) {
+          seenIds.add(l.id);
+          all.push(l);
+          added++;
+        }
+      }
+      console.log(chalk.cyan.bold(`🔖 Tag index "list/tag/${tag}" page ${page}: ${parsed.lists.length} lists (${added} new)${parsed.nextPage !== null ? ` · next → page ${parsed.nextPage}` : ' · last page'}. Cumulative: ${all.length} unique lists.`));
+
+      if (parsed.nextPage === null || (maxPages !== Infinity && page >= maxPages)) break;
+      page = parsed.nextPage;
+      await delay(1500, 5000);
+    } catch (error) {
+      if (isConnectivityError(error)) throw error;
+      console.error(chalk.red.bold(`   ❌ Error fetching tag index page ${page}:`), (error as any).message);
+      break;
+    }
+  }
+
+  return all;
 }
 
 export interface UserVoteEntry {
@@ -914,7 +1095,7 @@ function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
   const avgMatch = statsText.match(/Average rating\s+([\d.]+)/);
   const ratingsMatch = statsText.match(/([\d,]+)\s+ratings/);
   const reviewsMatch = statsText.match(/([\d,]+)\s+reviews/);
-  const shelvesMatch = statsText.match(/shelved\s+([\d,]+)\s+times/);
+  const shelvesMatch = statsText.match(/shelved\s+([\d,]+)\s+times?/);
   return {
     averageRating: avgMatch ? avgMatch[1] : undefined,
     numRatings: ratingsMatch ? ratingsMatch[1] : undefined,
@@ -990,6 +1171,18 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
     return { id };
   }
 
+  // Skip author pages that already proved to be a dead end — either earlier in
+  // this run (permanant failure) or across runs (enough persisted strikes).
+  if (failedAuthorPagesRun.has(authorId)) {
+    console.log(chalk.gray(`   ⏭️ Skipping author page ${authorId} — it failed with a permanent error earlier this run.`));
+    return { id };
+  }
+  const priorFailure = loadAuthorScrapeFailure(authorId);
+  if (priorFailure && (priorFailure.failCount ?? 0) >= AUTHOR_SCRAPE_FAIL_LIMIT) {
+    console.log(chalk.gray(`   ⏭️ Skipping author page ${authorId} — ${priorFailure.failCount} consecutive scrape failures (last: ${priorFailure.lastError ?? 'n/a'}).`));
+    return { id };
+  }
+
   try {
     const config = await loadConfig();
     const headers: any = { 'User-Agent': USER_AGENT };
@@ -1003,6 +1196,7 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
 
     const books = parseAuthorListBooks($, authorSlug);
     authorPage1Cache.set(authorId, books);
+    clearAuthorScrapeFailure(authorId);
 
     const match = findOnAuthorPage(id, exactTitleHint, books);
     if (match) return match;
@@ -1018,6 +1212,13 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
     return { id };
   } catch (error) {
     console.error(chalk.yellow(`   ⚠️ Author page fetch failed for book ${id} (author ${authorSlug}): ${(error as any).code || (error as any).message || error}`));
+    if (isPermanentAuthorPageFailure(error)) {
+      recordAuthorScrapeFailure(authorId, String((error as any).code || `HTTP ${(error as any).response?.status}`));
+      failedAuthorPagesRun.add(authorId);
+      console.log(chalk.gray(`      ↳ Permanent failure — recorded strike ${((loadAuthorScrapeFailure(authorId)?.failCount) ?? '?')}/${AUTHOR_SCRAPE_FAIL_LIMIT} for author ${authorId}; skipped for the rest of this run.`));
+    } else {
+      console.log(chalk.gray(`      ↳ Transient failure — not counted as a strike (may clear with a cooldown).`));
+    }
     return { id };
   }
 }
@@ -1098,18 +1299,31 @@ export async function scrapeAuthorStats(
     if (crawlAllPages && catalogPages > 1) {
       for (let page = 2; page <= catalogPages; page++) {
         await delay(2000, 4000);
-        try {
-          const pageResponse = await fetchWithRetry(buildAuthorListUrl(authorSlug, sort, page), { headers, timeout: TIMEOUT });
-          const pageBooks = parseAuthorListBooks(cheerio.load(pageResponse.data), authorSlug);
-          if (pageBooks.length) {
-            const res = mergeBooksFromAuthorPage(pageBooks);
-            booksInserted += res.inserted;
-            booksEnriched += res.updated;
-            console.log(chalk.dim(`   📚 ${authorSlug} p${page}: +${res.inserted} new / ${res.updated} enriched of ${pageBooks.length}`));
+        // A "database is locked" (SQLITE_BUSY) comes from another process holding
+        // the write lock — transient, worth retrying a few times with backoff.
+        // Only a real network/Goodreads/4xx failure should abort the crawl.
+        const retriesForLock = 3;
+        for (let attempt = 1; attempt <= retriesForLock; attempt++) {
+          try {
+            const pageResponse = await fetchWithRetry(buildAuthorListUrl(authorSlug, sort, page), { headers, timeout: TIMEOUT });
+            const pageBooks = parseAuthorListBooks(cheerio.load(pageResponse.data), authorSlug);
+            if (pageBooks.length) {
+              const res = mergeBooksFromAuthorPage(pageBooks);
+              booksInserted += res.inserted;
+              booksEnriched += res.updated;
+              console.log(chalk.dim(`   📚 ${authorSlug} p${page}: +${res.inserted} new / ${res.updated} enriched of ${pageBooks.length}`));
+            }
+            break; // success (or no books) — move on
+          } catch (e) {
+            const msg = String((e as any).message || e);
+            if (isDbLockError(e) && attempt < retriesForLock) {
+              console.error(chalk.yellow(`   ⚠️ DB locked on page ${page} (attempt ${attempt}/${retriesForLock}), retrying...`));
+              await delay(3000, 5000);
+              continue;
+            }
+            console.error(chalk.yellow(`   ⚠️ Failed page ${page} for ${authorSlug}: ${msg}`));
+            break;
           }
-        } catch (e) {
-          console.error(chalk.yellow(`   ⚠️ Failed page ${page} for ${authorSlug}: ${(e as any).message}`));
-          break;
         }
       }
     }
@@ -1205,7 +1419,10 @@ export async function scrapeBookDetails(bookId: string, titleHint?: string, auth
       const authorDetails = await scrapeBookByAuthorPage(bookId, effectiveSlug, titleHint);
       const duration = ((Date.now() - start) / 1000).toFixed(2);
       if (acceptAuthorListMatch(authorDetails)) {
-        console.log(chalk.gray(`      ✅ Success via Author List (${duration}s)`));
+        const hasYear = !!authorDetails.published && authorDetails.published !== 'Unknown';
+        console.log(chalk.gray(hasYear
+          ? `      ✅ Success via Author List (${duration}s)`
+          : `      ✅ Found on author page via Author List (${duration}s) — no publication year available`));
         await updateSuccessMetric('author', true);
         return authorDetails;
       }

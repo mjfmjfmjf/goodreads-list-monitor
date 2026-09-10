@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { getDb } from './db.js';
 import { runTagDiscovery } from './discovery.js';
+import { getKnownShelfPages } from './storage.js';
 import { delay, isConnectivityError } from './utils.js';
 
 export interface GapGenreDiscoveryOptions {
@@ -16,13 +17,13 @@ export interface GapGenreDiscoveryOptions {
 // Gap genres = genres that are also tags (genre name = a /shelf/show/<name>)
 // but have NOT yet been scraped into tag_books. These are the highest-value
 // remaining tag scrapes: goal 4 orders them "most books to least books".
-export function getGapGenres(options: { sortBy?: string; force?: boolean }): Array<{ name: string; memberCount: number; scraped: boolean }> {
+export function getGapGenres(options: { sortBy?: string; force?: boolean }): Array<{ name: string; memberCount: number; scraped: boolean; pages: number | null }> {
   const db = getDb();
   const genres = db.prepare('SELECT name, member_count FROM genres ORDER BY name').all() as any[];
   const scraped = new Set((db.prepare('SELECT DISTINCT tag_name FROM tag_books').all() as any[]).map(r => r.tag_name));
 
   const out = genres
-    .map(g => ({ name: g.name, memberCount: g.member_count ?? 0, scraped: scraped.has(g.name) }))
+    .map(g => ({ name: g.name, memberCount: g.member_count ?? 0, scraped: scraped.has(g.name), pages: getKnownShelfPages(g.name) }))
     .filter(g => options.force || !g.scraped);
 
   if (options.sortBy === 'alpha') out.sort((a, b) => a.name.localeCompare(b.name));
@@ -53,7 +54,7 @@ export async function runGapGenreTagDiscovery(options: GapGenreDiscoveryOptions 
   }
 
   slice.forEach((g, idx) => {
-    console.log(chalk.gray(`   ${start + idx}. ${g.name} (${formatNum(g.memberCount)} books${g.scraped ? ', already scraped' : ''})`));
+    console.log(chalk.gray(`   ${start + idx}. ${g.name} (${formatNum(g.memberCount)} books${g.pages ? `, ~${g.pages} pages` : ''}${g.scraped ? ', already scraped' : ''})`));
   });
 
   if (dryRun) {
@@ -62,13 +63,20 @@ export async function runGapGenreTagDiscovery(options: GapGenreDiscoveryOptions 
   }
 
   const shelfPageStart = '1';
-  const shelfPageEnd = options.shelfPages ? parseShelfPages(options.shelfPages) : '25';
 
   for (let i = 0; i < slice.length; i++) {
     const g = slice[i];
+    // Cap each shelf crawl at what we believe the shelf actually has. Priority:
+    // explicit --shelfPages flag > stored real last page > member-count-based
+    // estimate > the 25-page default. The live pagination footer overrides any
+    // cap downward anyway; never crawl past 25 pages.
+    const shelfPageEnd = options.shelfPages
+      ? parseShelfPages(options.shelfPages)
+      : String(Math.min(25, getKnownShelfPages(g.name) ?? 25));
     console.log(chalk.yellow.bold(`\n==================================================`));
     console.log(chalk.yellow.bold(`🕳️  GAP SCRAPE [${start + i}/${totalGaps}] (${i + 1}/${slice.length} this run): "${g.name}"`));
     console.log(chalk.yellow.bold(`==================================================`));
+    console.log(chalk.gray(`   Index says ${formatNum(g.memberCount)} books; probable shelf pages: ${getKnownShelfPages(g.name) ?? '?'} (crawl cap ${shelfPageEnd}).`));
     try {
       await runTagDiscovery(g.name, {
         cacheOnly: true,

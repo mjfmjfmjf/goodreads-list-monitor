@@ -3,7 +3,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import { scrapeListBooks, scrapeBookDetails, scrapeShelfBooks } from './scraper.js';
 import { loadState, saveState, loadBookCache, getBook, upsertBook, syncBooksToCache } from './storage.js';
-import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
+import { getDb } from './db.js';
+import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink, withDbLockRetryAsync } from './utils.js';
 import { RegexCriterion, matchesRegex } from './bookMatch.js';
 import { parseSeriesPos, matchesSeriesPos, SERIES_POS_STANDALONE } from './seriesPos.js';
 
@@ -37,7 +38,9 @@ export interface AuditResult {
   tooHighAvg: number;
   regexMismatch: number;
   seriesPosMismatch: number;
+  belowTagShelves: number;
   failed?: boolean;
+  tagSkipped?: boolean;
 }
 
 /**
@@ -54,9 +57,102 @@ function isSameBook(book1: { id: string, title: string, author: string }, book2:
   return title1 === title2 && auth1 === auth2;
 }
 
+// ── DB-backed tag/shelf check (tag-audit functionality in bulk-audit) ──────
+// Instead of scraping the shelf live, judge a book against the tag_books
+// table: a book stays on the list if it was scraped shelved `shelved` times
+// as the configured tag and that count meets the minimum.
+
+// Best-known "shelved N times as <tag>" per book id, plus a work-level map so
+// an edition-id mismatch between the shelf scrape and the list still resolves
+// to the same book (via the books.work_id join).
+export interface TagShelvesIndex {
+  byBook: Map<string, number>;
+  byWork: Map<string, number>;
+}
+
+export function buildTagShelvesIndex(
+  tagRows: { book_id: string | number; shelved?: number | null }[],
+  workRows: { book_id: string | number; work_id: string | number; shelved?: number | null }[]
+): TagShelvesIndex {
+  const byBook = new Map<string, number>();
+  const byWork = new Map<string, number>();
+  const takeMax = (m: Map<string, number>, key: string, val: number) => m.set(key, Math.max(m.get(key) ?? 0, val));
+  for (const r of tagRows) {
+    if (r.shelved == null) continue;
+    takeMax(byBook, String(r.book_id), Number(r.shelved));
+  }
+  for (const r of workRows) {
+    if (r.work_id == null || r.shelved == null) continue;
+    takeMax(byWork, String(r.work_id), Number(r.shelved));
+  }
+  return { byBook, byWork };
+}
+
+// Times a book was shelved under the tag: book id directly, else the book's
+// work id. `undefined` means the tag_books table has no record for the book.
+export function tagShelvedCount(index: TagShelvesIndex, bookId: string, workId?: string): number | undefined {
+  const direct = index.byBook.get(bookId);
+  if (direct !== undefined) return direct;
+  if (workId != null) return index.byWork.get(String(workId));
+  return undefined;
+}
+
+export function findBelowTagShelves(
+  books: { id: string | number }[],
+  index: TagShelvesIndex,
+  workIdByBook: Map<string, string>,
+  minShelves: number
+): { bookId: string; count?: number }[] {
+  const out: { bookId: string; count?: number }[] = [];
+  for (const book of books) {
+    const id = String(book.id);
+    const count = tagShelvedCount(index, id, workIdByBook.get(id));
+    if (count !== undefined && count >= minShelves) continue;
+    out.push({ bookId: id, count });
+  }
+  return out;
+}
+
+// Editions of the same Goodreads work usually share a normalized title+author.
+// When a list book has no work id in `books`, resolve one from another row that
+// does, so the work-level tag_books map still matches across edition mismatches.
+export function resolveMissingWorkIds(
+  books: { id: string | number; title: string; author?: string }[],
+  knownWorkRows: { title: string; author?: string; work_id: string | number }[]
+): Map<string, string> {
+  const byKey = new Map<string, string>();
+  for (const r of knownWorkRows) {
+    if (r.work_id == null || String(r.work_id) === '') continue;
+    const key = `${normalizeTitle(r.title)}|${normalizeAuthor(r.author ?? '')}`;
+    if (!byKey.has(key)) byKey.set(key, String(r.work_id));
+  }
+  const out = new Map<string, string>();
+  for (const b of books) {
+    const key = `${normalizeTitle(b.title)}|${normalizeAuthor(b.author ?? '')}`;
+    const wid = byKey.get(key);
+    if (wid) out.set(String(b.id), wid);
+  }
+  return out;
+}
+
 export async function runTagAudit(tag: string, listId: string, options: AuditOptions): Promise<void> {
-  const state = await loadState();
-  const bookCache = await loadBookCache();
+  // Guard against the #1 invocation mistake: swapping <tag> and <listId>.
+  // Tags are shelf slugs ("space-opera"); list ids are numeric ("78971").
+  const listIdIsPlausible = /^\d+$/.test(listId.trim()) || listId.includes('/');
+  if (/^\d+$/.test(tag.trim()) || !listIdIsPlausible) {
+    console.log(chalk.yellow.bold(`\n⚠️  tag-audit takes <tag> <listId> — TAG FIRST, then the list id.`));
+    console.log(chalk.yellow(`   You passed tag="${tag}" listId="${listId}".`));
+    if (/^\d+$/.test(tag.trim()) && !listIdIsPlausible) {
+      console.log(chalk.yellow(`   Those look swapped — shelf "${tag}" is probably your list id, and "space-opera"-style names are tags.`));
+      console.log(chalk.yellow(`   Correct: npm run tag-audit ${listId} ${tag} --min 1000 --minTags 10`));
+    } else {
+      console.log(chalk.yellow(`   The shelf "${tag}" is unlikely to exist; check the tag spelling and that the list id is numeric.`));
+    }
+    console.log('');
+  }
+
+  const state = await withDbLockRetryAsync(() => Promise.resolve(loadState()));
+  const bookCache = await withDbLockRetryAsync(() => Promise.resolve(loadBookCache()));
   const listTitle = state.lists[listId]?.title || `List ${listId}`;
   
   const minRatings = parseInt(options.min?.replace(/,/g, '') || '0', 10);
@@ -76,7 +172,7 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
     // 1. Discovery Phase: Read the Tag/Shelf pages first
     console.log(chalk.cyan.bold(`🔎 Step 1: Discovering eligible books from shelf "${tag}"...`));
     const shelfBooks = await scrapeShelfBooks(tag, minTags, 25);
-    await syncBooksToCache(shelfBooks, bookCache);
+    await withDbLockRetryAsync(() => syncBooksToCache(shelfBooks, bookCache));
     
     // Filter shelf books by ratings, years, and average rating
     const eligibleShelfBooks = shelfBooks.filter(book => {
@@ -123,7 +219,7 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
         console.log(chalk.green.bold(`   ➕ ${msg}`));
         await appendToAuditReport(listTitle, msg);
         toAdd.push(formatBookLink(shelfBook.title, shelfBook.id));
-        updateCache(shelfBook, tag, bookCache);
+        await updateCache(shelfBook, tag, bookCache);
       }
     }
 
@@ -171,9 +267,9 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
   }
 }
 
-function updateCache(book: any, tag: string, bookCache: any) {
+async function updateCache(book: any, tag: string, bookCache: any) {
   // Merge onto the current DB row and persist just that row.
-  const fresh = getBook(book.id);
+  const fresh = await withDbLockRetryAsync(() => Promise.resolve(getBook(book.id)));
   const entry = fresh ?? bookCache[book.id];
   if (!entry) {
     bookCache[book.id] = {
@@ -207,12 +303,12 @@ function updateCache(book: any, tag: string, bookCache: any) {
   }
   if (!bookCache[book.id].tags) bookCache[book.id].tags = {};
   bookCache[book.id].tags[tag] = book.tagCount;
-  upsertBook(bookCache[book.id]);
+  await withDbLockRetryAsync(() => Promise.resolve(upsertBook(bookCache[book.id])));
 }
 
 export async function runAudit(listId: string, options: AuditOptions): Promise<AuditResult> {
-  const state = await loadState();
-  const bookCache = await loadBookCache();
+  const state = await withDbLockRetryAsync(() => Promise.resolve(loadState()));
+  const bookCache = await withDbLockRetryAsync(() => Promise.resolve(loadBookCache()));
   const listTitle = state.lists[listId]?.title || `List ${listId}`;
   
   const minRatings = options.min ? parseInt(options.min.replace(/,/g, ''), 10) : 0;
@@ -221,6 +317,9 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
   const maxYear = options.maxYear ? parseInt(options.maxYear, 10) : Infinity;
   const minAvg = options.minAvg ? parseFloat(options.minAvg) : 0;
   const maxAvg = options.maxAvg ? parseFloat(options.maxAvg) : Infinity;
+  const tag = options.tag?.trim();
+  const isTagAudit = !!tag;
+  const minShelves = isTagAudit ? parseInt(options.minTags?.replace(/,/g, '') || '0', 10) : 0;
 
   const regexCriterion: RegexCriterion = {
     titleRegex: options.titleRegex,
@@ -239,6 +338,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
   const seriesPosTarget = isSeriesPosAudit ? parseFloat(options.seriesPos as string) : NaN;
 
   console.log(chalk.cyan.bold(`\n🔍 Starting Audit for: "${listTitle}"`));
+  if (isTagAudit) console.log(chalk.gray(`   - Tag Shelf Criteria: "${tag}" shelved >= ${minShelves} times (checked against the tag_books DB)`));
   if (isYearAudit) console.log(chalk.gray(`   - Year Criteria: ${minYear} to ${maxYear === Infinity ? 'Any' : maxYear}`));
   if (isRatingsAudit) console.log(chalk.gray(`   - Ratings Criteria: ${minRatings} to ${maxRatings === Infinity ? 'Any' : maxRatings}`));
   if (isAvgAudit) console.log(chalk.gray(`   - Avg Rating Criteria: ${minAvg} to ${maxAvg === Infinity ? 'Any' : maxAvg}`));
@@ -250,7 +350,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
     if (regexCriterion.authorFirstRegex) parts.push(`Author First: /${regexCriterion.authorFirstRegex}/`);
     console.log(chalk.gray(`   - Regex Criteria: ${parts.join(', ')}`));
   }
-  if (!isYearAudit && !isRatingsAudit && !isAvgAudit && !isRegexAudit && !isSeriesPosAudit) console.log(chalk.gray(`   - Mode: Harvesting metadata only`));
+  if (!isTagAudit && !isYearAudit && !isRatingsAudit && !isAvgAudit && !isRegexAudit && !isSeriesPosAudit) console.log(chalk.gray(`   - Mode: Harvesting metadata only`));
 
   const result: AuditResult = {
     listId,
@@ -264,12 +364,30 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
     tooLowAvg: 0,
     tooHighAvg: 0,
     regexMismatch: 0,
-    seriesPosMismatch: 0
+    seriesPosMismatch: 0,
+    belowTagShelves: 0
   };
+
+  // Load the tag_books shelf membership for the configured tag. Empty table for
+  // this tag means it was never scraped → skip the criterion with a warning.
+  let tagShelvesIndex: TagShelvesIndex | undefined;
+  if (isTagAudit) {
+    const db = getDb();
+    const tagRows = db.prepare('SELECT book_id, shelved FROM tag_books WHERE tag_name = ?').all(tag!) as any[];
+    if (tagRows.length === 0) {
+      result.tagSkipped = true;
+      console.log(chalk.yellow(`   ⚠️ Tag "${tag}" not yet scraped — skipping this list's tag check.`));
+    } else {
+      const workRows = db.prepare(
+        'SELECT t.book_id, b.work_id, t.shelved FROM tag_books t JOIN books b ON b.id = t.book_id WHERE t.tag_name = ? AND b.work_id IS NOT NULL AND t.shelved IS NOT NULL'
+      ).all(tag!) as any[];
+      tagShelvesIndex = buildTagShelvesIndex(tagRows, workRows);
+    }
+  }
 
   try {
     const listBooks = await scrapeListBooks(listId);
-    await syncBooksToCache(listBooks, bookCache);
+    await withDbLockRetryAsync(() => syncBooksToCache(listBooks, bookCache));
     result.totalBooks = listBooks.length;
     
     let outliersFound = 0;
@@ -281,6 +399,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
     const tooHighAvg: string[] = [];
     const regexMismatch: string[] = [];
     const seriesPosMismatch: string[] = [];
+    const belowTagShelves: string[] = [];
 
     // Pre-index cache by normalized title for year lookups
     const titleCache: Record<string, string> = {};
@@ -346,7 +465,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
              console.log(chalk.gray(`   [${i + 1}/${listBooks.length}] Fetching missing year for: "${book.title.substring(0, 30)}..."`));
              const details = await scrapeBookDetails(book.id, book.title, book.author);
              // Preserve fields the list page doesn't carry; persist just this row.
-             const fresh = getBook(book.id);
+             const fresh = await withDbLockRetryAsync(() => Promise.resolve(getBook(book.id)));
              bookCache[book.id] = {
                 ...(fresh ?? {}),
                 id: book.id,
@@ -360,7 +479,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
                 requiresAuth: details.requiresAuth
              };
              bookData = bookCache[book.id];
-             upsertBook(bookCache[book.id]);
+             await withDbLockRetryAsync(() => Promise.resolve(upsertBook(bookCache[book.id])));
              await delay(500, 1500);
         }
 
@@ -435,6 +554,82 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
       }
     }
 
+    // 6. TAG SHELF CHECK (DB-backed): a book stays on the list only if the
+    // tag_books table shows it shelved as `<tag>` at least minShelves times.
+    // Skipped entirely when the tag was never scraped (tagSkipped).
+    if (isTagAudit && tagShelvesIndex) {
+      const db = getDb();
+      const workIdByBook = new Map<string, string>();
+      const listIds = listBooks.map(b => String(b.id));
+      for (let i = 0; i < listIds.length; i += 500) {
+        const chunk = listIds.slice(i, i + 500);
+        const placeholders = chunk.map(() => '?').join(',');
+        const rows = db.prepare(`SELECT id, work_id FROM books WHERE id IN (${placeholders})`).all(...chunk) as any[];
+        for (const r of rows) {
+          if (r.work_id != null) workIdByBook.set(String(r.id), String(r.work_id));
+        }
+      }
+
+      // Editions of the same work can carry different ids on the shelf vs the
+      // list (e.g. shelf edition 36510196 vs list edition 51964, both Old Man's
+      // War). Resolve a work id for list books missing one by matching another
+      // books-table row with the same normalized title+author that HAS a work id
+      // — the tag_books work-level map then resolves the edition mismatch.
+      const missingWork = listBooks.filter(b => !workIdByBook.has(String(b.id)));
+      if (missingWork.length > 0) {
+        const workIdCandidates = (titles: string[]): any[] => {
+          const out: any[] = [];
+          for (let i = 0; i < titles.length; i += 500) {
+            const chunk = titles.slice(i, i + 500);
+            const ph = chunk.map(() => '?').join(',');
+            out.push(...(db.prepare(
+              `SELECT DISTINCT title, author, work_id FROM books WHERE work_id IS NOT NULL AND work_id != '' AND title IN (${ph})`
+            ).all(...chunk) as any[]));
+          }
+          return out;
+        };
+        for (const [id, wid] of resolveMissingWorkIds(
+          missingWork,
+          workIdCandidates([...new Set(missingWork.map(b => b.title))])
+        )) {
+          workIdByBook.set(id, wid);
+        }
+
+        // Second pass: the shelf scrape may store a bare title ("Cibola Burn")
+        // while the list records "Cibola Burn (Expanse, #4)". Match on the
+        // normalized title prefix, then normalize in JS to confirm the author.
+        const stillMissing = missingWork.filter(b => !workIdByBook.has(String(b.id)));
+        if (stillMissing.length > 0) {
+          const prefixRows: any[] = [];
+          for (const b of stillMissing) {
+            prefixRows.push(...(db.prepare(
+              `SELECT DISTINCT title, author, work_id FROM books WHERE work_id IS NOT NULL AND work_id != '' AND title LIKE ?`
+            ).all(normalizeTitle(b.title) + '%') as any[]));
+          }
+          for (const [id, wid] of resolveMissingWorkIds(stillMissing, prefixRows)) {
+            workIdByBook.set(id, wid);
+          }
+        }
+      }
+
+      console.log(chalk.cyan.bold(`\n🏷️ Step: Checking ${listBooks.length} books against tag_books for "${tag}" (>= ${minShelves} shelves)...`));
+      const outliers = findBelowTagShelves(listBooks, tagShelvesIndex, workIdByBook, minShelves);
+      const byId = new Map(outliers.map(o => [o.bookId, o] as const));
+      for (const book of listBooks) {
+        const out = byId.get(String(book.id));
+        if (!out) continue;
+        const reason = out.count === undefined
+          ? `NOT SHELVED AS "${tag}" (no tag_books row)`
+          : `SHELVED ${out.count} < ${minShelves}`;
+        const bookLink = formatBookLink(book.title, book.id);
+        const authorStr = book.author ? ` by ${book.author}` : '';
+        console.log(chalk.red.bold(`   ❌ OUTLIER: [${reason}] ${bookLink}${authorStr} (Pos: ${book.position})`));
+        await appendToAuditReport(listTitle, `[${reason}] ${book.title}${authorStr} [ID: ${book.id}]`);
+        outliersFound++;
+        belowTagShelves.push(bookLink);
+      }
+    }
+
     // Final consolidated report
     if (tooManyRatings.length > 0) console.log(chalk.magenta.bold(`\n🎓 ${tooManyRatings.join(' and ')} graduated (Too many ratings)`));
     if (tooFewRatings.length > 0) console.log(chalk.red.bold(`\n❌ Below ratings threshold: ${tooFewRatings.join(' and ')}`));
@@ -444,6 +639,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
     if (tooHighAvg.length > 0) console.log(chalk.red.bold(`\n❌ Above avg rating threshold: ${tooHighAvg.join(' and ')}`));
     if (regexMismatch.length > 0) console.log(chalk.red.bold(`\n❌ Regex mismatch: ${regexMismatch.join(' and ')}`));
     if (seriesPosMismatch.length > 0) console.log(chalk.red.bold(`\n❌ Wrong series position: ${seriesPosMismatch.join(' and ')}`));
+    if (belowTagShelves.length > 0) console.log(chalk.red.bold(`\n❌ Below "${tag}" shelf threshold: ${belowTagShelves.join(' and ')}`));
 
     reportAuditSummary(outliersFound, listBooks.length);
 
@@ -456,6 +652,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
     result.tooHighAvg = tooHighAvg.length;
     result.regexMismatch = regexMismatch.length;
     result.seriesPosMismatch = seriesPosMismatch.length;
+    result.belowTagShelves = belowTagShelves.length;
 
     return result;
   } catch (error) {

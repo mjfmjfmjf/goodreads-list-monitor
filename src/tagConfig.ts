@@ -13,6 +13,7 @@ export interface AuditCriteria {
   minYear?: number;
   maxYear?: number;
   minTags?: number;
+  tag?: string;
   minAvg?: number;
   maxAvg?: number;
   seriesPos?: number;

@@ -36,7 +36,13 @@ import {
   countGenres,
   replaceGenreTagXref,
   loadGenreTagXref,
-  loadXrefTagMap
+  loadXrefTagMap,
+  persistShelfPageCount,
+  getKnownShelfPages,
+  loadTagStats,
+  backfillTagPageEstimates,
+  upsertListScrape,
+  loadListScrape
 } from './storage.js';
 import type { AuthorCacheEntry, CachedBook } from './storage.js';
 
@@ -207,6 +213,7 @@ describe('book rows', () => {
       requiresAuth: true,
       isBad: false,
       failCount: 2,
+      firstSeen: '2026-05-01T00:00:00.000Z',
     }));
     const got = getBook('9002')!;
     expect(got.title).toBe('Test Book');
@@ -221,6 +228,23 @@ describe('book rows', () => {
     expect(got.requiresAuth).toBe(true);
     expect(got.isBad).toBe(false);
     expect(got.failCount).toBe(2);
+    expect(got.firstSeen).toBe('2026-05-01T00:00:00.000Z');
+  });
+
+  it('first_seen defaults to lastUpdated on insert and is preserved on update', () => {
+    upsertBook(makeBook({ id: '9300', lastUpdated: '2026-08-01T00:00:00.000Z' }));
+    expect(getBook('9300')!.firstSeen).toBe('2026-08-01T00:00:00.000Z');
+    upsertBook(makeBook({ id: '9300', lastUpdated: '2026-08-20T00:00:00.000Z' }));
+    const got = getBook('9300')!;
+    expect(got.lastUpdated).toBe('2026-08-20T00:00:00.000Z');
+    expect(got.firstSeen).toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  it('explicit firstSeen is honored on first insert and kept on update', () => {
+    upsertBook(makeBook({ id: '9301', lastUpdated: '2026-08-20T00:00:00.000Z', firstSeen: '2026-07-01T00:00:00.000Z' }));
+    expect(getBook('9301')!.firstSeen).toBe('2026-07-01T00:00:00.000Z');
+    upsertBook(makeBook({ id: '9301', lastUpdated: '2026-08-25T00:00:00.000Z', firstSeen: '2026-07-02T00:00:00.000Z' }));
+    expect(getBook('9301')!.firstSeen).toBe('2026-07-01T00:00:00.000Z');
   });
 
   it('upsertBook writes exactly what it is given — omitted columns are cleared', () => {
@@ -504,5 +528,93 @@ describe('genre_tag_xref', () => {
     const map = loadXrefTagMap();
     expect(map.get('sf')).toBe('science-fiction');
     expect(map.get('scifi')).toBe('science-fiction');
+  });
+});
+
+describe('tag shelf page stats', () => {
+  const clear = () => getDb().prepare(`
+    DELETE FROM tag_stats WHERE tag_name IN ('space-opera', 'short-tag', 'shorter-tag', 'capped-tag', 'mixed-tag')
+  `).run();
+  beforeEach(() => clear());
+
+  it('persists and updates the measured last page', () => {
+    expect(getKnownShelfPages('space-opera')).toBeNull();
+
+    persistShelfPageCount('space-opera', 21);
+    expect(getKnownShelfPages('space-opera')).toBe(21);
+    expect(loadTagStats('space-opera')[0]).toMatchObject({
+      tagName: 'space-opera',
+      lastPageSeen: 21,
+      estimatePage: null,
+      estimateSource: null,
+    });
+
+    persistShelfPageCount('space-opera', 22);
+    expect(getKnownShelfPages('space-opera')).toBe(22);
+    expect(loadTagStats('space-opera').length).toBe(1);
+  });
+
+  it('backfills harvest-derived estimates for shelves at/below the 24-page scan', () => {
+    upsertTagBooks('short-tag', Array.from({ length: 1200 }, (_, i) => ({ id: `s${i}`, position: i + 1, shelved: 5 })));
+    upsertTagBooks('shorter-tag', Array.from({ length: 884 }, (_, i) => ({ id: `q${i}`, position: i + 1, shelved: 2 })));
+    backfillTagPageEstimates();
+
+    expect(getKnownShelfPages('short-tag')).toBe(24);
+    expect(getKnownShelfPages('shorter-tag')).toBe(18);
+    expect(loadTagStats('shorter-tag')[0].estimateSource).toBe('harvest-derived');
+  });
+
+  it('guesses from the genre member count for 25-page-capped shelves', () => {
+    upsertGenres([{ name: 'capped-tag', memberCount: 59839 }]);
+    upsertTagBooks('capped-tag', Array.from({ length: 1250 }, (_, i) => ({ id: `c${i}`, position: i + 1, shelved: 1 })));
+    backfillTagPageEstimates();
+
+    const row = loadTagStats('capped-tag')[0]!;
+    expect(row.estimatePage).toBe(Math.ceil(59839 / 50));
+    expect(row.estimateSource).toBe('member-count-guess');
+  });
+
+  it('keeps a measured last_page_seen and does not let a guess replace it', () => {
+    upsertGenres([{ name: 'mixed-tag', memberCount: 5000 }]);
+    upsertTagBooks('mixed-tag', Array.from({ length: 1250 }, (_, i) => ({ id: `m${i}`, position: i + 1, shelved: 1 })));
+    persistShelfPageCount('mixed-tag', 18);
+    backfillTagPageEstimates();
+
+    const row = loadTagStats('mixed-tag')[0]!;
+    expect(row.lastPageSeen).toBe(18);
+    expect(row.estimatePage).toBe(Math.ceil(5000 / 50));
+    expect(getKnownShelfPages('mixed-tag')).toBe(18);
+  });
+});
+
+describe('list_scrapes', () => {
+  const clear = () => getDb().prepare(`DELETE FROM list_scrapes WHERE list_id IN ('196307', '143500')`).run();
+  beforeEach(() => clear());
+
+  it('records a list scrape with first/last timestamps', () => {
+    const t1 = '2026-09-01T00:00:00.000Z';
+    const t2 = '2026-09-08T00:00:00.000Z';
+
+    upsertListScrape('196307', 'Best Books of 2024', t1);
+    let row = loadListScrape('196307')!;
+    expect(row.listName).toBe('Best Books of 2024');
+    expect(row.firstScraped).toBe(t1);
+    expect(row.lastScraped).toBe(t1);
+
+    upsertListScrape('196307', 'Best Books of 2024', t2);
+    row = loadListScrape('196307')!;
+    expect(row.firstScraped).toBe(t1);   // first scrape is kept
+    expect(row.lastScraped).toBe(t2);     // last scrape advances
+  });
+
+  it('keeps the first known name when a later crawl has none', () => {
+    upsertListScrape('143500', 'Best Books of the Decade 2020s', '2026-09-01T00:00:00.000Z');
+    upsertListScrape('143500', null, '2026-09-08T00:00:00.000Z');
+    const row = loadListScrape('143500')!;
+    expect(row.listName).toBe('Best Books of the Decade 2020s');
+  });
+
+  it('returns undefined for lists never scraped', () => {
+    expect(loadListScrape('999999')).toBeUndefined();
   });
 });

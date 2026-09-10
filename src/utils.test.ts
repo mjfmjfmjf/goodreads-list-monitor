@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, formatBookLink, isConnectivityError } from './utils.js';
+import { formatDuration, formatBookLink, isConnectivityError, isDbLockError } from './utils.js';
 
 describe('isConnectivityError', () => {
   it('recognizes DNS / connection-level error codes', () => {
@@ -14,6 +14,21 @@ describe('isConnectivityError', () => {
     expect(isConnectivityError({ response: { status: 429 } })).toBe(false);
     expect(isConnectivityError(undefined)).toBe(false);
     expect(isConnectivityError(new Error('boom'))).toBe(false);
+  });
+});
+
+describe('isDbLockError', () => {
+  it('recognizes SQLITE_BUSY codes and messages', () => {
+    expect(isDbLockError({ code: 'SQLITE_BUSY', message: 'database is locked' })).toBe(true);
+    expect(isDbLockError({ code: 'SQLITE_BUSY_SNAPSHOT' })).toBe(true);
+    expect(isDbLockError(new Error('database is locked'))).toBe(true);
+    expect(isDbLockError({ message: 'database table is locked' })).toBe(true);
+  });
+
+  it('rejects non-lock errors and empty values', () => {
+    expect(isDbLockError({ code: 'ENOTFOUND' })).toBe(false);
+    expect(isDbLockError(new Error('Request failed with status code 403'))).toBe(false);
+    expect(isDbLockError(undefined)).toBe(false);
   });
 });
 

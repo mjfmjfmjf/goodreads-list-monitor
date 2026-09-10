@@ -56,8 +56,11 @@ export function extractBookDetailsFromHtml(html: string, bookId: string): Extrac
     const genreNames: string[] = [];
     if (bookData.bookGenres && Array.isArray(bookData.bookGenres)) {
       for (const bg of bookData.bookGenres) {
-        const ref = bg.genre?.__ref;
-        if (ref && apolloState[ref]?.name) {
+        const inline = bg?.genre?.name;
+        const ref = bg?.genre?.__ref;
+        if (typeof inline === 'string') {
+          genreNames.push(inline);
+        } else if (ref && apolloState[ref]?.name) {
           genreNames.push(apolloState[ref].name);
         }
       }

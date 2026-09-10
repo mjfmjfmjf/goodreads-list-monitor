@@ -17,6 +17,8 @@
     "summary-top": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts summary-top",
     "summary-bottom": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts summary-bottom",
     "ratings-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts ratings-histogram",
+    "books-added-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts books-added-histogram",
+    "ratings-by-date-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts ratings-by-date-histogram",
     "series-pos-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts series-pos-histogram",
     "dump-list": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts dump-list",
     "scrape-best-of-year": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts scrape-best-of-year",
@@ -75,6 +77,10 @@
     "test:coverage": "vitest run --config vitest.config.mjs --coverage",
     "test:integration": "vitest run --config vitest.config.integration.mjs",
     "gap-genre-tag-discovery": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts gap-genre-tag-discovery",
+    "browser-book-scrape": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts browser-book-scrape",
+    "browser-login": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts browser-login",
+    "list-walk": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-walk",
+    "list-tag-walk": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-tag-walk",
     "genre-tag-pairings": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts genre-tag-pairings",
     "tag-pairings": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-pairings"
   },
@@ -97,6 +103,7 @@
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^25.6.2",
     "@vitest/coverage-v8": "^3.2.7",
+    "playwright": "^1.63.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
     "vitest": "^3.2.7"

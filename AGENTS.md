@@ -7,6 +7,10 @@
   then the offline CLI smoke test which spawns the real CLI under the
   production ts-node/esm loader. Run after EVERY feature change or dependency/
   tool upgrade.
+- **Tee test output**: whenever running unit or integration suites, pipe the
+  run through `tee` to a log (e.g. `./runUnitTests.sh 2>&1 | tee /tmp/unit.out`)
+  so the user can `tail -f` it live and confirm the run is progressing; analyze
+  the saved log afterwards.
 - **Integration tests** (`./runIntegrationTests.sh`): live lookups against real
   Goodreads pages (a dozen+ requests, pagination sweeps, one add-book lookup).
   Run deliberately BEFORE/AFTER risky scraper changes, when Goodreads markup may

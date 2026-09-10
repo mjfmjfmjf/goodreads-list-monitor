@@ -228,15 +228,27 @@ export async function syncLiveReads(
   for (let page = 1; page <= maxPages; page++) {
     pagesFetched = page;
     let html: string;
+    const userId = opts.userId || '';
+    const started = Date.now();
+    console.log(chalk.gray(`   Fetching review-list page ${page} (shelf=read, user ${userId || '?'}, catch-up since last export)...`));
     try {
       const headers: any = { 'User-Agent': USER_AGENT };
       if (opts.cookie) headers['Cookie'] = opts.cookie;
       const response = await fetchWithRetry(
-        buildReviewListUrl(opts.userId || '', page),
+        buildReviewListUrl(userId, page),
         { headers, timeout: TIMEOUT },
-        2
+        2,
+        (error, attempt, willRetry) => {
+          const detail = describeFetchError(error);
+          if (willRetry) {
+            console.log(chalk.yellow(`   ⚠️  Page ${page} ${detail} — retrying (attempt ${attempt + 1})...`));
+          } else {
+            console.log(chalk.red(`   ⛔ Page ${page} ${detail} — giving up.`));
+          }
+        }
       );
       html = String(response.data);
+      console.log(chalk.gray(`   ✓ Page ${page}: HTTP ${response.status} in ${((Date.now() - started) / 1000).toFixed(1)}s (${(html.length / 1024).toFixed(0)} KB)`));
     } catch (error: any) {
       return {
         entries,
@@ -248,15 +260,18 @@ export async function syncLiveReads(
 
     const rows = parseReviewListPage(html);
     if (rows.length === 0) {
+      console.log(chalk.gray(`   Page ${page} has no review-list rows — stopping (empty).`));
       return { entries, pagesFetched, stoppedReason: 'empty' };
     }
 
     const fresh = newEntriesSinceExport(rows, library, year, seenIds);
     entries.push(...fresh);
+    console.log(chalk.gray(`   Page ${page}: ${rows.length} rows, ${fresh.length} new since last export (${entries.length} total new so far).`));
 
     // Once the export already covers everything on a page, any deeper page is
     // older reads that are also already in the export → caught up.
     if (fresh.length === 0) {
+      console.log(chalk.gray(`   Caught up to last CSV export after ${pagesFetched} page${pagesFetched === 1 ? '' : 's'} (${entries.length} new reads).`));
       return { entries, pagesFetched, stoppedReason: 'caught-up' };
     }
 

@@ -17,6 +17,8 @@ import { runCheckQueue } from './checkQueue.js';
 import { runSummaryByYear } from './summary.js';
 import { runSummaryRatings } from './summaryRatings.js';
 import { runRatingsHistogram } from './summaryHistogram.js';
+import { runBooksAddedHistogram } from './booksAddedHistogram.js';
+import { runRatingsByDateHistogram } from './ratingsByDateHistogram.js';
 import { runSummarySeriesPos } from './summarySeriesPos.js';
 import { runDumpList } from './dumpList.js';
 import { runBestOfYear } from './bestOfYear.js';
@@ -48,6 +50,10 @@ import { runAuthorListDiff } from './authorListDiff.js';
 import { runAuthorRescan } from './authorRescan.js';
 import { runAuthorOne } from './authorOne.js';
 import { runAuthorDedupe } from './authorDedupe.js';
+import { runBrowserBookScrape } from './browserBookScrape.js';
+import { runBrowserLogin } from './browserSession.js';
+import { runListWalker } from './listWalker.js';
+import { runListTagWalker } from './listTagWalker.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
 import { runBooks } from './books.js';
 import { runLibraryQuery } from './library.js';
@@ -129,11 +135,50 @@ program
 program
   .command('ratings-histogram')
   .description('Show a coarse histogram of the number of books in the cache by number of ratings')
-  .action(async () => {
+  .option('--onlyWorkId', 'Restrict the histogram to books that have a work id', false)
+  .action(async (options: any) => {
     try {
-      await runRatingsHistogram();
+      await runRatingsHistogram({ onlyWorkId: options.onlyWorkId });
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate ratings histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('books-added-histogram')
+  .description('Show how many books were added to the DB in each of the last N days/weeks/months, with the cumulative total in the DB per period (driven by the first_seen column)')
+  .option('--days <number>', 'Last N days (default when no period flag is given)')
+  .option('--weeks <number>', 'Last N weeks (mutually exclusive with --days/--months)')
+  .option('--months <number>', 'Last N months (mutually exclusive with --days/--weeks)')
+  .action(async (options: any) => {
+    try {
+      const weeks = options.weeks != null ? parseInt(options.weeks, 10) : undefined;
+      const months = options.months != null ? parseInt(options.months, 10) : undefined;
+      const days = (weeks == null && months == null)
+        ? (options.days != null ? parseInt(options.days, 10) : 7)
+        : (options.days != null ? parseInt(options.days, 10) : undefined);
+      runBooksAddedHistogram({ days, weeks, months });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate books-added histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('ratings-by-date-histogram')
+  .description('Pivot of the ratings histogram: rows stay the rating brackets, columns become the last N days/weeks/months, and each cell shows how many books were in the DB in that rating range as of that period (driven by the first_seen column)')
+  .option('--days <number>', 'Last N days (default when no period flag is given)')
+  .option('--weeks <number>', 'Last N weeks (mutually exclusive with --days/--months)')
+  .option('--months <number>', 'Last N months (mutually exclusive with --days/--weeks)')
+  .action(async (options: any) => {
+    try {
+      const weeks = options.weeks != null ? parseInt(options.weeks, 10) : undefined;
+      const months = options.months != null ? parseInt(options.months, 10) : undefined;
+      const days = (weeks == null && months == null)
+        ? (options.days != null ? parseInt(options.days, 10) : 7)
+        : (options.days != null ? parseInt(options.days, 10) : undefined);
+      runRatingsByDateHistogram({ days, weeks, months });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate ratings-by-date histogram:'), (error as any).message);
     }
   });
 
@@ -553,15 +598,18 @@ Examples:
 
 program
   .command('author-one <urlOrSlug>')
-  .description('Scrape the overall stats (avg rating, ratings, reviews, shelves) for a single author page and update the author cache. Accepts a full author URL, a slug like 14018357.Steve_the_Noob, or a numeric author ID')
+  .description('Scrape the overall stats (avg rating, ratings, reviews, shelves) for a single author page and update the author cache. Accepts a full author URL, a slug like 14018357.Steve_the_Noob, or a numeric author ID. Add --multiPage to also crawl the author\'s full back catalog (all pages of their works list).')
+  .option('--multiPage', 'Crawl the author\'s entire catalog (all pages of their works list) instead of the first page only')
   .addHelpText('after', `
 Examples:
   $ npm run author-one -- 14018357.Steve_the_Noob
   $ npm run author-one -- https://www.goodreads.com/author/show/14018357.Steve_the_Noob
-  $ ./authorOne.sh 14018357.Steve_the_Noob`)
-  .action(async (urlOrSlug) => {
+  $ npm run author-one -- 8777 --multiPage
+  $ ./authorOne.sh 14018357.Steve_the_Noob
+  $ ./authorOne.sh 8777 --multiPage`)
+  .action(async (urlOrSlug, options) => {
     try {
-      await runAuthorOne(urlOrSlug);
+      await runAuthorOne(urlOrSlug, { multiPage: !!options.multiPage });
     } catch (error) {
       console.error(chalk.red.bold('Failed to update single author:'), (error as any).message);
     }
@@ -581,6 +629,151 @@ Examples:
       await runAuthorDedupe({ apply: options.apply });
     } catch (error) {
       console.error(chalk.red.bold('Failed to dedupe authors:'), (error as any).message);
+    }
+  });
+
+program
+  .command('browser-book-scrape')
+  .description('Harvest rich per-book fields (genres, publisher, ISBNs, ratings-by-star, currently-reading, editions, …) for prioritized /book/show pages. Default: books with the most ratings that are missing genres. Headed Chromium by default (logged-in session, WAF-safe, adds editions count); --engine axios for the faster SSR fallback when Goodreads isn\'t throttling the axios transport.')
+  .addHelpText('after', `
+Examples:
+  $ npm run browser-book-scrape -- --limit 20
+  $ npm run browser-book-scrape -- --limit 100 --minRatings 100000 --sort ratingsDesc
+  $ npm run browser-book-scrape -- --skip-has genres,work-id --sort random --limit 5
+  $ npm run browser-book-scrape -- --engine axios --limit 20   (SSR path when axios isn't throttled)
+  $ npm run browser-book-scrape -- --dryRun --limit 10
+  $ ./browserBookScrape.sh --limit 50
+  $ GOODREADS_STRICT_THROTTLE=1 npm run browser-book-scrape -- --limit 5   (abort on 202/403)
+Resume: books already scraped (browser_scrape.status=ok) are skipped unless --force.
+Throttling: 202/403 → 60s cooldown + 1 retry; abort after 2 consecutive throttles (--maxConsecutiveThrottles).`)
+  .option('--limit <number>', 'Number of books to scrape (default 10)', '10')
+  .option('--minRatings <number>', 'Only target books with at least this many ratings')
+  .option('--skip-has <criteria>', 'Only target books MISSING all of these: genres|work-id|tags (default genres)', 'genres')
+  .option('--sort <order>', 'Backlog order: ratingsDesc (default), ratingsAsc, random', 'ratingsDesc')
+  .option('--engine <engine>', 'Fetch engine: browser (default, headed Chromium, logged-in, adds editions count) or axios (SSR fallback)', 'browser')
+  .option('--dryRun', 'Show the backlog without fetching or writing')
+  .option('--force', 'Re-scrape books that already have a successful checkpoint')
+  .option('--cooldown-ms <number>', 'Cooldown sleep after a throttled response before the single retry (default 60000)')
+  .option('--maxConsecutiveThrottles <number>', 'Give up after this many consecutive throttled books (default 2; 0 = keep going)', '2')
+  .action(async (options) => {
+    try {
+      const skipHas = String(options.skipHas).split(',').map((s: string) => s.trim()).filter(Boolean);
+      await runBrowserBookScrape({
+        limit: parseInt(options.limit, 10),
+        minRatings: options.minRatings !== undefined ? parseInt(options.minRatings, 10) : undefined,
+        skipHas,
+        sort: options.sort,
+        engine: options.engine,
+        dryRun: !!options.dryRun,
+        force: !!options.force,
+        cooldownMs: options.cooldownMs !== undefined ? parseInt(options.cooldownMs, 10) : undefined,
+        maxConsecutiveThrottles: parseInt(options.maxConsecutiveThrottles, 10),
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run browser book scrape:'), (error as any).message);
+    }
+  });
+
+program
+  .command('browser-login')
+  .description('One-time interactive login for the headed browser session. Opens a persistent Chromium profile window; sign in with email + password, and the session is saved for every future --engine browser run. (Injecting config.json cookies into Playwright does NOT authenticate — Amazon/Goodreads cookies carry Secure/HttpOnly flags the browser enforces.)')
+  .addHelpText('after', `
+Examples:
+  $ npm run browser-login
+  $ ./browserLogin.sh
+  $ npm run browser-login -- --reset      (wipe the profile before re-logging-in)
+Profile: ~/.goodreads/browser-profile`)
+  .option('--reset', 'Delete the existing browser profile before opening the login window', false)
+  .option('--timeout <seconds>', 'Seconds to wait for you to sign in (default 300)', '300')
+  .action(async (options) => {
+    try {
+      await runBrowserLogin({ reset: !!options.reset, timeoutSeconds: parseInt(options.timeout, 10) });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run browser login:'), (error as any).message);
+    }
+  });
+
+program
+  .command('list-walk')
+  .description('Walk a Goodreads Listopia list through its rating-range description chain, harvesting each book (browser engine, logged-in session). Starts at the given list, skips already-harvested books, pages through the list, then follows the description chain link to the next sibling list (e.g. 1,000,000+ → 500,000-999,999 → 200,000-499,999).')
+  .addHelpText('after', `
+Examples:
+  $ npm run list-walk -- --list 35080 --limit 20      (One Million Ratings! → down the chain)
+  $ ./listWalk.sh --list 35080 --limit 100
+  $ ./listWalk.sh --list 35177 --limit 50 --direction asc   (also uphill)
+  $ ./listWalk.sh --list 35080 --dryRun --limit 10    (enumerate lists + books, no fetches/writes)
+  $ ./listWalk.sh --list 35080 --maxLists 3 --limit 50   (cap the chain length)
+Resume: done lists and harvested books are skipped unless --force.
+Throttling: same 60s cooldown + 1 retry + 2-consecutive abort as browser-book-scrape.`)
+  .option('--list <idOrUrl>', 'Starting list id or URL (default 35080 = "One Million Ratings!")', '35080')
+  .option('--direction <order>', 'Chain direction: desc (higher→lower rating ranges, default) or asc', 'desc')
+  .option('--limit <number>', 'Total BOOKS to fetch across the whole walk, 0 = unlimited (default 20)', '20')
+  .option('--maxLists <number>', 'Maximum number of lists to walk before stopping, 0 = follow the chain to the end (default 0)', '0')
+  .option('--skip-has <criteria>', 'Only fetch books MISSING all of these: genres|work-id|tags (default genres)', 'genres')
+  .option('--relist-days <number>', 'Re-walk a list previously marked done if it was last scraped more than this many days ago (default 0 = never, without --force)', '0')
+  .option('--dryRun', 'Enumerate lists + their books via list pages (network), but fetch no books and write nothing')
+  .option('--force', 'Re-walk done lists and re-fetch books that already have a successful checkpoint')
+  .option('--cooldown-ms <number>', 'Cooldown sleep after a throttled response before the single retry (default 60000)')
+  .option('--maxConsecutiveThrottles <number>', 'Give up after this many consecutive throttled books (default 2; 0 = keep going)', '2')
+  .action(async (options) => {
+    try {
+      const skipHas = String(options.skipHas).split(',').map((s: string) => s.trim()).filter(Boolean);
+      await runListWalker({
+        list: String(options.list),
+        direction: options.direction,
+        limit: parseInt(options.limit, 10),
+        maxLists: parseInt(options.maxLists, 10),
+        skipHas,
+        dryRun: !!options.dryRun,
+        force: !!options.force,
+        relistDays: parseInt(options.relistDays, 10),
+        cooldownMs: options.cooldownMs !== undefined ? parseInt(options.cooldownMs, 10) : undefined,
+        maxConsecutiveThrottles: parseInt(options.maxConsecutiveThrottles, 10),
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run list walk:'), (error as any).message);
+    }
+  });
+
+program
+  .command('list-tag-walk')
+  .description('Walk the Listopia by-tag index (e.g. https://www.goodreads.com/list/tag/2024): read every page of lists at the bottom pager, crawl each list into the DB (books + authors), and report per-list time, book count, books added, and authors added.')
+  .addHelpText('after', `
+Examples:
+  $ ./listTagWalk.sh 2024                    (all lists under list/tag/2024)
+  $ ./listTagWalk.sh 2024 --page-start 2     (start at tag-index page 2, read to the end)
+  $ ./listTagWalk.sh 2024 --page-start 1 --page-end 3   (only tag-index pages 1-3)
+  $ ./listTagWalk.sh 2024 --skip-days 0      (re-scrape everything, ignore the window)
+  $ ./listTagWalk.sh 2024 --dryRun           (enumerate the lists, crawl nothing)
+  $ ./listTagWalk.sh 2024 --list-max-pages 20 (cap each list's own crawl at 20 pages)
+Skipping: lists fully scraped to the end within the last --skip-days days
+(default 7) are skipped; the list_scrapes table tracks list id, list name,
+first scraped, and last scraped. --list-max-pages crawls are partial and are
+NOT recorded as fully scraped. Set --skip-days 0 to disable skipping.
+Throttling: same 60s cooldown + 1 retry + 2-consecutive abort behavior as browser-book-scrape.`)
+  .option('--tag <tag>', 'Listopia tag to walk, e.g. "2024" (URL slug, not display text)')
+  .option('--page-start <number>', 'Tag-index page to start at (default 1)', '1')
+  .option('--page-end <number>', 'Tag-index page to stop at, inclusive; default reads all pages to the end')
+  .option('--list-max-pages <number>', 'Stop each individual list crawl after this many pages (default: whole list)')
+  .option('--skip-days <number>', 'Skip lists whose last full scrape is younger than this many days (default 7; 0 = never skip)', '7')
+  .option('--dryRun', 'Enumerate the lists under the tag via tag pages but crawl none of them')
+  .action(async (options) => {
+    try {
+      const tag = String(options.tag || '');
+      if (!tag) {
+        console.error(chalk.red.bold('Error: --tag is required (e.g. --tag 2024).'));
+        return;
+      }
+      await runListTagWalker({
+        tag,
+        startPage: parseInt(options.pageStart, 10),
+        endPage: options.pageEnd !== undefined ? parseInt(options.pageEnd, 10) : undefined,
+        listMaxPages: options.listMaxPages !== undefined ? parseInt(options.listMaxPages, 10) : undefined,
+        skipDays: parseInt(options.skipDays, 10),
+        dryRun: !!options.dryRun,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run list tag walk:'), (error as any).message);
     }
   });
 
@@ -619,6 +812,7 @@ Examples:
   .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves, catalogPages (default averageRating)', 'averageRating')
   .option('--minRatings <number>', 'Only include authors with at least this many ratings (default 100000)', '100000')
   .option('--maxRatings <number>', 'Only include authors with at most this many ratings')
+  .option('--noQualifyBook', 'Lists ranked by a scraped metric (e.g. catalog pages): pick the most-rated book even with 0 ratings and skip the qualifying-author bar', false)
   .action(async (userVoteUrl, options) => {
     try {
       await runAuthorListDiff({ ...options, userVoteUrl });
@@ -1163,6 +1357,7 @@ Examples:
 program
   .command('tag-audit <tag> <listId>')
   .description('Cross-reference a Goodreads shelf with a list to find missing or low-tag books')
+  .addHelpText('after', '\nExample:\n  npm run tag-audit space-opera 78971 -- --min 1000 --minTags 10\n  (tag first, then the numeric list id)')
   .option('--max <number>', 'Maximum number of ratings required for a book to be eligible', '0')
   .option('--min <number>', 'Minimum number of ratings required for a book to be eligible', '0')
   .option('--minTags <number>', 'Minimum number of times a book must be shelved with this tag', '0')
@@ -1292,6 +1487,7 @@ program
   .option('--minAvg <number>', 'Global minimum average rating')
   .option('--maxAvg <number>', 'Global maximum average rating')
   .option('--listId <id>', 'Only run discovery for this list ID')
+  .option('--requireWorkId', 'Only propose books that already have a harvested workId')
   .action(async (configFile, options) => {
     try {
       await runQueueDiscovery(configFile, options);

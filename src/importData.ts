@@ -203,7 +203,7 @@ export interface ExistingBook {
   title?: string; author?: string; authorId?: string; ratings?: number | null;
   avgRating?: number | null; published?: string; pages?: number | null;
   seriesPos?: number | null; genres?: string[]; tags?: Record<string, unknown>;
-  workId?: string; isBad?: number | null;
+  workId?: string; isBad?: number | null; firstSeen?: string | null;
 }
 export interface MergedBook {
   changed: boolean;
@@ -211,7 +211,7 @@ export interface MergedBook {
     title: string; author: string; authorId?: string; ratings: number | null;
     avgRating: number | null; published: string; pages: number | null;
     seriesPos: number | null; genres?: string[]; tags?: Record<string, unknown>;
-    workId?: string; isBad: number | null;
+    workId?: string; isBad: number | null; firstSeen?: string | null;
   };
 }
 
@@ -247,12 +247,14 @@ export function mergeBook(existing: ExistingBook | undefined, inc: BookImportRow
   const incGenres = inc.genres || [];
   const genres = [...new Set([...curGenres, ...incGenres])];
   const tags = mergeTags(existing?.tags, inc.tags);
+  const firstSeen = existing?.firstSeen ?? null;
 
   if (!existing) {
     return {
       changed: true,
       merged: {
         title, author, authorId, ratings, avgRating, published, pages, seriesPos, genres, tags, workId, isBad,
+        firstSeen,
       },
     };
   }
@@ -270,7 +272,7 @@ export function mergeBook(existing: ExistingBook | undefined, inc: BookImportRow
     || JSON.stringify(existing.tags || {}) !== JSON.stringify(tags || {})
     || (existing.workId ?? undefined) !== workId;
 
-  return { changed, merged: { title, author, authorId, ratings, avgRating, published, pages, seriesPos, genres, tags, workId, isBad } };
+  return { changed, merged: { title, author, authorId, ratings, avgRating, published, pages, seriesPos, genres, tags, workId, isBad, firstSeen } };
 }
 
 // ── DB persistence (fill-blank + union) ─────────────────────────────
@@ -290,15 +292,16 @@ export async function importBooksFile(
 ): Promise<{ total: number }> {
   const upsertStmt = db.prepare(`
     INSERT INTO books
-      (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count, work_id)
+      (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count, work_id, first_seen)
     VALUES
-      (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, 0, @isBad, 0, @workId)
+      (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, 0, @isBad, 0, @workId, COALESCE(@firstSeen, @lastUpdated))
     ON CONFLICT(id) DO UPDATE SET
       title=excluded.title, author=excluded.author, author_id=excluded.author_id,
       ratings=excluded.ratings, avg_rating=excluded.avg_rating, published=excluded.published,
       pages=excluded.pages, series_pos=excluded.series_pos, genres=excluded.genres,
       last_updated=excluded.last_updated, tags=excluded.tags, is_bad=excluded.is_bad,
-      work_id=COALESCE(excluded.work_id, work_id)
+      work_id=COALESCE(excluded.work_id, work_id),
+      first_seen=COALESCE(books.first_seen, excluded.first_seen)
   `);
 
   const now = new Date().toISOString();
@@ -331,6 +334,7 @@ export async function importBooksFile(
       genres: existing.genres ? safeJson(existing.genres) : undefined,
       tags: existing.tags ? safeJson(existing.tags) : undefined,
       workId: existing.work_id, isBad: existing.is_bad,
+      firstSeen: existing.first_seen,
     } : undefined;
     const { merged } = mergeBook(e as ExistingBook, row, ratingPolicy);
     batch.push({
@@ -348,6 +352,7 @@ export async function importBooksFile(
       tags: merged.tags ? JSON.stringify(merged.tags) : null,
       isBad: merged.isBad ? 1 : 0,
       workId: merged.workId || null,
+      firstSeen: merged.firstSeen ?? null,
       isNew: !existing,
     });
     if (batch.length >= BATCH) {

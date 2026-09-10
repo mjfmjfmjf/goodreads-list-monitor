@@ -111,6 +111,11 @@ function sortBooks(books: CachedBook[], sortBy: 'year' | 'ratings' | 'avg'): Cac
   });
 }
 
+// Only propose books that already carry a harvested workId (--requireWorkId).
+export function candidatePassesRequireWorkId(c: CachedBook, requireWorkId: boolean): boolean {
+  return !requireWorkId || !!c.workId;
+}
+
 // Prune discovery candidates so we only propose ONE book per work (the
 // highest-rated edition) and never propose obvious data-quality junk.
 export function pruneCandidates(candidates: CachedBook[]): CachedBook[] {
@@ -152,7 +157,7 @@ export function pruneCandidates(candidates: CachedBook[]): CachedBook[] {
 
 export async function runQueueDiscovery(
   customConfigFile?: string,
-  globalOptions: { sortBy?: string; minAvg?: string; maxAvg?: string; listId?: string } = {}
+  globalOptions: { sortBy?: string; minAvg?: string; maxAvg?: string; listId?: string; requireWorkId?: boolean } = {}
 ): Promise<void> {
   const configFile = customConfigFile ? path.resolve(process.cwd(), customConfigFile) : DEFAULT_BULK_CONFIG_FILE;
 
@@ -177,6 +182,7 @@ export async function runQueueDiscovery(
   console.log(chalk.cyan.bold(`\n🔦 Starting Queue Discovery`));
   console.log(chalk.gray(`   Config: ${path.basename(configFile)}`));
   console.log(chalk.gray(`   Sort By: ${sortBy}`));
+  if (globalOptions.requireWorkId) console.log(chalk.gray(`   Require WorkId: only proposing books with a harvested workId`));
   if (globalMinAvg > 0 || globalMaxAvg < Infinity) {
     console.log(chalk.gray(`   Global Avg: ${globalMinAvg}-${globalMaxAvg}`));
   }
@@ -221,6 +227,7 @@ export async function runQueueDiscovery(
     const candidates = allCachedBooks.filter(book => {
       if (book.isBad) return false;
       if (!book.title || book.title === 'Unknown') return false;
+      if (!candidatePassesRequireWorkId(book, !!globalOptions.requireWorkId)) return false;
 
       // Ratings check
       const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;

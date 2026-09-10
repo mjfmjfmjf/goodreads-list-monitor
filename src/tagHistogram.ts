@@ -167,6 +167,10 @@ export async function runTagHistogram(options: { limit?: string; min?: string; a
   }
   const hist = computeTagHistogram(rows, ratingsByBook);
 
+  // Tags that match the genre catalog get marked "(genre)" in the report.
+  const genreSet = new Set<string>((db.prepare('SELECT name FROM genres').all() as any[]).map(r => r.name));
+  const tagLabel = (tag: string): string => (genreSet.has(tag) ? `${tag} (genre)` : tag);
+
   const limit = parseInt(options.limit || '25', 10);
   const min = parseInt(options.min || '0', 10);
   const sortBy = options.sortBy ? parseTagHistogramSortKey(options.sortBy) : 'pct';
@@ -195,7 +199,7 @@ export async function runTagHistogram(options: { limit?: string; min?: string; a
     return;
   }
 
-  const maxLen = Math.max(...shown.map(r => r.tag.length), 'tag'.length);
+  const maxLen = Math.max(...shown.map(r => tagLabel(r.tag).length), 'tag'.length);
   const RATIO_W = 12;
   const PCT_W = 7;
   const RATING_W = 11;
@@ -233,7 +237,7 @@ export async function runTagHistogram(options: { limit?: string; min?: string; a
     const shelvesMin = row.shelvesMin != null ? row.shelvesMin.toLocaleString() : '—';
     const shelvesMax = row.shelvesMax != null ? row.shelvesMax.toLocaleString() : '—';
     const line = [
-      padTag(row.tag),
+      padTag(tagLabel(row.tag)),
       padCell(ratio, RATIO_W),
       pctCell(row, row.pct),
       padCell(ratio2, RATIO_W),
@@ -250,5 +254,6 @@ export async function runTagHistogram(options: { limit?: string; min?: string; a
   console.log(chalk.gray('   single-tag = book appears in exactly one distinct tag in tag_books; <=2 = book appears in one or two tags.'));
   console.log(chalk.gray('   A low % means books in that tag tend to also live under other tags.'));
   console.log(chalk.gray('   shelves = number of times each book is shelved under that tag; min/max across the tag\'s books.'));
+  console.log(chalk.gray('   tags marked (genre) match the genre catalog.'));
   console.log();
 }

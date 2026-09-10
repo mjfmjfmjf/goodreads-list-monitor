@@ -60,7 +60,7 @@ describe('exportBooksAndAuthors', () => {
       expect(byTable.get('genre_tag_xref')!.count).toBe(1);
 
       const booksCsv = parseGz(res.booksFile);
-      expect(booksCsv.split('\n')[0]).toBe('id,title,author,author_id,ratings,avg_rating,published,pages,series_pos,genres,last_updated,tags,requires_auth,is_bad,fail_count,work_id');
+      expect(booksCsv.split('\n')[0]).toBe('id,title,author,author_id,ratings,avg_rating,published,pages,series_pos,genres,last_updated,tags,requires_auth,is_bad,fail_count,work_id,first_seen');
       expect(booksCsv).toContain('170448,Animal Farm');
       const authorsCsv = parseGz(res.authorsFile);
       expect(authorsCsv.split('\n')[0]).toBe('name,id,slug,last_seen,average_rating,num_ratings,num_reviews,num_shelves,first_seen,catalog_pages,fail_count,last_error');

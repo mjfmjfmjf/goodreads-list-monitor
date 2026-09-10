@@ -1,12 +1,8 @@
 import chalk from 'chalk';
-import { loadBookCache, loadAuthorCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, AUTHOR_FAIL_LIMIT, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures } from './storage.js';
+import { loadBookCache, loadAuthorCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, AUTHOR_FAIL_LIMIT, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures, AUTHOR_SCRAPE_FAIL_LIMIT } from './storage.js';
 import type { CachedBook, AuthorCache, AuthorCacheEntry } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { delay } from './utils.js';
-
-// After this many consecutive failures, stop re-trying an orphan author id on
-// future runs (persisted in the author_scrape_failures table).
-const AUTHOR_SCRAPE_FAIL_LIMIT = 3;
 
 
 export interface AuthorOrphan {

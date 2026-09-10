@@ -26,6 +26,21 @@ describe('extractBookDetailsFromHtml', () => {
     expect(result.genres).toEqual(['Mystery', 'Thriller']);
   });
 
+  it('extracts genres from inline bookGenres (current markup)', () => {
+    const state: Record<string, any> = {
+      'Book:44767458': {
+        legacyId: 44767458,
+        bookGenres: [
+          { genre: { __typename: 'Genre', name: 'Fantasy' } },
+          { genre: { __typename: 'Genre', name: 'Young Adult' } }
+        ]
+      }
+    };
+    const html = makePage(state, '44767458');
+    const result = extractBookDetailsFromHtml(html, '44767458');
+    expect(result.genres).toEqual(['Young Adult']);
+  });
+
   it('returns empty genres when no bookGenres present', () => {
     const state: Record<string, any> = {
       'Book:12345': { legacyId: 12345 }

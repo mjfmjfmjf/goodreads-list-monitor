@@ -32,9 +32,12 @@ const FIXED_MIN = 80_000;
 
 const BUCKETS: RatingBucket[] = buildRatingBuckets();
 
-export async function runRatingsHistogram(): Promise<void> {
+export async function runRatingsHistogram(options: { onlyWorkId?: boolean } = {}): Promise<void> {
   const bookCache = await loadBookCache();
-  const books = Object.values(bookCache);
+  let books = Object.values(bookCache);
+  if (options.onlyWorkId) {
+    books = books.filter(b => Boolean(b.workId));
+  }
   const totalBooks = books.length;
 
   const counts: number[] = new Array(BUCKETS.length).fill(0);
@@ -101,6 +104,9 @@ export async function runRatingsHistogram(): Promise<void> {
 
   console.log();
   console.log(chalk.cyan.bold('Book Cache Ratings Histogram'));
+  if (options.onlyWorkId) {
+    console.log(chalk.gray('   (books with a work id only)'));
+  }
   console.log(chalk.gray(rule));
   console.log(
     chalk.white(
@@ -137,6 +143,6 @@ export async function runRatingsHistogram(): Promise<void> {
   }
 
   console.log(chalk.gray(rule));
-  console.log(chalk.cyan.bold(`Total books in cache: ${formatNum(totalBooks)} | Estimated total: ~${formatNum(totalEst)}`));
+  console.log(chalk.cyan.bold(`Total books in cache: ${formatNum(totalBooks)}${options.onlyWorkId ? ' with a work id' : ''} | Estimated total: ~${formatNum(totalEst)}`));
   console.log(chalk.gray(`Scale factor for < ${formatNum(FIXED_MIN)} ratings: ×${scaleFactor.toFixed(1)} (cache completeness ~${(100 / scaleFactor).toFixed(1)}%)`));
 }

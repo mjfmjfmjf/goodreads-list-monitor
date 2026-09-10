@@ -7,6 +7,7 @@
     "criteria": {
        "min": 1000,
        "minTags": 10,
+       "tag": "space-opera",
        "minYear": 2000,
        "maxYear": 2099
     }
@@ -30,7 +31,8 @@
     "url": "https://www.goodreads.com/list/show/73088",
     "criteria": {
        "min": 50000,
-       "minTags": 500
+       "minTags": 500,
+       "tag": "graphic-novels"
     }
   },
   {
@@ -41,7 +43,8 @@
     "criteria": {
        "min": 25000,
        "max": 49999,
-       "minTags": 500
+       "minTags": 500,
+       "tag": "graphic-novels"
     }
   },
   {
@@ -76,7 +79,7 @@
   },
   {
     "id": "155141",
-    "nickname": "All Graphic Novels w",
+    "nickname": "All Graphic Novels 3000 to 4999",
     "officialTitle": "All Graphic Novels with 3,000 to 4,999 ratings",
     "url": "https://www.goodreads.com/list/show/155141.All_Graphic_Novels_with_3_000_to_4_999_ratings",
     "criteria": {
@@ -86,7 +89,7 @@
   },
   {
     "id": "91245",
-    "nickname": "All Graphic Novels w",
+    "nickname": "All Graphic Novels 5000 to 9999",
     "officialTitle": "All Graphic Novels with 5,000 to 9,999 ratings",
     "url": "https://www.goodreads.com/list/show/91245.All_Graphic_Novels_with_5_000_to_9_999_ratings",
     "criteria": {
@@ -96,7 +99,7 @@
   },
   {
     "id": "82859",
-    "nickname": "All Non-Fiction on G",
+    "nickname": "Non-Fiction 10000 to 24999",
     "officialTitle": "All Non-Fiction on Goodreads with 10,000 to 24,999 ratings",
     "url": "https://www.goodreads.com/list/show/82859.All_Non_Fiction_on_Goodreads_with_10_000_to_24_999_ratings",
     "criteria": {
@@ -106,8 +109,8 @@
   },
   {
     "id": "76386",
-    "nickname": "All Non-Fiction on G",
-    "officialTitle": "All Non-Fiction on Goodreads with 25,000 to 49,999 ratings",
+    "nickname": "Non-Fiction on 25000 to 49999",
+    "officialTitle": "Non-Fiction on Goodreads with 25,000 to 49,999 ratings",
     "url": "https://www.goodreads.com/list/show/76386.All_Non_Fiction_on_Goodreads_with_25_000_to_49_999_ratings",
     "criteria": {
       "min": 25000,
@@ -116,7 +119,7 @@
   },
   {
     "id": "43611",
-    "nickname": "All Non-Fiction on G",
+    "nickname": "Non-Fiction on 50000 to 99999",
     "officialTitle": "All Non-Fiction on Goodreads with 50,000 to 99,999 ratings",
     "url": "https://www.goodreads.com/list/show/43611.All_Non_Fiction_on_Goodreads_with_50_000_to_99_999_ratings",
     "criteria": {
@@ -157,17 +160,27 @@
   },
   {
     "id": "144755",
-    "nickname": "Best Less Popular Co",
+    "nickname": "Best Less Popular Computer Science",
     "officialTitle": "Best Less Popular Computer Science Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/144755.Best_Less_Popular_Computer_Science_Books_on_Goodreads",
-    "criteria": {}
+    "criteria": {
+       "min": 100,
+       "max": 999,
+       "minTags": 20,
+       "tag": "computer-science"
+    }
   },
   {
     "id": "144626",
-    "nickname": "Best Less Popular Ge",
+    "nickname": "Best Less Popular Geology",
     "officialTitle": "Best Less Popular Geology Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/144626.Best_Less_Popular_Geology_Books_on_Goodreads_",
-    "criteria": {}
+    "criteria": {
+       "min": 100,
+       "max": 499,
+       "minTags": 10,
+       "tag": "geology"
+    }
   },
   {
     "id": "94613",
@@ -175,7 +188,9 @@
     "officialTitle": "Best Nonfiction Biology books on Goodreads",
     "url": "https://www.goodreads.com/list/show/94613.Best_Nonfiction_Biology_books_on_Goodreads",
     "criteria": {
-       "min": 1000
+       "min": 1000,
+       "minTags": 10,
+       "tag": "biology"
     }
   },
   {

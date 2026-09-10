@@ -37,6 +37,8 @@ export async function runBulkAudit(customConfigFile?: string): Promise<void> {
     auditOptions.titleRegex = list.criteria.titleRegex;
     auditOptions.authorLastRegex = list.criteria.authorLastRegex;
     auditOptions.authorFirstRegex = list.criteria.authorFirstRegex;
+    auditOptions.tag = list.criteria.tag;
+    if (list.criteria.minTags !== undefined) auditOptions.minTags = list.criteria.minTags.toString();
 
     results.push(await runAudit(list.id, auditOptions));
   }
@@ -57,6 +59,8 @@ export async function runBulkAudit(customConfigFile?: string): Promise<void> {
   const tooHighAvg = results.reduce((sum, r) => sum + r.tooHighAvg, 0);
   const regexMismatch = results.reduce((sum, r) => sum + r.regexMismatch, 0);
   const seriesPosMismatch = results.reduce((sum, r) => sum + r.seriesPosMismatch, 0);
+  const belowTagShelves = results.reduce((sum, r) => sum + r.belowTagShelves, 0);
+  const tagSkipped = results.filter(r => r.tagSkipped).length;
 
   const breakdown: string[] = [];
   if (tooManyRatings > 0) breakdown.push(`${tooManyRatings} too many ratings`);
@@ -67,6 +71,7 @@ export async function runBulkAudit(customConfigFile?: string): Promise<void> {
   if (tooHighAvg > 0) breakdown.push(`${tooHighAvg} above avg rating`);
   if (regexMismatch > 0) breakdown.push(`${regexMismatch} regex mismatches`);
   if (seriesPosMismatch > 0) breakdown.push(`${seriesPosMismatch} wrong series position`);
+  if (belowTagShelves > 0) breakdown.push(`${belowTagShelves} below tag shelf threshold`);
 
   console.log(chalk.cyan.bold('\n📊 Bulk Audit Summary'));
   console.log(chalk.gray(
@@ -77,6 +82,9 @@ export async function runBulkAudit(customConfigFile?: string): Promise<void> {
   }
   if (failedLists > 0) {
     console.log(chalk.yellow(`   Failed lists: ${failedLists}`));
+  }
+  if (tagSkipped > 0) {
+    console.log(chalk.yellow(`   Tag checks skipped (tag not scraped into tag_books): ${tagSkipped}`));
   }
   console.log(chalk.gray(`   Started: ${startedAt.toLocaleString()}`));
   console.log(chalk.gray(`   Ended:   ${endedAt.toLocaleString()}`));

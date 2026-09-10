@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pruneCandidates, isAlreadyOnList, resolveListWorkIds } from './queueDiscovery.js';
+import { pruneCandidates, isAlreadyOnList, resolveListWorkIds, candidatePassesRequireWorkId } from './queueDiscovery.js';
 import type { CachedBook } from './storage.js';
 
 const book = (over: Partial<CachedBook> = {}): CachedBook => ({
@@ -83,6 +83,19 @@ describe('isAlreadyOnList', () => {
     const listBooks = [{ id: 'l1', title: 'The Shadow of the Wind', author: 'Carlos Ruiz Zafón' }];
     expect(isAlreadyOnList(cand, listBooks, new Set(['111']), undefined)).toBe(false);
     expect(isAlreadyOnList(cand, listBooks, new Set(), '111')).toBe(false);
+  });
+});
+
+describe('candidatePassesRequireWorkId', () => {
+  it('passes everything when the flag is off', () => {
+    expect(candidatePassesRequireWorkId(book({ id: '1' }), false)).toBe(true);
+    expect(candidatePassesRequireWorkId(book({ id: '1', workId: '99' }), false)).toBe(true);
+  });
+
+  it('only passes books with a workId when the flag is on', () => {
+    expect(candidatePassesRequireWorkId(book({ id: '1', workId: '99' }), true)).toBe(true);
+    expect(candidatePassesRequireWorkId(book({ id: '1' }), true)).toBe(false);
+    expect(candidatePassesRequireWorkId(book({ id: '1', workId: '' }), true)).toBe(false);
   });
 });
 

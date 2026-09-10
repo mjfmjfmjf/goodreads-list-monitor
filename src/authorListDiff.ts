@@ -277,6 +277,54 @@ export function authorStatsPresent(entry: AuthorCacheEntry | undefined): boolean
   return Boolean(entry && entry.averageRating && entry.numRatings);
 }
 
+// An author is list-eligible only if they have at least one book that clears
+// the ratings bar (SUGGESTION_MIN_RATINGS). A catch: an author with no cached
+// books, or only thin <bar books, cannot back a list entry — block them.
+export function authorHasQualifyingBook(
+  booksByAuthor: Map<string, CachedBook[]>,
+  authorId: string,
+  minRatings: number = SUGGESTION_MIN_RATINGS
+): boolean {
+  return pickSuggestionBook(booksByAuthor.get(authorId) || [], authorId, minRatings).qualified;
+}
+
+// Voted authors who are STILL inside the top `limit` but whose best book no
+// longer clears SUGGESTION_MIN_RATINGS shouldn't be on the list at all. These
+// are the same people `computeReplacements` refuses to swap (it never suggests
+// an unqualified fallback), but for them we go one step further: remove.
+export function computeUnqualifiedRemovals(
+  votes: UserVoteEntry[],
+  ranked: RankedAuthor[],
+  limit: number,
+  booksByAuthor: Map<string, CachedBook[]>,
+  minRatings: number = SUGGESTION_MIN_RATINGS
+): DroppedAuthor[] {
+  const rankByKey = new Map<string, number>();
+  for (const r of ranked) {
+    if (r.rank > limit) continue;
+    rankByKey.set(authorKey(r.id), r.rank);
+    if (r.slug) rankByKey.set(authorKey(r.slug), r.rank);
+  }
+
+  const removals: DroppedAuthor[] = [];
+  for (const vote of votes) {
+    const keys = [vote.authorId, vote.authorSlug].map(authorKey).filter(Boolean);
+    if (!keys.some(k => rankByKey.has(k))) continue; // not on the list (dropped path handles it)
+    const authorId = keys.find(k => /^\d+$/.test(k));
+    if (!authorId) continue;
+    if (authorHasQualifyingBook(booksByAuthor, authorId, minRatings)) continue;
+    removals.push({
+      position: vote.position,
+      bookId: vote.bookId,
+      title: vote.title,
+      author: vote.author,
+      authorId: vote.authorId,
+      currentRank: rankByKey.get(authorId),
+    });
+  }
+  return removals.sort((a, b) => a.position - b.position);
+}
+
 const formatRatings = (n: number): string => n.toLocaleString('en-US');
 
 // Partition the target top-N and the current votes for a list still being
@@ -324,8 +372,9 @@ async function runBuildMode(opts: {
   sortBy: string;
   minRatings: string;
   booksByAuthor: Map<string, CachedBook[]>;
+  bookBar: number;
 }): Promise<void> {
-  const { votes, ranked, limit, sortBy, minRatings, booksByAuthor } = opts;
+  const { votes, ranked, limit, sortBy, minRatings, booksByAuthor, bookBar } = opts;
   const { covered, missing, offTarget } = planBuildProgress(votes, ranked, limit);
 
   console.log(chalk.cyan.bold(`\n📊 List build progress`));
@@ -342,23 +391,48 @@ async function runBuildMode(opts: {
   }
 
   console.log(chalk.green.bold(`\n✨ Still to add (${missing.length}):`));
-  for (const r of missing) {
-    const id = r.id || r.slug?.split('.')[0] || '';
-    const { book } = id ? pickSuggestionBook(booksByAuthor.get(id) || [], id) : { book: undefined };
-    const bookText = book ? ` ${formatBookRef(book)}` : '';
+  // A candidate must have a book that clears the ratings bar — skip top-N
+  // authors who never qualified, and keep going down the ranking until we've
+  // hand-backed `missing.length` addable authors.
+  const votedIds = new Set<string>();
+  for (const v of votes) {
+    for (const k of [v.authorId, v.authorSlug].map(authorKey).filter(Boolean)) {
+      if (/^\d+$/.test(k)) votedIds.add(k);
+    }
+  }
+  const candidates: RankedAuthor[] = [];
+  for (const r of ranked) {
+    if (candidates.length >= missing.length) break;
+    if (!r.id || votedIds.has(r.id)) continue;
+    if (bookBar > 0 && !authorHasQualifyingBook(booksByAuthor, r.id, bookBar)) continue;
+    candidates.push(r);
+  }
+  if (candidates.length === 0) {
+    console.log(chalk.gray(bookBar > 0 ? '   (No qualifying authors left in the ranking to back a pick.)' : '   (No authors left in the ranking to back a pick.)'));
+  }
+  for (const r of candidates) {
+    const suggestion = r.id ? pickSuggestionBook(booksByAuthor.get(r.id) || [], r.id, bookBar) : { book: undefined, qualified: false };
+    const book = suggestion.book;
+    const bookText = book ? ` ${formatBookRef(book)}` : chalk.yellow(' (no book in db yet — scrape to confirm a pick)');
     const workText = book ? (book.workId ? chalk.gray(` (work ${book.workId})`) : chalk.gray(' (no work id)')) : '';
-    console.log(`   add ${formatAuthorRef({ name: r.name, id: r.id })}${bookText}${workText} - to #${r.rank}`);
+    const ratings = book ? chalk.gray(` (${formatRatings(bookRatingsCount(book))} ratings, avg ${book.avgRating || '?'})`) : '';
+    const criteria = chalk.gray(` (#${r.rank}, ${r.id ? `[ID: ${r.id}]` : ''})`);
+    console.log(`   add ${formatAuthorRef({ name: r.name, id: r.id })}${criteria}\n         → ${bookText}${ratings}${workText}`);
   }
 
   console.log(chalk.gray('\n   Note: your existing votes were left in place for now; the top-N are what to work toward.'));
   console.log('');
 }
 
-async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?: string }): Promise<void> {
+async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?: string; noQualifyBook?: boolean }): Promise<void> {
   const userVoteRef = options.userVoteUrl || '10400982';
   const sortBy = options.sortBy || 'averageRating';
   const minRatings = options.minRatings || '100000';
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
+  // Lists ranked purely by a scraped metric (e.g. catalog pages) don't tie
+  // membership to a book's rating count — for those, any book (even 0 ratings)
+  // backs a slot, so the qualifying bar is dropped entirely.
+  const bookBar = options.noQualifyBook ? 0 : SUGGESTION_MIN_RATINGS;
 
   console.log(chalk.cyan.bold(`\n📋 Author/List membership check`));
   console.log(chalk.gray(`   Votes page: ${userVoteRef}`));
@@ -369,13 +443,41 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
   const authorCache = await loadAuthorCache();
   // Rank well past the cutoff so we can report where dropped authors landed.
   const { authors: selected } = selectAuthors(authorCache, { sortBy, minRatings, limit: '1000000' });
-  const ranked = dedupeAuthorsBySlug(selected);
+  const rawRanked = dedupeAuthorsBySlug(selected);
+
+  console.log(chalk.gray('   Resolving suggested books...'));
+  const bookCache = await loadBookCache();
+  const booksByAuthor = new Map<string, CachedBook[]>();
+  for (const book of Object.values(bookCache)) {
+    if (!book.authorId) continue;
+    const list = booksByAuthor.get(book.authorId);
+    if (list) list.push(book);
+    else booksByAuthor.set(book.authorId, [book]);
+  }
+
+  // The target ranking only counts authors with a qualifying book. Filtering
+  // BEFORE dedupe re-ranks gap-free, so the top `limit` is the top-limit
+  // qualifying set — non-qualifiers no longer occupy (and distort) slots.
+  // With `--noQualifyBook` there is no bar: the ranking is every author.
+  const qualifiedSelected = bookBar > 0
+    ? selected.filter(s => s.entry.id && authorHasQualifyingBook(booksByAuthor, s.entry.id, bookBar))
+    : selected;
+  const ranked = dedupeAuthorsBySlug(qualifiedSelected);
+  const qualifyingIds = new Set<string>(ranked.map(r => r.id).filter((id): id is string => Boolean(id)));
 
   console.log(chalk.gray(`   Fetching votes page...`));
   const votes = await scrapeUserVoteBooks(userVoteRef);
   console.log(chalk.gray(`   Found ${votes.length} voted books.`));
 
-  const { dropped, additions } = diffVotesVsRanking(votes, ranked, limit);
+  const { dropped: rawDropped, additions } = diffVotesVsRanking(votes, ranked, limit);
+
+  // Voted authors still inside the RAW top-limit whose best book falls below
+  // the bar are "no qualifying book" removals (distinct from 'fell out of the
+  // qualifying top-N'). They won't appear in `ranked`, so isolate them here
+  // and keep them out of the dropped list to avoid double-counting.
+  const unqualifiedRemovals = bookBar > 0 ? computeUnqualifiedRemovals(votes, rawRanked, limit, booksByAuthor, bookBar) : [];
+  const unqualifiedIds = new Set<string>(unqualifiedRemovals.map(d => d.authorId).filter((id): id is string => Boolean(id)));
+  const dropped = rawDropped.filter(d => !(d.authorId && unqualifiedIds.has(d.authorId)));
 
   // Split dropped into authors we can judge (stats cached) and ones whose
   // stats were never captured — the latter must not get removal directions,
@@ -390,32 +492,23 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
     (d.authorId && !authorStatsPresent(entryById.get(d.authorId)) ? unverifiable : verifiable).push(d);
   }
 
-  console.log(chalk.gray('   Resolving suggested books...'));
-  const bookCache = await loadBookCache();
-  const booksByAuthor = new Map<string, CachedBook[]>();
-  for (const book of Object.values(bookCache)) {
-    if (!book.authorId) continue;
-    const list = booksByAuthor.get(book.authorId);
-    if (list) list.push(book);
-    else booksByAuthor.set(book.authorId, [book]);
-  }
-
   // From-scratch list: until the votes page has (roughly) a full list, treat
   // this as a build target, not an established list to audit.
   if (votes.length < limit) {
-    await runBuildMode({ votes, ranked, limit, sortBy, minRatings, booksByAuthor });
+    await runBuildMode({ votes, ranked, limit, sortBy, minRatings, booksByAuthor, bookBar });
     return;
   }
 
-  const freedPositions = verifiable.map(d => d.position);
+  const freedPositions = [...verifiable.map(d => d.position), ...unqualifiedRemovals.map(d => d.position)];
   const maxPosition = Math.max(limit, ...votes.map(v => v.position));
   const suggestedPositions = assignSuggestedPositions(additions.length, freedPositions, maxPosition);
   const moves = computeMoves(votes, ranked, limit);
-  const replacements = computeReplacements(votes, ranked, limit, booksByAuthor);
+  const replacements = computeReplacements(votes, ranked, limit, booksByAuthor, bookBar);
 
   if (
     verifiable.length === 0 && unverifiable.length === 0 &&
-    additions.length === 0 && moves.length === 0 && replacements.length === 0
+    additions.length === 0 && unqualifiedRemovals.length === 0 &&
+    moves.length === 0 && replacements.length === 0
   ) {
     console.log(chalk.green.bold('\n✅ List matches the current top ' + limit + '. Nothing to change.'));
     return;
@@ -424,7 +517,7 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
   const suggestionText = (book: CachedBook | undefined, qualified: boolean): string => {
     if (!book) return chalk.yellow('no rated book found in book db');
     const ratings = formatRatings(bookRatingsCount(book));
-    const flag = qualified ? '' : chalk.yellow(` ⚠️ below ${formatRatings(SUGGESTION_MIN_RATINGS)} ratings`);
+    const flag = qualified ? '' : chalk.yellow(` ⚠️ below ${formatRatings(bookBar)} ratings`);
     return `"${book.title}" [ID: ${book.id}]` + chalk.gray(` (${ratings} ratings, avg ${book.avgRating || '?'})`) + flag;
   };
 
@@ -462,10 +555,21 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
     }
   }
 
+  if (unqualifiedRemovals.length > 0) {
+    console.log(chalk.yellow.bold(`\n🗑️  No qualifying book (${unqualifiedRemovals.length}) — best book below ${formatRatings(bookBar)} ratings, instruct removal:`));
+    for (const d of unqualifiedRemovals) {
+      const now = d.currentRank !== undefined ? `now #${d.currentRank}` : 'on the list';
+      console.log(
+        `   ${String(d.position).padStart(4)}. "${d.title}" by ${d.author}` +
+        chalk.gray(` — ${d.authorId ? `[ID: ${d.authorId}] ` : ''}${now}`)
+      );
+    }
+  }
+
   if (additions.length > 0) {
     console.log(chalk.green.bold(`\n✨ Qualifying authors missing from the list (${additions.length}):`));
     const rows = additions.map((a, i) => {
-      const suggestion = a.id ? pickSuggestionBook(booksByAuthor.get(a.id) || [], a.id) : { book: undefined, qualified: false };
+      const suggestion = a.id ? pickSuggestionBook(booksByAuthor.get(a.id) || [], a.id, bookBar) : { book: undefined, qualified: false };
       return { author: a, position: suggestedPositions[i], ...suggestion };
     });
     for (const { author, position, book, qualified } of rows) {
@@ -494,18 +598,20 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
 
   // Paste-ready instructions in execution order: removals free the slots,
   // additions fill them, moves settle positions, replaces polish quality.
-  // Paste-ready instructions in execution order: removals free the slots,
-  // additions fill them, moves settle positions, replaces polish quality.
   // Unverifiable authors are intentionally absent — fetch their stats first.
   console.log(chalk.cyan('\n   Paste-ready:'));
   for (const d of verifiable) {
     const now = d.currentRank !== undefined ? `now #${d.currentRank}` : 'now ?';
     console.log(`   removed ${formatAuthorRef({ name: d.author, id: d.authorId })} ${formatBookRef({ title: d.title, id: d.bookId })} - was #${d.position}, ${now}`);
   }
+  for (const d of unqualifiedRemovals) {
+    const now = d.currentRank !== undefined ? `now #${d.currentRank}` : 'now ?';
+    console.log(`   removed ${formatAuthorRef({ name: d.author, id: d.authorId })} ${formatBookRef({ title: d.title, id: d.bookId })} - was #${d.position}, no qualifying book, ${now}`);
+  }
   for (let i = 0; i < additions.length; i++) {
     const author = additions[i];
     const position = suggestedPositions[i];
-    const { book } = author.id ? pickSuggestionBook(booksByAuthor.get(author.id) || [], author.id) : { book: undefined };
+    const { book } = author.id ? pickSuggestionBook(booksByAuthor.get(author.id) || [], author.id, bookBar) : { book: undefined };
     if (book) {
       console.log(`   add ${formatAuthorRef(author)} ${formatBookRef(book)} - to #${position}` + chalk.gray(book.workId ? ` (work ${book.workId})` : ' (no work id)'));
     } else {
