@@ -29,6 +29,37 @@ const REGISTRY_PATH = path.join(os.tmpdir(), 'goodreads-db-lock-registry.json');
 const REGISTRY_MAX_AGE_MS = 5 * 60_000;
 const REGISTRY_MAX_ENTRIES = 20;
 
+// Concurrent crawlers share goodreads.db; under WAL a write can transiently hit
+// SQLITE_BUSY while another process finishes a transaction. All our writes are
+// idempotent upserts, so retry (busy_timeout already blocks ~30s inside each
+// attempt) instead of killing the whole run on the first lock.
+const LOCK_RETRY_ATTEMPTS = 3;
+const LOCK_RETRY_DELAY_MS = parseInt(process.env.GOODREADS_LOCK_RETRY_DELAY_MS || '2000', 10) || 2000;
+// Overridable so unit tests can exercise lock contention without 30s waits.
+const BUSY_TIMEOUT_MS = parseInt(process.env.GOODREADS_BUSY_TIMEOUT_MS || '30000', 10) || 30000;
+
+// Synchronous sleep (the better-sqlite3 transaction/statement wrappers are
+// sync; we cannot await here).
+function blockSleep(ms: number): void {
+  try {
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  } catch {
+    /* ignore — retry immediately on platforms without Atomics.wait */
+  }
+}
+
+// Under WAL, SQLITE_BUSY_SNAPSHOT means our connection's snapshot is stale
+// (another writer committed and the WAL advanced). busy_timeout does NOT help
+// — it only applies to lock contention, not snapshot staleness. The fix is to
+// checkpoint the WAL (advancing it), so our next attempt gets a fresh snapshot.
+function forceCheckpoint(db: Database.Database): void {
+  try {
+    db.pragma('wal_checkpoint(PASSIVE)');
+  } catch {
+    // PASSIVE is best-effort — it yields if other writers are active.
+  }
+}
+
 const CMDLINE = process.argv.slice(1).join(' ') || process.title;
 
 interface RegistryTx { startTs: number; endTs: number; ms: number; site: string; }
@@ -117,23 +148,39 @@ function instrumentTransactions(db: Database.Database): void {
     const run = origTransaction(fn as any);
     const wrapped = ((...args: any[]) => {
       const start = Date.now();
-      try {
-        return run(...args);
-      } catch (err) {
-        if (isDbLockError(err)) logDatabaseLock('db.transaction write', err);
-        throw err;
-      } finally {
-        const elapsed = Date.now() - start;
-        if (elapsed > LONG_TRANSACTION_MS) {
-          console.warn(
-            chalk.yellow(
-              `[lock] write transaction (PID ${process.pid}) held ${(elapsed / 1000).toFixed(1)}s — ` +
-              `longer than the ${LONG_TRANSACTION_MS / 1000}s busy_timeout; other processes can hit "database is locked".`
-            )
-          );
+      for (let attempt = 1; attempt <= LOCK_RETRY_ATTEMPTS; attempt++) {
+        try {
+          const value = run(...args);
+          const elapsed = Date.now() - start;
+          if (elapsed > LONG_TRANSACTION_MS) {
+            console.warn(
+              chalk.yellow(
+                `[lock] write transaction (PID ${process.pid}) held ${(elapsed / 1000).toFixed(1)}s — ` +
+                `longer than the ${LONG_TRANSACTION_MS / 1000}s busy_timeout; other processes can hit "database is locked".`
+              )
+            );
+          }
+          recordLongTransaction(elapsed, 'db.transaction');
+          return value;
+        } catch (err) {
+          if (isDbLockError(err) && attempt < LOCK_RETRY_ATTEMPTS) {
+            // The transaction rollback is clean; the (idempotent) body is safe
+            // to replay after the lock clears.
+            const errCode = String((err as any)?.code || '');
+            if (errCode === 'SQLITE_BUSY_SNAPSHOT') {
+              console.warn(chalk.yellow(`[lock] SQLITE_BUSY_SNAPSHOT on write transaction — checkpointing WAL, retrying (attempt ${attempt}/${LOCK_RETRY_ATTEMPTS})`));
+              forceCheckpoint(db);
+            } else {
+              console.warn(chalk.yellow(`[lock] SQLITE_BUSY on write transaction — retrying (attempt ${attempt}/${LOCK_RETRY_ATTEMPTS})`));
+            }
+            blockSleep(LOCK_RETRY_DELAY_MS);
+            continue;
+          }
+          if (isDbLockError(err)) logDatabaseLock('db.transaction write', err);
+          throw err;
         }
-        recordLongTransaction(elapsed, 'db.transaction');
       }
+      throw new Error('unreachable');
     }) as any;
     return wrapped;
   }) as any;
@@ -141,6 +188,9 @@ function instrumentTransactions(db: Database.Database): void {
 
 // Wrap every prepared statement so a SQLITE_BUSY (read or write) is logged with
 // the SQL that caused it. Cheap on the success path (one extra call + no-throw).
+// A statement run OUTSIDE a transaction is retried (autocommit — safe to
+// replay); inside a transaction it is left for the transaction wrapper, since
+// the abort/rollback happens there.
 function wrapStatements(db: Database.Database): void {
   const origPrepare = db.prepare.bind(db);
   db.prepare = ((sql: string) => {
@@ -150,12 +200,26 @@ function wrapStatements(db: Database.Database): void {
       const orig = (stmt as any)[method]?.bind(stmt);
       if (typeof orig !== 'function') continue;
       (stmt as any)[method] = (...args: any[]) => {
-        try {
-          return orig(...args);
-        } catch (err) {
-          if (isDbLockError(err)) logDatabaseLock(`prepare: ${sqlSnippet}`, err);
-          throw err;
+        for (let attempt = 1; attempt <= LOCK_RETRY_ATTEMPTS; attempt++) {
+          try {
+            return orig(...args);
+          } catch (err) {
+            if (isDbLockError(err) && !db.inTransaction && attempt < LOCK_RETRY_ATTEMPTS) {
+              const errCode = String((err as any)?.code || '');
+              if (errCode === 'SQLITE_BUSY_SNAPSHOT') {
+                console.warn(chalk.yellow(`[lock] SQLITE_BUSY_SNAPSHOT on ${method} "${sqlSnippet}" — checkpointing WAL, retrying (attempt ${attempt}/${LOCK_RETRY_ATTEMPTS})`));
+                forceCheckpoint(db);
+              } else {
+                console.warn(chalk.yellow(`[lock] SQLITE_BUSY on ${method} "${sqlSnippet}" — retrying (attempt ${attempt}/${LOCK_RETRY_ATTEMPTS})`));
+              }
+              blockSleep(LOCK_RETRY_DELAY_MS);
+              continue;
+            }
+            if (isDbLockError(err)) logDatabaseLock(`prepare: ${sqlSnippet}`, err);
+            throw err;
+          }
         }
+        throw new Error('unreachable');
       };
     }
     return stmt;
@@ -166,7 +230,15 @@ export function getDb(): Database.Database {
   if (!_db) {
     _db = new Database(DB_PATH);
     _db.pragma('journal_mode = WAL');
-    _db.pragma('busy_timeout = 30000');
+    _db.pragma(`busy_timeout = ${BUSY_TIMEOUT_MS}`);
+    // WAL + synchronous=NORMAL: commits are memory-only (no per-commit fsync),
+    // so single-statement autocommit writes are sub-ms and no transaction
+    // batching is needed. Crash-consistent; on power loss the last handful of
+    // uncheckpointed commits may be lost (re-scraped later — this is a cache).
+    // Cap the WAL so checkpoint-on-COMMIT stays short.
+    _db.pragma('synchronous = NORMAL');
+    _db.pragma('wal_autocheckpoint = 1000');
+    _db.pragma('journal_size_limit = 33554432');
     instrumentTransactions(_db);
     wrapStatements(_db);
     try {

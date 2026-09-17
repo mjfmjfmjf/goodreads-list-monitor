@@ -31,16 +31,86 @@
 - The add-book live lookup is rate-limited to AT MOST once per minute (state in
   `os.tmpdir()/goodreads-addbook-lookup.json`). Do not bypass this.
 - Never loop an unbounded retry on 202/403 — back off and report.
+- **Goodreads pages just hang on their own, routinely** (the site is flaky; the
+  user opens the same link 5–6 times, sometimes minutes later, and it usually
+  loads — often in the newest tab). So a `>45s` `fetchListPage` hang is most
+  likely ordinary site flakiness, NOT anti-bot or a parser change. The list
+  walker gives a hang ONE patient retry after ~60s (env
+  `GOODREADS_HANG_RETRY_MS`) before marking the list `error` and moving on.
+  Keep the walker gentle — no multi-retry loops, no hammering. Do not shrink
+  that tolerance without a good reason.
+- **Likely root cause of the 2026-09-11 "spin" incident**: lists with < 100
+  books have no real pagination, but Goodreads returns "has next" on empty
+  `?page=2..N` pages, so the walker used to step through phantom empty pages
+  of small lists until a flaky one hung > 45s in `page.goto` (seen on
+  `list/show/75483` and `79774`). Fixed by stopping when a page parses 0 books
+  (dead-reckon the list's real end). If you see the walker re-walking empty
+  pages or lingering on a small list, LOOK HERE first before blaming
+  anti-bot/throttling.
 - Author-page crawls are ANONYMOUS by default: `scrapeAuthorStats` sends no
   cookie unless `--withCookie` or `GR_USE_COOKIE=1`. Anonymous pacing is faster
   than cookie-authenticated: author gap ~1.0–1.8s (vs 2.0–5.0s), page gap
   ~0.9–1.7s (vs 2.0–4.0s). Override with `GR_AUTHOR_DELAY_MS="min,max"` and
   `GR_PAGE_DELAY_MS="min,max"`. Author pages are public; we verified cookie and
   anonymous returns are byte-identical.
+- **`author-rescan --sortBy topRatings`** orders candidates by the max ratings
+  across the author's books (`books.author_id` GROUP BY, via
+  `loadAuthorBookStats`), NOT the author-page `numRatings` — which is still
+  0 for authors minted but never author-scraped (e.g. by a list/shelf walk).
+  That makes `--multiPage --onlyUntouched --sortBy topRatings --minRatings 0`
+  grind the untouched tail in book-popularity order. In `topRatings` mode,
+  `--minRatings`/`--maxRatings` filter on that top-book rating.
+- **`author-rescan --sortBy newestYear [--minBookYear Y] [--minRatings N]`**
+  ranks candidates by the NEWEST qualifying book year (recent books first) and
+  is the way to "prefer authors with recent books" over the ~260k untouched
+  tail. `--minBookYear` restricts the aggregation to books published ≥ that
+  year with ≥ `--minRatings` ratings (authors with no qualifying book are
+  dropped), and auto-upgrades `--sortBy topRatings` to `newestYear` when both
+  are given. Both keys share `loadAuthorBookStats`, whose SQL drops years above
+  `currentYear+5` (Goodreads encodes some BCE works as positive years, e.g.
+  2600, which would otherwise outrank genuinely recent books).
 - The integration suite runs in STRICT throttle mode
   (`GOODREADS_STRICT_THROTTLE=1`): on a 202/403/429 it gives up immediately
   (no retry/backoff) so a throttled run fails fast with a clear message.
   A failure with a throttle message means cooldown, NOT a parser change.
+
+## SQLite writes / database locking
+- **Do NOT call `loadBookCache()` — it materializes the whole `books` table
+  (~5.6M rows / several GB of V8 heap) into a JS object.** Commands OOM'd at
+  Node's default ~3.9GB cap on 2026/09/13, so a 2026/09/13 refactor removed
+  every production call site. `loadBookCache` now survives only as its own unit
+  test in `storage.ts`. Replacements, in order of preference:
+  - `iterateBooks()` / `streamRows()` — stream rows with O(1) memory; the
+    mapping/histogram/audit commands use these (plus `countBooks()` for totals).
+  - `getBook(id)` — single-row lookup; sparse per-entity caches (monitored
+    lists, CSV entries, queue candidates) and `syncBooksToCache` merge against
+    the live DB, so sync-only walkers pass an empty in-run `BookCache = {}`.
+  - Bounded streaming (per-bucket / top-N by ratings) where the command needs
+    only the best candidates (`books`, `tagGaps`, `authorTopBooks`,
+    `monitorTopRatedList`, `bookSweep`), or SQL-side aggregation/helpers
+    (`cachedPublishedYear`, `summaryTopByYear`, `booksAddedHistogram`).
+  Keep new bulk writers as plain single-statement upserts (see below) and
+  reach for these patterns instead of a new full-table load.
+- Earlier npm scripts had a central `--max-old-space-size=8192` in NODE_OPTIONS
+  to make the full-cache commands fit; that bump was reverted on 2026/09/13
+  once the loads were gone. `NODE_OPTIONS='--loader ts-node/esm --no-warnings'`
+  must stay — do not re-add a heap bump to paper over a new full-table load.
+- SQLite locks are database-wide (WAL: ONE writer at a time, whole DB) — NOT
+  per-row/per-table. Any write transaction you hold blocks every other crawler's
+  writes for its whole duration.
+- Crawler writes are single-statement autocommit upserts: NO `db.transaction`
+  batches. Each statement is sub-ms (`synchronous=NORMAL` in WAL = memory-only
+  commits), so a write lock is held only for one statement and never across a
+  network read/sleep. Keep new bulk writers as plain `stmt.run()` loops.
+- `db.transaction` is reserved for atomic multi-step ops that don't run during
+  crawls (importData, migrateToSqlite, authorDedupe, saveState).
+- Under WAL, `SQLITE_BUSY` (busy_timeout waits it out) and `SQLITE_BUSY_SNAPSHOT`
+  (stale snapshot — busy_timeout does NOT help) are both retried 3× with a
+  checkpoint-before-retry for the snapshot case. Overrides for tests/tuning:
+  `GOODREADS_BUSY_TIMEOUT_MS`, `GOODREADS_LOCK_RETRY_DELAY_MS`. Writes must stay
+  idempotent upserts so replay-after-abort is safe.
+- Avoid running several heavy crawlers at once (e.g. gap-genre + author-rescan +
+  list-tag-walk) — they serialize on the same writer lock either way.
 
 ## Goodreads page-change log
 - Whenever a Goodreads page change forces a code fix (selector updates, markup

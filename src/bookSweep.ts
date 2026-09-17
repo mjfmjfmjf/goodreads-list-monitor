@@ -1,8 +1,9 @@
 import chalk from 'chalk';
 import * as cheerio from 'cheerio';
 import fs from 'fs';
-import { loadBookCache, getBook, upsertBook, loadConfig, BookCache } from './storage.js';
-import { fetchWithRetry, formatBookLink } from './utils.js';
+import { iterateBooks, getBook, upsertBook, loadConfig } from './storage.js';
+import type { CachedBook } from './storage.js';
+import { fetchWithRetry, formatBookLink, httpCallInfo } from './utils.js';
 import { extractWorkId } from './scraper.js';
 
 const LOG_FILE = 'bookSweep.log';
@@ -16,14 +17,6 @@ const NAV_GENRES = new Set([
 function logToFile(msg: string) {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   fs.appendFileSync(LOG_FILE, line);
-}
-
-function shuffle<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
 }
 
 export interface ExtractedBookDetails {
@@ -155,26 +148,35 @@ export async function runBookSweep(options: BookSweepOptions = {}): Promise<void
   const jitterMs = parseInt(options.delayJitter || '0', 10) * 1000;
   const throttleSleepSec = parseInt(options.throttleSleep || '300', 10);
 
-  const cache = await loadBookCache();
   const config = await loadConfig();
 
-  // Filter: has enough ratings AND (no genres yet OR no workId yet)
-  const candidates = Object.values(cache).filter(book => {
+  // Stream the table; reservoir-sample `limit` qualified books (uniform-random
+  // subset, matching the old shuffle-then-slice behavior without materializing
+  // the whole table).
+  const candidates: CachedBook[] = [];
+  let count = 0;
+  for (const book of iterateBooks()) {
     const ratings = parseInt((book.ratings || '0').replace(/,/g, ''), 10);
     const needsGenres = !book.genres || book.genres.length === 0;
-    return ratings >= minRatings && (needsGenres || !book.workId);
-  });
+    if (ratings < minRatings || !(needsGenres || !book.workId)) continue;
+    count++;
+    if (candidates.length < limit) {
+      candidates.push(book);
+    } else {
+      const j = Math.floor(Math.random() * count);
+      if (j < limit) candidates[j] = book;
+    }
+  }
 
-  console.log(chalk.cyan(`Found ${candidates.length} books with ≥${minRatings} ratings missing genres or workId.`));
-  logToFile(`Starting book sweep: limit=${limit}, minRatings=${minRatings}, delay=${delaySec}s, jitter=${jitterMs / 1000}s, throttleSleep=${throttleSleepSec}s, candidates=${candidates.length}`);
+  console.log(chalk.cyan(`Found ${count} books with ≥${minRatings} ratings missing genres or workId.`));
+  logToFile(`Starting book sweep: limit=${limit}, minRatings=${minRatings}, delay=${delaySec}s, jitter=${jitterMs / 1000}s, throttleSleep=${throttleSleepSec}s, candidates=${count}`);
 
-  if (candidates.length === 0) {
+  if (count === 0) {
     console.log(chalk.green('Nothing to do.'));
     return;
   }
 
-  const shuffled = shuffle([...candidates]);
-  const toProcess = shuffled.slice(0, limit);
+  const toProcess = candidates;
   console.log(chalk.cyan(`Will attempt to process ${toProcess.length} books.\n`));
 
   const headers: Record<string, string> = {
@@ -209,13 +211,14 @@ export async function runBookSweep(options: BookSweepOptions = {}): Promise<void
     console.log(chalk.gray(`  Fetching ${url}`));
 
     try {
+      const start = Date.now();
       const response = await fetchWithRetry(url, { headers, timeout: 30000 }, 1);
       const status = response.status;
       const bodyLen = typeof response.data === 'string' ? response.data.length : 0;
 
       // Show status code for every response
       const statusColor = status === 200 ? chalk.green : (status === 202 ? chalk.red : chalk.yellow);
-      console.log(statusColor(`  HTTP ${status} (${bodyLen} bytes)`));
+      console.log(statusColor(`  ${httpCallInfo(status, bodyLen, Date.now() - start, ['bookId', book.id])} "${book.title}"`));
       logToFile(`${status} ${bodyLen}B ${book.id} "${book.title}"`);
 
       // Throttle detection: 202/403/429, or 200 with suspiciously small body
@@ -247,9 +250,7 @@ export async function runBookSweep(options: BookSweepOptions = {}): Promise<void
       const workId = extractWorkId(typeof response.data === 'string' ? response.data : '');
 
       // Update cache — only improve, never overwrite good data with bad
-      const entry = getBook(book.id) ?? cache[book.id];
-      cache[book.id] = entry;
-      const parseNum = (s?: string) => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
+      const entry: CachedBook = { ...(getBook(book.id) ?? book) };
       let updatedFields: string[] = [];
 
       // Snapshot old values for comparison
@@ -262,7 +263,7 @@ export async function runBookSweep(options: BookSweepOptions = {}): Promise<void
         entry.genres = genres;
         updatedFields.push('genres');
       }
-      if (details.ratings && parseNum(details.ratings) > parseNum(entry.ratings)) {
+      if (details.ratings && (parseInt(details.ratings.replace(/,/g, ''), 10) || 0) > (parseInt(entry.ratings.replace(/,/g, ''), 10) || 0)) {
         entry.ratings = details.ratings;
         updatedFields.push('ratings');
       }

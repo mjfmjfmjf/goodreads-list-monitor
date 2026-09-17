@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache, loadAuthorCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, AUTHOR_FAIL_LIMIT, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures, AUTHOR_SCRAPE_FAIL_LIMIT } from './storage.js';
+import { loadAuthorCache, iterateBooks, findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, AUTHOR_FAIL_LIMIT, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures, AUTHOR_SCRAPE_FAIL_LIMIT } from './storage.js';
 import type { CachedBook, AuthorCache, AuthorCacheEntry } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { delay, parseDelayRange } from './utils.js';
@@ -83,7 +83,7 @@ export function authorListUrl(o: Pick<AuthorOrphan, 'authorId'>): string | undef
 // Collapse distinct dirty author strings that normalize to the same key, so we
 // don't list the same real author twice (e.g. "John  Green" and "John Green").
 export function selectAuthorOrphans(
-  books: CachedBook[],
+  books: Iterable<CachedBook>,
   authorCache: AuthorCache
 ): { orphans: AuthorOrphan[]; knownSlugs: Map<string, string> } {
   // (authorId?) -> { rawName, topTitle, topRatings }
@@ -231,7 +231,7 @@ export async function runOrphanScrape(
     const orphan = toScrape[i];
     const authorId = orphan.authorId!;
     try {
-      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${orphan.normalizedName} (${authorId})`));
+      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${orphan.normalizedName} (${authorId})`) + chalk.gray(` · sort key: ${formatNum(orphan.topRatings)} ratings on top cached book`));
       let failReason = 'no_stats_line';
       const result = await scrapeAuthorStats(authorId, (r) => { failReason = r; }, crawlAllPages, undefined, !!options.withCookie);
       if (!result) {
@@ -318,11 +318,9 @@ const CATEGORY_COLOR: Record<OrphanCategory, (s: string) => string> = {
 };
 
 export async function runAuthorOrphans(options: AuthorOrphansOptions = {}): Promise<void> {
-  const bookCache = await loadBookCache();
   const authorCache = await loadAuthorCache();
 
-  const books = Object.values(bookCache);
-  const { orphans } = selectAuthorOrphans(books, authorCache);
+  const { orphans } = selectAuthorOrphans(iterateBooks(), authorCache);
   const scrape = !!options.scrape;
 
   if (scrape) {

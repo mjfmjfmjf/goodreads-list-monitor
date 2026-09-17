@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
 
 interface RatingBucket {
   label: string;
@@ -33,16 +33,13 @@ const FIXED_MIN = 80_000;
 const BUCKETS: RatingBucket[] = buildRatingBuckets();
 
 export async function runRatingsHistogram(options: { onlyWorkId?: boolean } = {}): Promise<void> {
-  const bookCache = await loadBookCache();
-  let books = Object.values(bookCache);
-  if (options.onlyWorkId) {
-    books = books.filter(b => Boolean(b.workId));
-  }
-  const totalBooks = books.length;
+  let totalBooks = 0;
 
   const counts: number[] = new Array(BUCKETS.length).fill(0);
 
-  for (const book of books) {
+  for (const book of iterateBooks()) {
+    totalBooks++;
+    if (options.onlyWorkId && !book.workId) continue;
     const rawRatings = (book.ratings || '0').toString().replace(/,/g, '');
     const numRatings = parseInt(rawRatings, 10) || 0;
 

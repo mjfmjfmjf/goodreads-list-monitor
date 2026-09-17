@@ -1,16 +1,15 @@
 import chalk from 'chalk';
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
 import { getYear } from './utils.js';
 
 export async function runSummaryByYear(): Promise<void> {
-  const bookCache = await loadBookCache();
   const yearCounts: { [year: number]: number } = {};
   let unknownCount = 0;
+  let total = 0;
   const otherIssues: { [label: string]: number } = {};
 
-  const books = Object.values(bookCache);
-
-  for (const book of books) {
+  for (const book of iterateBooks()) {
+    total++;
     const year = getYear(book.published);
     
     if (year !== null) {
@@ -44,5 +43,5 @@ export async function runSummaryByYear(): Promise<void> {
     }
   }
 
-  console.log(chalk.cyan(`\nTotal books in cache: ${books.length}`));
+  console.log(chalk.cyan(`\nTotal books in cache: ${total}`));
 }

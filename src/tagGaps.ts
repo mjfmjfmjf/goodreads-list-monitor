@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { scrapeShelfBooks } from './scraper.js';
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
 import { splitAuthorNames, authorFirstAndLast } from './bookMatch.js';
 import { matchesReviewed } from './libraryExport.js';
 import { getLibrary, reviewedInYear, charCounts, publishedCounts, missingLetters, missingPubYears, mostRecentReviewYear, firstCharBucket, parseYear } from './library.js';
@@ -22,6 +22,7 @@ interface Candidate {
   bucket: string;
   published: string;
   pages?: string;
+  r?: number;
 }
 
 interface Dimension {
@@ -93,16 +94,6 @@ async function runGapsCore(
 ): Promise<void> {
   const dims = buildDims(library, year);
 
-  console.log(chalk.cyan.bold(`\n🔍 ${sourceLabel} — review year ${year}`));
-  console.log(chalk.gray(`   ${scannedLabel}`));
-  console.log(chalk.gray(`   Up to ${limit} books per missing bucket (title/authorFirstName/authorLastName letters + publication years); already-reviewed books are skipped`));
-  console.log(chalk.gray('------------------------------------------'));
-  for (const dim of DIMENSIONS) {
-    const d = dims[dim.key];
-    console.log(chalk.gray(`   ${dim.label} missing (${d.missingList.length}): ${d.missingList.join(', ') || '—'}`));
-  }
-  console.log(chalk.gray('------------------------------------------'));
-
   let reviewedSkipped = 0;
   for (const book of books) {
     if (matchesReviewed(library, book.id, book.title, book.author)) {
@@ -127,7 +118,52 @@ async function runGapsCore(
     if (allFull) break;
   }
 
-  console.log(chalk.cyan.bold(`\n🧭 Candidates to fill gaps (${candidatesLabel}, ${books.length} books scanned)`));
+  await printGaps(library, year, limit, sourceLabel, scannedLabel, candidatesLabel, dims, books.length, reviewedSkipped);
+}
+
+// Streaming fill for runCacheGaps: mirrors addCandidate but keeps each missing
+// bucket's top-`limit` candidates BY RATINGS with bounded memory (replace-worst
+// + sort), instead of scanning a full sorted materialized array.
+function boundedAdd(dim: Dimension, book: ScanBook, bucket: string, limit: number, ratings: number): void {
+  if (!dim.missingSet.has(bucket)) return;
+  let list = dim.found.get(bucket);
+  if (!list) {
+    list = [];
+    dim.found.set(bucket, list);
+  }
+  if (list.some(c => c.id === book.id)) return;
+  const candidate: Candidate = { ...book, bucket, r: ratings };
+  if (list.length < limit) {
+    list.push(candidate);
+    list.sort((a, b) => (b.r || 0) - (a.r || 0));
+  } else if (ratings > (list[list.length - 1].r || 0)) {
+    list[list.length - 1] = candidate;
+    list.sort((a, b) => (b.r || 0) - (a.r || 0));
+  }
+}
+
+async function printGaps(
+  library: Parameters<typeof reviewedInYear>[0],
+  year: string,
+  limit: number,
+  sourceLabel: string,
+  scannedLabel: string,
+  candidatesLabel: string,
+  dims: Record<string, Dimension>,
+  booksScanned: number,
+  reviewedSkipped: number
+): Promise<void> {
+  console.log(chalk.cyan.bold(`\n🔍 ${sourceLabel} — review year ${year}`));
+  console.log(chalk.gray(`   ${scannedLabel}`));
+  console.log(chalk.gray(`   Up to ${limit} books per missing bucket (title/authorFirstName/authorLastName letters + publication years); already-reviewed books are skipped`));
+  console.log(chalk.gray('------------------------------------------'));
+  for (const dim of DIMENSIONS) {
+    const d = dims[dim.key];
+    console.log(chalk.gray(`   ${dim.label} missing (${d.missingList.length}): ${d.missingList.join(', ') || '—'}`));
+  }
+  console.log(chalk.gray('------------------------------------------'));
+
+  console.log(chalk.cyan.bold(`\n🧭 Candidates to fill gaps (${candidatesLabel}, ${booksScanned} books scanned)`));
   if (reviewedSkipped > 0) console.log(chalk.gray(`   (skipped ${reviewedSkipped.toLocaleString()} already-reviewed books)`));
   console.log(chalk.gray('------------------------------------------'));
 
@@ -142,7 +178,7 @@ async function runGapsCore(
       const found = d.found.get(bucket) || [];
       console.log(chalk.gray(`      ${chalk.white(bucket)}:`));
       if (found.length === 0) {
-        console.log(chalk.yellow(`         (none found in the first ${books.length} books)`));
+        console.log(chalk.yellow(`         (none found in the first ${booksScanned} books)`));
         continue;
       }
       for (let i = 0; i < found.length; i++) {
@@ -192,30 +228,43 @@ export async function runCacheGaps(options: TagGapsOptions = {}): Promise<void> 
 
   const library = await getLibrary(options);
   const year = resolveYear(options, library);
+  const dims = buildDims(library, year);
 
-  const bookCache = await loadBookCache();
-  const scanBooks: ScanBook[] = Object.values(bookCache)
-    .filter(book => !book.isBad && book.title && book.title !== 'Unknown' && book.author && book.author !== 'Unknown')
-    .sort((a, b) => {
-      const ratingsA = parseInt(a.ratings.replace(/,/g, ''), 10) || 0;
-      const ratingsB = parseInt(b.ratings.replace(/,/g, ''), 10) || 0;
-      return ratingsB - ratingsA;
-    })
-    .map(book => ({
-      title: book.title,
-      id: book.id,
-      author: book.author,
-      published: book.published,
-      pages: book.pages
-    }));
+  // Stream the table, filling each missing bucket with its top-`limit` cached
+  // books BY RATINGS (same result as scanning a full rating-sorted array, but
+  // with bounded per-bucket memory).
+  let totalEligible = 0;
+  let reviewedSkipped = 0;
+  for (const book of iterateBooks()) {
+    if (book.isBad || !book.title || book.title === 'Unknown' || !book.author || book.author === 'Unknown') continue;
+    totalEligible++;
+    if (matchesReviewed(library, book.id, book.title, book.author)) {
+      reviewedSkipped++;
+      continue;
+    }
 
-  await runGapsCore(
+    const r = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
+    const scanBook: ScanBook = { title: book.title, id: book.id, author: book.author, published: book.published, pages: book.pages };
+    const names = splitAuthorNames(book.author);
+    const { first, last } = names.length ? authorFirstAndLast(names[0]) : { first: '', last: '' };
+
+    boundedAdd(dims.title, scanBook, firstCharBucket(book.title), limit, r);
+    boundedAdd(dims.authorFirst, scanBook, firstCharBucket(first), limit, r);
+    boundedAdd(dims.authorLast, scanBook, firstCharBucket(last), limit, r);
+
+    const pubYear = parseYear(book.published);
+    if (pubYear) boundedAdd(dims.publishYear, scanBook, String(pubYear), limit, r);
+  }
+
+  await printGaps(
     library,
     year,
     limit,
-    scanBooks,
-    `Book-cache gap fillers`,
-    `Scanning ${scanBooks.length.toLocaleString()} cached books (sorted by ratings)`,
-    'cache order'
+    'Book-cache gap fillers',
+    `Scanning ${totalEligible.toLocaleString()} cached books (sorted by ratings)`,
+    'cache order',
+    dims,
+    totalEligible,
+    reviewedSkipped
   );
 }

@@ -2,7 +2,9 @@ import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
 import { scrapeListBooks } from './scraper.js';
-import { loadBookCache, CachedBook } from './storage.js';
+import { iterateBooks, countBooks, getBook } from './storage.js';
+import type { BookCache, CachedBook } from './storage.js';
+import { getDb } from './db.js';
 import { ListEntry } from './tagConfig.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
 import { matchesRegex } from './bookMatch.js';
@@ -172,8 +174,7 @@ export async function runQueueDiscovery(
       throw new Error(`List ID "${globalOptions.listId}" not found in config file: ${path.basename(configFile)}`);
     }
   }
-  const bookCache = await loadBookCache();
-  const allCachedBooks = Object.values(bookCache);
+  const totalCachedBooks = countBooks();
 
   const sortBy = (globalOptions.sortBy || 'ratings') as 'year' | 'ratings' | 'avg';
   const globalMinAvg = globalOptions.minAvg ? parseFloat(globalOptions.minAvg) : 0;
@@ -186,7 +187,7 @@ export async function runQueueDiscovery(
   if (globalMinAvg > 0 || globalMaxAvg < Infinity) {
     console.log(chalk.gray(`   Global Avg: ${globalMinAvg}-${globalMaxAvg}`));
   }
-  console.log(chalk.gray(`   Total cached books: ${allCachedBooks.length}\n`));
+  console.log(chalk.gray(`   Total cached books: ${totalCachedBooks}\n`));
 
   const finalResults: DiscoveryResult[] = [];
   let totalMissing = 0;
@@ -223,28 +224,29 @@ export async function runQueueDiscovery(
     if (criteria.authorFirstRegex) regexParts.push(`Author First: /${criteria.authorFirstRegex}/`);
     if (regexParts.length > 0) console.log(chalk.gray(`   - Regex Criteria: ${regexParts.join(', ')}`));
 
-    // Filter cached books for this list's criteria
-    const candidates = allCachedBooks.filter(book => {
-      if (book.isBad) return false;
-      if (!book.title || book.title === 'Unknown') return false;
-      if (!candidatePassesRequireWorkId(book, !!globalOptions.requireWorkId)) return false;
+    // Stream-filter cached books for this list's criteria
+    const candidates: CachedBook[] = [];
+    for (const book of iterateBooks()) {
+      if (book.isBad) continue;
+      if (!book.title || book.title === 'Unknown') continue;
+      if (!candidatePassesRequireWorkId(book, !!globalOptions.requireWorkId)) continue;
 
       // Ratings check
       const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
-      if (bookRatings < minVal || bookRatings > maxVal) return false;
+      if (bookRatings < minVal || bookRatings > maxVal) continue;
 
       // Avg Rating check
       if (!book.avgRating) {
-        if (minAvg > 0 || maxAvg < Infinity) return false;
+        if (minAvg > 0 || maxAvg < Infinity) continue;
       } else {
         const bookAvg = parseFloat(book.avgRating);
-        if (bookAvg < minAvg || bookAvg > maxAvg) return false;
+        if (bookAvg < minAvg || bookAvg > maxAvg) continue;
       }
 
       // Year check
       const bookYear = getYear(book.published);
       if (minYear > 0 || maxYear < Infinity) {
-        if (bookYear === null || bookYear < minYear || bookYear > maxYear) return false;
+        if (bookYear === null || bookYear < minYear || bookYear > maxYear) continue;
       }
 
       // Regex check
@@ -253,16 +255,16 @@ export async function runQueueDiscovery(
         authorLastRegex: criteria.authorLastRegex,
         authorFirstRegex: criteria.authorFirstRegex
       };
-      if (!matchesRegex(book, regexCriterion)) return false;
+      if (!matchesRegex(book, regexCriterion)) continue;
 
       // Series position check
       if (criteria.seriesPos !== undefined) {
         const bookSeriesPos = parseSeriesPos(book.title) ?? book.seriesPos;
-        if (!matchesSeriesPos(criteria.seriesPos, bookSeriesPos)) return false;
+        if (!matchesSeriesPos(criteria.seriesPos, bookSeriesPos)) continue;
       }
 
-      return true;
-    });
+      candidates.push(book);
+    }
 
     if (candidates.length === 0) {
       console.log(chalk.gray(`   ⏩ Skipping list: No cached books meet the criteria for this category.`));
@@ -288,10 +290,33 @@ export async function runQueueDiscovery(
     // workId for ANY edition of a book already on the list, we can recognize a
     // differently-titled candidate edition (e.g. "Vindens skugga" vs "The
     // Shadow of the Wind") as already-on-list instead of proposing it as missing.
-    const listWorkIds = resolveListWorkIds(listBooks, bookCache);
+    // Resolve every list book to a workId via the DB (sparse, no full-table
+    // load). Build a small cache of the list books' ids, then pull sibling
+    // editions sharing their authorIds so the edition-id-mismatch fallback in
+    // resolveListWorkIds still resolves.
+    const listCache: BookCache = {};
+    for (const lb of listBooks) {
+      if (!lb.id || listCache[lb.id]) continue;
+      const b = getBook(lb.id);
+      if (b) listCache[lb.id] = b;
+    }
+    const missingIds = listBooks.filter(lb => !(lb.id && listCache[lb.id]?.workId));
+    const siblingAuthorIds = [...new Set(missingIds.map(lb => lb.authorId).filter(Boolean))];
+    if (siblingAuthorIds.length > 0) {
+      const ph = siblingAuthorIds.map(() => '?').join(',');
+      const rows = getDb().prepare(
+        `SELECT id, title, author, author_id, work_id FROM books WHERE author_id IN (${ph}) AND work_id IS NOT NULL AND work_id != ''`
+      ).all(...siblingAuthorIds) as any[];
+      for (const r of rows) {
+        const id = String(r.id);
+        if (listCache[id]) continue;
+        listCache[id] = { id, title: r.title, author: r.author, authorId: r.author_id, workId: r.work_id } as CachedBook;
+      }
+    }
+    const listWorkIds = resolveListWorkIds(listBooks, listCache);
 
     for (const sb of prunedCandidates) {
-      const sbWorkId = bookCache[sb.id]?.workId;
+      const sbWorkId = getBook(sb.id)?.workId;
       const alreadyOnList = isAlreadyOnList(sb, listBooks, listWorkIds, sbWorkId);
       if (!alreadyOnList) {
         const pubInfo = sb.published !== 'Unknown' ? `, Pub: ${formatDate(sb.published)}` : '';

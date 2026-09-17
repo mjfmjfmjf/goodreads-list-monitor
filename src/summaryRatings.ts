@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
 
 interface RatingBucket {
   label: string;
@@ -67,13 +67,11 @@ const BUCKETS: RatingBucket[] = [
 ];
 
 export async function runSummaryRatings(options: { hideZero?: boolean } = {}): Promise<void> {
-  const bookCache = await loadBookCache();
-  const books = Object.values(bookCache);
-  const totalBooks = books.length;
-
   const counts: number[] = new Array(BUCKETS.length).fill(0);
+  let totalBooks = 0;
 
-  for (const book of books) {
+  for (const book of iterateBooks()) {
+    totalBooks++;
     const rawRatings = (book.ratings || '0').toString().replace(/,/g, '');
     const numRatings = parseInt(rawRatings, 10) || 0;
 

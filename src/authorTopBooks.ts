@@ -1,5 +1,6 @@
 import chalk from 'chalk';
-import { loadBookCache, loadAuthorCache, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT } from './storage.js';
+import { loadAuthorCache, iterateBooks, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT } from './storage.js';
+import type { CachedBook } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { delay, parseDelayRange } from './utils.js';
 
@@ -20,24 +21,29 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
   console.log(chalk.cyan.bold(`\n👤 Author Stats: capturing stats for the authors of the top ${n} books by ratings`));
   console.log(chalk.gray(`   Ratings filter: ${minRatings.toLocaleString()} - ${maxRatings === Infinity ? '∞' : maxRatings.toLocaleString()}`));
 
-  console.log(chalk.gray('   Loading book cache...'));
-  const bookCache = await loadBookCache();
-  console.log(chalk.gray(`   Loading author cache...`));
+  console.log(chalk.gray('   Loading author cache...'));
   const authorCache = await loadAuthorCache();
 
-  console.log(chalk.gray(`   Loaded ${Object.keys(bookCache).length.toLocaleString()} books, ${Object.keys(authorCache).length.toLocaleString()} authors. Filtering and sorting...`));
+  console.log(chalk.gray(`   Loaded ${countBooks().toLocaleString()} books, ${Object.keys(authorCache).length.toLocaleString()} authors. Filtering and sorting...`));
 
-  // 1. Books from the book cache, filtered by ratings range (same semantics as the histograms)
-  const candidates = Object.values(bookCache)
-    .filter(b => {
-      const r = parseRatingsNum(b.ratings);
-      return r >= minRatings && r <= maxRatings;
-    })
-    .sort((a, b) => parseRatingsNum(b.ratings) - parseRatingsNum(a.ratings));
+  // 1. Stream the book table, keeping only the top `n` books by ratings (same
+  //    range semantics as the histograms).
+  const topBooks: CachedBook[] = [];
+  let totalInRange = 0;
+  for (const book of iterateBooks()) {
+    const r = parseRatingsNum(book.ratings);
+    if (r < minRatings || r > maxRatings) continue;
+    totalInRange++;
+    if (topBooks.length < n) {
+      topBooks.push(book);
+      topBooks.sort((a, b) => parseRatingsNum(b.ratings) - parseRatingsNum(a.ratings));
+    } else if (r > parseRatingsNum(topBooks[topBooks.length - 1].ratings)) {
+      topBooks[topBooks.length - 1] = book;
+      topBooks.sort((a, b) => parseRatingsNum(b.ratings) - parseRatingsNum(a.ratings));
+    }
+  }
 
-  const topBooks = candidates.slice(0, n);
-
-  console.log(chalk.gray(`   Books in range: ${candidates.length.toLocaleString()}\n`));
+  console.log(chalk.gray(`   Books in range: ${totalInRange.toLocaleString()}\n`));
 
   if (topBooks.length === 0) {
     console.log(chalk.yellow('   No books match the ratings filter.'));

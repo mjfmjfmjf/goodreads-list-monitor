@@ -15,7 +15,8 @@ import {
   parseYear,
   CharField
 } from './library.js';
-import { loadBookCache, BookCache, loadTagBooks, TagBookRow } from './storage.js';
+import { getBook, loadTagBooks } from './storage.js';
+import type { BookCache, TagBookRow } from './storage.js';
 import { getYear, formatBookLink } from './utils.js';
 import { groupFavoriteAuthors } from './favoriteAuthors.js';
 import { maybeSyncLiveReads, fetchLiveYearReads } from './reviewListSync.js';
@@ -538,7 +539,13 @@ export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<
     return;
   }
 
-  const bookCache = await loadBookCache();
+  // Sparse cache: only the books actually read that year.
+  const bookCache: BookCache = {};
+  for (const entry of entries) {
+    if (bookCache[entry.id]) continue;
+    const book = getBook(entry.id);
+    if (book) bookCache[entry.id] = book;
+  }
   const ctx: SectionContext = { entries, bookCache, reviewYear: parseInt(year, 10) };
   const allDated = library.entries.filter(e => /^\d{4}\//.test(e.dateRead));
   const perDay: PerDayContext = { year: parseInt(year, 10), allEntries: allDated };

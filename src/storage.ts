@@ -144,6 +144,28 @@ export function loadBookCache(): BookCache {
   return cache;
 }
 
+// Stream the full `books` table one row at a time as CachedBook objects,
+// O(1) memory — the replacement for loadBookCache() in iteration-only
+// consumers (histograms, summaries, audits, sync helpers). The caller may
+// `break` early; better-sqlite3 frees the statement once the cursor (and the
+// generator) is garbage collected.
+export function* iterateBooks(): Generator<CachedBook> {
+  const stmt = getDb().prepare('SELECT * FROM books');
+  for (const row of stmt.iterate()) {
+    yield rowToBook(row);
+  }
+}
+
+// Stream arbitrary projection rows (e.g. 'SELECT ratings, work_id FROM books')
+// for SQL-side aggregation, keeping memory flat. Rows are raw DB columns, NOT
+// CachedBook objects — use only the columns you select.
+export function* streamRows<T = Record<string, unknown>>(sql: string, ...params: unknown[]): Generator<T> {
+  const stmt = getDb().prepare(sql);
+  for (const row of stmt.iterate(...(params as any[]))) {
+    yield row as T;
+  }
+}
+
 const BOOK_UPSERT_SQL = `
   INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count, work_id, first_seen)
   VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @pages, @seriesPos, @genres, @lastUpdated, @tags, @requiresAuth, @isBad, @failCount, @workId, COALESCE(@firstSeen, @lastUpdated))
@@ -164,7 +186,10 @@ function bindBook(book: CachedBook) {
     author: book.author,
     authorId: book.authorId || null,
     ratings: parseNum(book.ratings),
-    avgRating: book.avgRating ? parseFloat(book.avgRating) : null,
+    // A book with no ratings has no average to scrape — record it as 0 so the
+    // field is populated, not NULL. A book WITH ratings but no avg is a scrape
+    // gap and must stay NULL so it stays detectable/backfillable.
+    avgRating: book.avgRating ? parseFloat(book.avgRating) : (parseNum(book.ratings) === 0 ? 0 : null),
     published: book.published,
     pages: book.pages ? parseInt(book.pages, 10) : null,
     seriesPos: book.seriesPos ?? null,
@@ -268,34 +293,31 @@ export function mergeBooksFromAuthorPage(books: AuthorPageBookRow[]): { inserted
       last_updated = @lastUpdated
     WHERE id = @id
   `);
-  const tx = db.transaction(() => {
-    for (const inc of books) {
-      if (!inc.id) continue;
-      const existing = getBook(inc.id);
-      const outcome = computeAuthorPageMerge(existing, inc);
-      if (outcome.kind === 'insert') {
-        upsertBook(outcome.book);
-        result.inserted++;
-      } else if (outcome.kind === 'update') {
-        const b = outcome.book;
-        updateStmt.run({
-          id: b.id,
-          title: b.title ?? null,
-          author: b.author ?? null,
-          authorId: b.authorId || null,
-          ratings: b.ratings ? parseNum(b.ratings) : null,
-          avgRating: b.avgRating ? parseFloat(b.avgRating) : null,
-          published: b.published ?? null,
-          workId: b.workId || null,
-          lastUpdated: b.lastUpdated,
-        });
-        result.updated++;
-      } else {
-        result.skipped++;
-      }
+  for (const inc of books) {
+    if (!inc.id) continue;
+    const existing = getBook(inc.id);
+    const outcome = computeAuthorPageMerge(existing, inc);
+    if (outcome.kind === 'insert') {
+      upsertBook(outcome.book);
+      result.inserted++;
+    } else if (outcome.kind === 'update') {
+      const b = outcome.book;
+      updateStmt.run({
+        id: b.id,
+        title: b.title ?? null,
+        author: b.author ?? null,
+        authorId: b.authorId || null,
+        ratings: b.ratings ? parseNum(b.ratings) : null,
+        avgRating: b.avgRating ? parseFloat(b.avgRating) : (parseNum(b.ratings) === 0 ? 0 : null),
+        published: b.published ?? null,
+        workId: b.workId || null,
+        lastUpdated: b.lastUpdated,
+      });
+      result.updated++;
+    } else {
+      result.skipped++;
     }
-  });
-  tx();
+  }
   return result;
 }
 
@@ -326,19 +348,16 @@ export function upsertTagBooks(tag: string, books: { id: string; position?: numb
       shelved = excluded.shelved,
       harvested_at = excluded.harvested_at
   `);
-  const tx = db.transaction(() => {
-    for (const book of books) {
-      if (!book.id) continue;
-      stmt.run({
-        tagName: tag,
-        bookId: book.id,
-        position: book.position ?? null,
-        shelved: book.shelved ?? null,
-        harvestedAt: now,
-      });
-    }
-  });
-  tx();
+  for (const book of books) {
+    if (!book.id) continue;
+    stmt.run({
+      tagName: tag,
+      bookId: book.id,
+      position: book.position ?? null,
+      shelved: book.shelved ?? null,
+      harvestedAt: now,
+    });
+  }
 }
 
 export function loadTagBooks(tag?: string, bookId?: string): TagBookRow[] {
@@ -458,59 +477,56 @@ export async function syncBooksToCache(books: any[], bookCache: BookCache): Prom
 
   const parseRatings = (r: string | undefined) => parseInt((r || '0').replace(/,/g, ''), 10);
 
-  const tx = db.transaction(() => {
-    for (const book of books) {
-      // Compare against the current DB row (not just the caller's snapshot)
-      // so concurrent writers can't be regressed by stale values.
-      const snap = bookCache[book.id];
-      const existing = getBook(book.id) ?? snap;
-      const isNew = !existing;
+  for (const book of books) {
+    // Compare against the current DB row (not just the caller's snapshot)
+    // so concurrent writers can't be regressed by stale values.
+    const snap = bookCache[book.id];
+    const existing = getBook(book.id) ?? snap;
+    const isNew = !existing;
 
-      const existingRatingsNum = parseRatings(existing?.ratings);
-      const newRatingsNum = parseRatings(book.ratings);
+    const existingRatingsNum = parseRatings(existing?.ratings);
+    const newRatingsNum = parseRatings(book.ratings);
 
-      const hasBetterTitle = existing?.title === 'Unknown' && book.title !== 'Unknown';
-      const hasBetterAuthor = existing?.author === 'Unknown' && book.author !== 'Unknown';
-      const hasBetterAuthorId = !existing?.authorId && book.authorId;
-      const hasBetterDate = (existing?.published === 'Unknown' || !existing?.published) && (book.published && book.published !== 'Unknown');
-      const hasBetterPages = !existing?.pages && book.pages;
-      const hasBetterRatings = newRatingsNum > existingRatingsNum;
-      const hasBetterAvgRating = book.avgRating && book.avgRating !== existing?.avgRating;
-      const newSeriesPos = book.title !== 'Unknown' ? parseSeriesPos(book.title) : undefined;
-      const hasBetterSeriesPos = existing?.seriesPos === undefined && newSeriesPos !== undefined;
-      const hasChangedSeriesPos = existing?.seriesPos !== undefined && newSeriesPos !== undefined && newSeriesPos !== existing.seriesPos;
+    const hasBetterTitle = existing?.title === 'Unknown' && book.title !== 'Unknown';
+    const hasBetterAuthor = existing?.author === 'Unknown' && book.author !== 'Unknown';
+    const hasBetterAuthorId = !existing?.authorId && book.authorId;
+    const hasBetterDate = (existing?.published === 'Unknown' || !existing?.published) && (book.published && book.published !== 'Unknown');
+    const hasBetterPages = !existing?.pages && book.pages;
+    const hasBetterRatings = newRatingsNum > existingRatingsNum;
+    const hasBetterAvgRating = book.avgRating && book.avgRating !== existing?.avgRating;
+    const newSeriesPos = book.title !== 'Unknown' ? parseSeriesPos(book.title) : undefined;
+    const hasBetterSeriesPos = existing?.seriesPos === undefined && newSeriesPos !== undefined;
+    const hasChangedSeriesPos = existing?.seriesPos !== undefined && newSeriesPos !== undefined && newSeriesPos !== existing.seriesPos;
 
-      if (isNew || hasBetterTitle || hasBetterAuthor || hasBetterAuthorId || hasBetterDate || hasBetterPages || hasBetterRatings || hasBetterAvgRating || hasBetterSeriesPos || hasChangedSeriesPos) {
-        const merged: CachedBook = {
-          id: book.id,
-          title: book.title !== 'Unknown' ? book.title : (existing?.title || 'Unknown'),
-          author: book.author !== 'Unknown' ? book.author : (existing?.author || 'Unknown'),
-          authorId: book.authorId || existing?.authorId,
-          ratings: hasBetterRatings ? book.ratings : (existing?.ratings || '0'),
-          avgRating: book.avgRating || existing?.avgRating,
-          published: (book.published && book.published !== 'Unknown') ? book.published : (existing?.published || 'Unknown'),
-          pages: book.pages || existing?.pages,
-          seriesPos: newSeriesPos !== undefined ? newSeriesPos : existing?.seriesPos,
-          lastUpdated: new Date().toISOString(),
-          tags: existing?.tags || (book.tagCount !== undefined ? {} : undefined),
-          genres: existing?.genres,
-          requiresAuth: existing?.requiresAuth,
-          isBad: existing?.isBad,
-          failCount: existing?.failCount,
-        };
+    if (isNew || hasBetterTitle || hasBetterAuthor || hasBetterAuthorId || hasBetterDate || hasBetterPages || hasBetterRatings || hasBetterAvgRating || hasBetterSeriesPos || hasChangedSeriesPos) {
+      const merged: CachedBook = {
+        id: book.id,
+        title: book.title !== 'Unknown' ? book.title : (existing?.title || 'Unknown'),
+        author: book.author !== 'Unknown' ? book.author : (existing?.author || 'Unknown'),
+        authorId: book.authorId || existing?.authorId,
+        ratings: hasBetterRatings ? book.ratings : (existing?.ratings || '0'),
+        avgRating: book.avgRating || existing?.avgRating,
+        published: (book.published && book.published !== 'Unknown') ? book.published : (existing?.published || 'Unknown'),
+        pages: book.pages || existing?.pages,
+        seriesPos: newSeriesPos !== undefined ? newSeriesPos : existing?.seriesPos,
+        lastUpdated: new Date().toISOString(),
+        tags: existing?.tags || (book.tagCount !== undefined ? {} : undefined),
+        genres: existing?.genres,
+        requiresAuth: existing?.requiresAuth,
+        isBad: existing?.isBad,
+        failCount: existing?.failCount,
+      };
 
-        if (book.tagCount !== undefined && !merged.tags) merged.tags = {};
+      if (book.tagCount !== undefined && !merged.tags) merged.tags = {};
 
-        bookCache[book.id] = merged;
+      bookCache[book.id] = merged;
 
-        upsertStmt.run(bindBook(merged));
+      upsertStmt.run(bindBook(merged));
 
-        if (isNew) outcome.inserted++;
-        else outcome.updated++;
-      }
+      if (isNew) outcome.inserted++;
+      else outcome.updated++;
     }
-  });
-  tx();
+  }
   return outcome;
 }
 
@@ -683,14 +699,11 @@ export function upsertGenres(genres: Array<{ name: string; memberCount: number }
       member_count = excluded.member_count,
       last_updated = excluded.last_updated
   `);
-  const tx = db.transaction(() => {
-    for (const g of genres) {
-      const exists = (db.prepare('SELECT 1 AS x FROM genres WHERE name = ?').get(g.name) as any) !== undefined;
-      stmt.run({ name: g.name, count: g.memberCount, now });
-      if (exists) updated++; else inserted++;
-    }
-  });
-  tx();
+  for (const g of genres) {
+    const exists = (db.prepare('SELECT 1 AS x FROM genres WHERE name = ?').get(g.name) as any) !== undefined;
+    stmt.run({ name: g.name, count: g.memberCount, now });
+    if (exists) updated++; else inserted++;
+  }
   return { inserted, updated };
 }
 
@@ -770,37 +783,34 @@ export function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {
   `);
   const findById = db.prepare('SELECT name FROM authors WHERE id = ?');
 
-  const tx = db.transaction(() => {
-    for (const book of books) {
-      if (book.author && book.author !== 'Unknown Author' && book.authorSlug) {
-        // Author identity is the id; if this author already exists under some
-        // OTHER name variant (mangled spacing, role suffixes), do NOT create
-        // a duplicate row keyed by the variant.
-        const authorId = String(book.authorId || book.authorSlug.split('.')[0]);
-        const existingById = findById.get(authorId) as any;
-        if (existingById && existingById.name !== book.author) {
-          continue;
-        }
-        const existing = authorCache[book.author];
-        if (!existing || existing.slug !== book.authorSlug) {
-          const entry: AuthorCacheEntry = {
-            id: book.authorId || book.authorSlug.split('.')[0],
-            slug: book.authorSlug,
-            lastSeen: new Date().toISOString(),
-          };
-          authorCache[book.author] = entry;
-          upsert.run({
-            name: book.author,
-            id: entry.id,
-            slug: entry.slug,
-            lastSeen: entry.lastSeen,
-          });
-          updated = true;
-        }
+  for (const book of books) {
+    if (book.author && book.author !== 'Unknown Author' && book.authorSlug) {
+      // Author identity is the id; if this author already exists under some
+      // OTHER name variant (mangled spacing, role suffixes), do NOT create
+      // a duplicate row keyed by the variant.
+      const authorId = String(book.authorId || book.authorSlug.split('.')[0]);
+      const existingById = findById.get(authorId) as any;
+      if (existingById && existingById.name !== book.author) {
+        continue;
+      }
+      const existing = authorCache[book.author];
+      if (!existing || existing.slug !== book.authorSlug) {
+        const entry: AuthorCacheEntry = {
+          id: book.authorId || book.authorSlug.split('.')[0],
+          slug: book.authorSlug,
+          lastSeen: new Date().toISOString(),
+        };
+        authorCache[book.author] = entry;
+        upsert.run({
+          name: book.author,
+          id: entry.id,
+          slug: entry.slug,
+          lastSeen: entry.lastSeen,
+        });
+        updated = true;
       }
     }
-  });
-  tx();
+  }
 }
 
 // ── State ──────────────────────────────────────────────────────────

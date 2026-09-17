@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadAuthorCache, loadBookCache } from './storage.js';
+import { loadAuthorCache, iterateBooks } from './storage.js';
 import type { AuthorCacheEntry, CachedBook } from './storage.js';
 import { selectAuthors } from './authorTopStats.js';
 import type { SelectedAuthor, AuthorTopStatsOptions } from './authorTopStats.js';
@@ -446,13 +446,25 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
   const rawRanked = dedupeAuthorsBySlug(selected);
 
   console.log(chalk.gray('   Resolving suggested books...'));
-  const bookCache = await loadBookCache();
+  // Stream the table; keep only each author's top few books by ratings, which
+  // is all pickSuggestionBook needs (it picks the highest-rated book).
   const booksByAuthor = new Map<string, CachedBook[]>();
-  for (const book of Object.values(bookCache)) {
+  const PER_AUTHOR_CAP = 10;
+  for (const book of iterateBooks()) {
     if (!book.authorId) continue;
     const list = booksByAuthor.get(book.authorId);
-    if (list) list.push(book);
-    else booksByAuthor.set(book.authorId, [book]);
+    if (!list) {
+      booksByAuthor.set(book.authorId, [book]);
+    } else {
+      const r = bookRatingsCount(book);
+      if (list.length < PER_AUTHOR_CAP) {
+        list.push(book);
+        list.sort((a, b) => bookRatingsCount(b) - bookRatingsCount(a));
+      } else if (r > bookRatingsCount(list[list.length - 1])) {
+        list[list.length - 1] = book;
+        list.sort((a, b) => bookRatingsCount(b) - bookRatingsCount(a));
+      }
+    }
   }
 
   // The target ranking only counts authors with a qualifying book. Filtering

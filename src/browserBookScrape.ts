@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { BrowserContext } from 'playwright';
 import { getDb } from './db.js';
 import { getBook, loadConfig, upsertBook, CachedBook } from './storage.js';
-import { fetchWithRetry, isConnectivityError, withDbLockRetry } from './utils.js';
+import { fetchWithRetry, httpCallInfo, isConnectivityError, withDbLockRetry } from './utils.js';
 import { USER_AGENT } from './scraper.js';
 import { BROWSER_PROFILE_DIR, checkBrowserLogin, launchBrowserProfile } from './browserSession.js';
 import {
@@ -382,7 +382,7 @@ export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): P
     else consecutiveThrottles = 0;
     const ratingInfo = String(candidate.ratings);
     console.log(color(
-      `   #${num}/${candidates.length} [${c.status}] id=${candidate.id} http=${c.http ?? '-'} ${String(c.elapsed_ms ?? 0).padStart(5)}ms ${String(c.bytes ?? 0).padStart(7)}B ratings=${ratingInfo}${genreInfo} "${candidate.title}"`
+      `   #${num}/${candidates.length} ${httpCallInfo(c.http, c.bytes, c.elapsed_ms, ['bookId', candidate.id], c.status)} ratings=${ratingInfo}${genreInfo} "${candidate.title}"`
     ));
     if (c.error) console.log(chalk.gray(`      error: ${c.error.slice(0, 160)}`));
 

@@ -92,7 +92,8 @@ export async function runFieldCoverage(): Promise<void> {
     SELECT
       COUNT(*) AS total,
       SUM(CASE WHEN author_id IS NOT NULL THEN 1 ELSE 0 END) AS 'author_id',
-      SUM(CASE WHEN ratings IS NOT NULL AND ratings > 0 THEN 1 ELSE 0 END) AS 'ratings',
+      SUM(CASE WHEN ratings IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings',
+      SUM(CASE WHEN ratings = 0 THEN 1 ELSE 0 END) AS 'ratings_zero',
       SUM(CASE WHEN avg_rating IS NOT NULL THEN 1 ELSE 0 END) AS 'avg_rating',
       SUM(CASE WHEN published IS NOT NULL AND published NOT IN ('Unknown', 'null', '') THEN 1 ELSE 0 END) AS 'published',
       SUM(CASE WHEN pages IS NOT NULL THEN 1 ELSE 0 END) AS 'pages',
@@ -102,6 +103,12 @@ export async function runFieldCoverage(): Promise<void> {
       SUM(CASE WHEN work_id IS NOT NULL AND work_id != '' THEN 1 ELSE 0 END) AS 'work_id'
     FROM books
   `).get() as any;
+
+  // 0 ratings is a real value (the book has no ratings yet), not missing data.
+  // Report the zero-rating population as a separate annotation instead of as
+  // part of the "missing" bucket.
+  const bookRatingsZero = Number(bookTotals.ratings_zero) || 0;
+  delete bookTotals.ratings_zero;
 
   // Distinct values per scalar column. These expose how much a column repeats
   // across the cache: e.g. a work_id may map to several book editions, and an
@@ -173,6 +180,7 @@ export async function runFieldCoverage(): Promise<void> {
   for (const stat of computeFieldStats(bookTotals, Number(bookTotals.total), bookDistinct)) {
     console.log('  ' + formatCoverageLine(stat));
   }
+  console.log(`  ${'ratings_zero'.padEnd(14)} : ${chalk.yellow(bookRatingsZero.toLocaleString().padStart(7))} ${chalk.gray('· books with exactly 0 ratings')}`);
   console.log(`  ${'genres'.padEnd(14)} : distinct genre labels ${chalk.yellow(genreNames.size.toLocaleString())}`);
   console.log(`  ${'tags'.padEnd(14)} : distinct tag/shelf names ${chalk.yellow(tagNames.size.toLocaleString())}`);
   console.log(chalk.cyan.bold(`\n📊 Author-cache field coverage:`));

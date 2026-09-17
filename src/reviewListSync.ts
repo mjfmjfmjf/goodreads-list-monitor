@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import * as cheerio from 'cheerio';
 import { LibraryEntry, LibraryExport } from './libraryExport.js';
 import { loadConfig, loadState, Config } from './storage.js';
-import { fetchWithRetry, delay } from './utils.js';
+import { fetchWithRetry, delay, httpCallInfo } from './utils.js';
 import { USER_AGENT } from './scraper.js';
 
 const TIMEOUT = 30000;
@@ -248,7 +248,7 @@ export async function syncLiveReads(
         }
       );
       html = String(response.data);
-      console.log(chalk.gray(`   ✓ Page ${page}: HTTP ${response.status} in ${((Date.now() - started) / 1000).toFixed(1)}s (${(html.length / 1024).toFixed(0)} KB)`));
+      console.log(chalk.gray(`   ✓ ${httpCallInfo(response.status, html.length, Date.now() - started, ['page', page])}`));
     } catch (error: any) {
       return {
         entries,

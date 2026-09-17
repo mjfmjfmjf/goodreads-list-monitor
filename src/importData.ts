@@ -367,7 +367,7 @@ export async function importBooksFile(
       author: merged.author,
       authorId: merged.authorId || null,
       ratings: merged.ratings,
-      avgRating: merged.avgRating,
+      avgRating: merged.avgRating ?? (merged.ratings === 0 ? 0 : null),
       published: merged.published,
       pages: merged.pages,
       seriesPos: merged.seriesPos,

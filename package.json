@@ -24,6 +24,7 @@
     "scrape-best-of-year": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts scrape-best-of-year",
     "gen-best-of-year-config": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts gen-best-of-year-config",
     "field-coverage": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts field-coverage",
+    "book-page-gaps": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts book-page-gaps",
     "genre-list": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts genre-list",
     "monitor-yearly-highly-rated-lists": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts monitor-yearly-highly-rated-lists",
     "monitor-top-rated-list": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts monitor-top-rated-list",
@@ -81,6 +82,9 @@
     "browser-login": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts browser-login",
     "list-walk": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-walk",
     "list-tag-walk": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-tag-walk",
+    "walk-list-tag": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts walk-list-tag",
+    "walk-tag-books": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts walk-tag-books",
+    "walk-new-tags": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts walk-new-tags",
     "genre-tag-pairings": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts genre-tag-pairings",
     "tag-pairings": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-pairings"
   },

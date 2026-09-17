@@ -1,15 +1,11 @@
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
 
 async function analyze() {
-  const cache = loadBookCache();
-  const ids = Object.keys(cache);
-  
   let totalSuspects = 0;
   let recent2001 = 0;
   const suspects = [];
 
-  for (const id of ids) {
-    const book = cache[id];
+  for (const book of iterateBooks()) {
     // Check if published year is 2001
     const year = book.published ? parseInt(book.published.split('.')[0], 10) : null;
     if (year === 2001) {
@@ -18,7 +14,7 @@ async function analyze() {
       if (book.lastUpdated && book.lastUpdated.startsWith('2026-05')) {
         recent2001++;
         suspects.push({
-          id,
+          id: book.id,
           title: book.title,
           published: book.published,
           lastUpdated: book.lastUpdated

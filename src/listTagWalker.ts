@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { scrapeListsByTag, scrapeListBooks, TagListEntry } from './scraper.js';
-import { countAuthors, loadBookCache, loadListScrape, syncBooksToCache, upsertListScrape } from './storage.js';
+import { countAuthors, loadListScrape, syncBooksToCache, upsertListScrape, type BookCache } from './storage.js';
 import { delay, isConnectivityError } from './utils.js';
 
 export interface ListTagWalkerOptions {
@@ -68,7 +68,10 @@ export async function runListTagWalker(options: ListTagWalkerOptions): Promise<L
     return [];
   }
 
-  const bookCache = await loadBookCache();
+  // Don't load the full book cache (5.6M+ rows, several GB in JS memory) — the
+  // SQLite row is the merge source of truth inside syncBooksToCache (getBook),
+  // so an empty in-run cache is enough; it accumulates only this run's books.
+  const bookCache: BookCache = {};
   const results: ListWalkResult[] = [];
   const runStart = Date.now();
   let skipped = 0;

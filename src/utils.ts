@@ -9,6 +9,52 @@ export async function delay(min = 100, max = 2000): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ---- shared per-request log formatting --------------------------
+
+// Humanize a byte count: 850B / 96.6KB / 1.1MB.
+export function fmtBytes(n: number | undefined | null): string {
+  const b = Number.isFinite(n as number) ? (n as number) : 0;
+  if (b >= 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)}MB`;
+  if (b >= 1024) return `${(b / 1024).toFixed(1)}KB`;
+  return `${b}B`;
+}
+
+const HTTP_STATUS_WORDS: Record<number, string> = {
+  200: 'ok',
+  202: 'throttled',
+  403: 'throttled',
+  429: 'throttled',
+  404: 'missing',
+};
+
+// The human word for an HTTP status, used alongside the numeric code so every
+// call logs it as both a string and a number (e.g. [ok] http=200).
+export function httpStatusWord(status: number | undefined | null): string {
+  return HTTP_STATUS_WORDS[status ?? -1] ?? String(status ?? '-');
+}
+
+function fmtMs(ms: number | undefined | null): string {
+  return ms == null ? '-' : `${(ms / 1000).toFixed(3)}s`;
+}
+
+// One consistent, keyed per-call summary across every scraper. Callers append
+// their own context keys (pos=…, page=…, title="…"). Durations render as whole
+// milliseconds' worth of seconds with 3 decimals (e.g. 3216ms → dur=3.216s).
+// Examples:
+//   [ok] bookId=136943 http=200 dur=3.216s size=1.1MB
+//   [ok] listId=163746 http=200 dur=4.580s size=1.1MB page=2
+export function httpCallInfo(
+  status: number | undefined | null,
+  bytes: number | undefined | null,
+  ms: number | undefined | null,
+  subject?: [key: string, value: string | number],
+  wordOverride?: string
+): string {
+  const word = wordOverride ?? httpStatusWord(status);
+  const subj = subject ? ` ${subject[0]}=${subject[1]}` : '';
+  return `[${word}]${subj} http=${status ?? '-'} dur=${fmtMs(ms)} size=${fmtBytes(bytes)}`;
+}
+
 // Parse an env-driven delay range ("min,max" / "min:max" / "min-max"), falling
 // back to the given defaults for the two supported pacing profiles.
 export function parseDelayRange(env: string | undefined, defMin: number, defMax: number): [number, number] {

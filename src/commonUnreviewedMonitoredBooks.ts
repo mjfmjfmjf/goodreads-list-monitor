@@ -1,5 +1,6 @@
 import chalk from 'chalk';
-import { loadState, loadBookCache } from './storage.js';
+import { loadState, getBook } from './storage.js';
+import type { BookCache } from './storage.js';
 import { findCommonMonitoredBooks, printCommonMonitoredBooks } from './commonMonitoredBooks.js';
 import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.js';
 import { getYear, formatBookLink } from './utils.js';
@@ -28,7 +29,15 @@ export async function runCommonUnreviewedMonitoredBooks(options: CommonUnreviewe
   }
 
   const state = await loadState();
-  const bookCache = await loadBookCache();
+  // Sparse cache: only books that appear on a monitored list.
+  const bookCache: BookCache = {};
+  for (const list of Object.values(state.lists || {})) {
+    for (const bookId of list.seenBookIds || []) {
+      if (bookCache[bookId]) continue;
+      const book = getBook(bookId);
+      if (book) bookCache[bookId] = book;
+    }
+  }
 
   const result = findCommonMonitoredBooks(
     state,

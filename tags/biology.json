@@ -1,0 +1,15 @@
+{
+  "tag": "biology",
+  "lists": [
+    {
+      "nickname": "Main",
+      "officialTitle": "biology > 999 ratings and 15 shelves",
+      "id": "94613",
+      "url": "https://www.goodreads.com/list/show/94613",
+      "criteria": {
+        "min": 1000,
+        "minTags": 15
+      }
+    }
+  ]
+}

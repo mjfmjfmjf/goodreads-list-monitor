@@ -5,6 +5,7 @@ import { runAudit, runTagAudit } from './auditor.js';
 import { generateTagConfig } from './tagConfig.js';
 import { runTagDiscovery, runBulkTagDiscovery } from './discovery.js';
 import { runGapGenreTagDiscovery } from './gapGenreDiscovery.js';
+import { runNewTagWalker } from './newTagWalker.js';
 import { computeGenrePairings } from './genrePairings.js';
 import { computeTagPairings } from './tagPairings.js';
 import { runQueueDiscovery } from './queueDiscovery.js';
@@ -24,6 +25,7 @@ import { runDumpList } from './dumpList.js';
 import { runBestOfYear } from './bestOfYear.js';
 import { runGenBestOfYearConfig } from './bestOfYearConfig.js';
 import { runFieldCoverage } from './fieldCoverage.js';
+import { runBookPageGaps } from './bookPageGaps.js';
 import { runGenreList } from './genreList.js';
 import { runMonitorYearlyHighlyRatedLists } from './monitorYearlyHighlyRatedLists.js';
 import { runMonitorTopRatedList } from './monitorTopRatedList.js';
@@ -54,6 +56,8 @@ import { runBrowserBookScrape } from './browserBookScrape.js';
 import { runBrowserLogin } from './browserSession.js';
 import { runListWalker } from './listWalker.js';
 import { runListTagWalker } from './listTagWalker.js';
+import { runListTagHarvest } from './listTagHarvest.js';
+import { runTagWalkBooks } from './tagWalkBooks.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
 import { runBooks } from './books.js';
 import { runLibraryQuery } from './library.js';
@@ -263,6 +267,26 @@ Examples:
       await runFieldCoverage();
     } catch (error) {
       console.error(chalk.red.bold('Failed to compute field coverage:'), (error as any).message);
+    }
+  });
+
+program
+  .command('book-page-gaps')
+  .description('Show how many of the top-N books by ratings are missing from the browser book-page field coverage, and list the top missing books to decide what to scrape next')
+  .addHelpText('after', `
+Examples:
+  $ npm run book-page-gaps -- --top 100000 --limit 50
+  $ ./bookPageGaps.sh --top 100000 --limit 25`)
+  .option('--top <number>', 'Pool size: the top-N books by ratings to inspect (default 100000)', '100000')
+  .option('--limit <number>', 'How many top missing books to list (default 50)', '50')
+  .action(async (options) => {
+    try {
+      await runBookPageGaps({
+        top: parseInt(options.top, 10),
+        limit: parseInt(options.limit, 10),
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to compute book-page gaps:'), (error as any).message);
     }
   });
 
@@ -585,7 +609,7 @@ Examples:
   $ npm run author-rescan -- --minYear 2025 --limit 500
   $ ./authorRescan.sh --rescanMissing --minAge 30 --limit 500`)
   .option('--limit <number>', 'Number of authors to refresh (default 100)', '100')
-  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default numRatings)', 'numRatings')
+  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves, topRatings (max ratings of the author\'s top book, from the books table — best for --multiPage --onlyUntouched since never-scraped authors have no author-page stats yet; default numRatings), or newestYear (max publish year of the author\'s qualifying books — combine with --minBookYear to rank untouched authors with recent books first). With topRatings/newestYear, --minRatings/--maxRatings filter on that top-book rating too.', 'numRatings')
   .option('--minRatings <number>', 'Only consider authors with at least this many ratings')
   .option('--maxRatings <number>', 'Only consider authors with at most this many ratings')
   .option('--minAge <days>', 'Skip authors whose stats were last updated within this many days (default 0 = scrape everything)')
@@ -593,6 +617,7 @@ Examples:
   .option('--multiPage', 'Target authors with null or ≥2 catalog pages (skip single-page catalogs); crawls all pages')
   .option('--onlyUntouched', 'With --multiPage, target only authors that have never been multi-page-crawled (no catalogPages yet). Use with --minAge 0 to grind exactly the remaining first-pass tail.')
   .option('--withCookie', 'Send the login cookie on author-page requests. Author pages need no auth, so crawls are anonymous by default and run faster; use this to opt back into cookie-authenticated pacing (GR_AUTHOR_DELAY_MS/GR_PAGE_DELAY_MS override delays; GR_USE_COOKIE=1 works too).')
+  .option('--minBookYear <year>', 'With --multiPage/--onlyUntouched and --sortBy topRatings or newestYear: only count books published ≥ this year (and with ≥ --minRatings ratings) when qualifying/sorting authors; authors with no qualifying book are excluded. Using --sortBy newestYear sorts by newest qualifying book first.')
   .option('--sort <field>', 'Goodreads author-list sort order: popularity (default), title, original_publication_year, average_rating, number_of_pages')
   .option('--minYear <year>', 'Find authors with a book published in/after this year; sorts by original_publication_year (unless --sort given) and reads the first page only')
   .action(async (options) => {
@@ -782,6 +807,99 @@ Throttling: same 60s cooldown + 1 retry + 2-consecutive abort behavior as browse
       });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run list tag walk:'), (error as any).message);
+    }
+  });
+
+program
+  .command('walk-list-tag')
+  .description('Walk the Listopia by-tag index (e.g. https://www.goodreads.com/list/tag/mjf): enumerate every list under the tag, then walk EACH list top-to-bottom in the logged-in headed browser, harvesting every book with the list-walk book engine (checkpoint/skip-has skipping, cooldown retries, pacing, --limit). Unlike list-tag-walk there is NO description-chain following — one tag, every list under it, then stop.')
+  .addHelpText('after', `
+Examples:
+  $ ./walkListTag.sh mjf --limit 100
+  $ ./walkListTag.sh "science fiction" --limit 200 --skip-has genres,tags
+  $ ./walkListTag.sh mjf --dryRun --limit 10     (enumerate tag + list pages, no fetches/writes)
+  $ ./walkListTag.sh 2024 --start-page 2 --max-pages 3
+  $ npm run walk-list-tag -- --tag mjf --limit 50
+Resume: books already harvested (ok checkpoints) and lists fully marked done in
+list_walk are skipped unless --force / --relist-days N.
+Throttling: same 60s cooldown + 1 retry + 2-consecutive abort as browser-book-scrape, plus a 1-4s pause between lists.`)
+  .option('--tag <tag>', 'Listopia tag to walk, e.g. "mjf" or "2024" (URL slug)')
+  .option('--limit <number>', 'Total BOOKS to harvest across all lists, 0 = unlimited (default 20)', '20')
+  .option('--start-page <number>', 'Tag-index page to start at (default 1)', '1')
+  .option('--max-pages <number>', 'Max tag-index pages; default reads all pages to the end')
+  .option('--skip-has <criteria>', 'Only fetch books MISSING all of these: genres|work-id|tags (default genres)', 'genres')
+  .option('--relist-days <number>', 'Re-harvest a list marked done in list_walk if last scraped more than this many days ago (default 0 = never, without --force)', '0')
+  .option('--dryRun', 'Enumerate the tag index + each list\'s pages/books (network), but fetch no books and write nothing')
+  .option('--force', 'Re-walk done lists and re-fetch books that already have a successful checkpoint')
+  .option('--cooldown-ms <number>', 'Cooldown sleep after a throttled response before the single retry (default 60000)')
+  .option('--maxConsecutiveThrottles <number>', 'Give up after this many consecutive throttled books (default 2; 0 = keep going)', '2')
+  .action(async (options) => {
+    try {
+      const tag = String(options.tag || '');
+      if (!tag.trim()) {
+        console.error(chalk.red.bold('Error: --tag is required (e.g. --tag mjf).'));
+        return;
+      }
+      const skipHas = String(options.skipHas).split(',').map((s: string) => s.trim()).filter(Boolean);
+      await runListTagHarvest({
+        tag,
+        limit: parseInt(options.limit, 10),
+        startPage: parseInt(options.startPage, 10),
+        maxPages: options.maxPages !== undefined ? parseInt(options.maxPages, 10) : undefined,
+        skipHas,
+        relistDays: parseInt(options.relistDays, 10),
+        dryRun: !!options.dryRun,
+        force: !!options.force,
+        cooldownMs: options.cooldownMs !== undefined ? parseInt(options.cooldownMs, 10) : undefined,
+        maxConsecutiveThrottles: parseInt(options.maxConsecutiveThrottles, 10),
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run list-tag harvest:'), (error as any).message);
+    }
+  });
+
+program
+  .command('walk-tag-books')
+  .description('Walk a Goodreads shelf tag (https://www.goodreads.com/shelf/show/<tag>) page by page in the logged-in headed browser and harvest every book with the same book-level engine as list-walk: checkpoint/skip-has skipping, 60s-cooldown retries, consecutive-throttle abort, pacing, and a --limit cap. No rating-range chain — one tag, top to bottom.')
+  .addHelpText('after', `
+Examples:
+  $ ./walkTagBooks.sh science-fiction --limit 100
+  $ ./walkTagBooks.sh "Science Fiction" --limit 50 --skip-has genres,tags
+  $ ./walkTagBooks.sh fantasy --dryRun --limit 10   (enumerate pages/books, no fetches or writes)
+  $ ./walkTagBooks.sh mystery --page-start 2 --max-pages 5
+  $ npm run walk-tag-books -- --tag sci-fi --limit 20
+Resume: books already harvested (ok checkpoints) are skipped unless --force.
+Throttling: same 60s cooldown + 1 retry + 2-consecutive abort as browser-book-scrape.`)
+  .option('--tag <tag>', 'Shelf tag slug or display text to walk, e.g. "science-fiction"')
+  .option('--limit <number>', 'Total BOOKS to fetch, 0 = unlimited (default 20)', '20')
+  .option('--page-start <number>', 'Shelf page to start at (default 1)', '1')
+  .option('--max-pages <number>', 'Hard cap on shelf pages scanned (default 25; stops earlier at the shelf\'s advertised last page)', '25')
+  .option('--skip-has <criteria>', 'Only fetch books MISSING all of these: genres|work-id|tags (default genres)', 'genres')
+  .option('--dryRun', 'Enumerate the tag\'s pages + books via the shelf pages (network), but fetch no books and write nothing')
+  .option('--force', 'Re-fetch books that already have a successful checkpoint')
+  .option('--cooldown-ms <number>', 'Cooldown sleep after a throttled response before the single retry (default 60000)')
+  .option('--maxConsecutiveThrottles <number>', 'Give up after this many consecutive throttled books (default 2; 0 = keep going)', '2')
+  .action(async (options) => {
+    try {
+      const tag = String(options.tag || '');
+      if (!tag.trim()) {
+        console.error(chalk.red.bold('Error: --tag is required (e.g. --tag science-fiction).'));
+        return;
+      }
+      const skipHas = String(options.skipHas).split(',').map((s: string) => s.trim()).filter(Boolean);
+      await runTagWalkBooks({
+        tag,
+        limit: parseInt(options.limit, 10),
+        startPage: parseInt(options.pageStart, 10),
+        maxPages: parseInt(options.maxPages, 10),
+        skipHas,
+        dryRun: !!options.dryRun,
+        force: !!options.force,
+        cooldownMs: options.cooldownMs !== undefined ? parseInt(options.cooldownMs, 10) : undefined,
+        maxConsecutiveThrottles: parseInt(options.maxConsecutiveThrottles, 10),
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run tag walk:'), (error as any).message);
     }
   });
 
@@ -1443,6 +1561,22 @@ program
       await runBulkTagDiscovery(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run bulk tag discovery:'), (error as any).message);
+    }
+  });
+
+program
+  .command('walk-new-tags')
+  .description('Walk https://www.goodreads.com/shelf page by page and scrape every tag shelf not yet captured in tag_books (skips already-scraped tags; resume naturally on re-run)')
+  .option('--startPage <number>', 'Shelf-list page to start on (default 1)', '1')
+  .option('--maxListPages <number>', 'Max pages of the shelf list to walk (stops early when the list ends; default 1000)', '1000')
+  .option('--shelfPages <range>', 'Pages of each new tag shelf to scan (default 1-25; e.g. "1-10")', '1-25')
+  .option('--minTags <number>', 'Minimum tag count threshold (abbreviates a shelf once book count drops below)', '0')
+  .option('--dryRun', 'List the new tags that would be scraped, without scraping')
+  .action(async (options) => {
+    try {
+      await runNewTagWalker(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run new-tag walker:'), (error as any).message);
     }
   });
 

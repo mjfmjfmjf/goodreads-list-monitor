@@ -2,7 +2,8 @@ import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
 import { normalizeTitle, normalizeAuthor } from './utils.js';
-import { loadBookCache, getBook, upsertBook, BookCache } from './storage.js';
+import { getBook, upsertBook } from './storage.js';
+import type { BookCache } from './storage.js';
 
 const REQUIRED_COLUMNS = ['Book Id', 'Title', 'Author', 'Exclusive Shelf', 'Date Read', 'My Review', 'My Rating', 'Number of Pages', 'Publisher', 'Bookshelves'];
 
@@ -109,7 +110,13 @@ export function computeBookPagesBackfill(entries: LibraryEntry[], bookCache: Boo
 }
 
 export async function backfillBookPagesFromLibrary(entries: LibraryEntry[]): Promise<BookPagesBackfillResult> {
-  const bookCache = await loadBookCache();
+  // Sparse cache: only the entries referenced by the CSV.
+  const bookCache: BookCache = {};
+  for (const entry of entries) {
+    if (!entry.id || bookCache[entry.id]) continue;
+    const book = getBook(entry.id);
+    if (book) bookCache[entry.id] = book;
+  }
   const result = computeBookPagesBackfill(entries, bookCache);
   if (result.updates.length === 0) return result;
 
@@ -120,7 +127,6 @@ export async function backfillBookPagesFromLibrary(entries: LibraryEntry[]): Pro
     book.pages = pages;
     book.lastUpdated = now;
     upsertBook(book);
-    bookCache[id] = book;
   }
   return result;
 }

@@ -1,12 +1,12 @@
 import chalk from 'chalk';
 import { scrapeBookDetails } from './scraper.js';
-import { loadBookCache, getBook, upsertBook, BookCache, CachedBook } from './storage.js';
+import { getBook, upsertBook, type BookCache, type CachedBook } from './storage.js';
 import { parseSeriesPos } from './seriesPos.js';
 
 export async function scrapeAndCacheBook(bookId: string, force = false, passedCache?: BookCache): Promise<CachedBook | null> {
   try {
-    const bookCache = passedCache || await loadBookCache();
-    const snapExisting = bookCache[bookId];
+    const bookCache: BookCache = passedCache || {};
+    const snapExisting = bookCache[bookId] ?? getBook(bookId);
     if (snapExisting?.isBad && !force) {
       console.log(chalk.yellow(`   ⏩ Skipping "bad" book ID: ${bookId} (Fail count: ${snapExisting.failCount || 0})`));
       return null;

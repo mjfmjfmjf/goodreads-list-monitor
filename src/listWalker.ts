@@ -1,8 +1,9 @@
 import chalk from 'chalk';
 import { BrowserContext, Page } from 'playwright';
+import { createInterface } from 'readline';
 import { getDb } from './db.js';
 import { getBook, CachedBook } from './storage.js';
-import { withDbLockRetry } from './utils.js';
+import { withDbLockRetry, httpCallInfo } from './utils.js';
 import {
   getBrowserContext,
   processBook,
@@ -21,7 +22,12 @@ import {
   resolveNextChainLink,
 } from './listPageParse.js';
 
-interface ListWalkerOptions {
+const MIN_USABLE_LIST_HTML = 1000;
+const MAX_EMPTY_FETCHES = Math.max(1, Number(process.env.GOODREADS_MAX_EMPTY_FETCHES) || 3);
+// Challenge/interstitial shells are compact; real list pages are always larger.
+const MAX_CHALLENGE_PAGE_BYTES = 64 * 1024;
+
+export interface ListWalkerOptions {
   list: string;
   direction: 'desc' | 'asc';
   limit: number;
@@ -32,9 +38,10 @@ interface ListWalkerOptions {
   dryRun?: boolean;
   cooldownMs?: number;
   maxConsecutiveThrottles?: number;
+  followChain?: boolean;
 }
 
-interface WalkerSummary {
+export interface WalkerSummary {
   listsWalked: number;
   listsSkipped: number;
   processed: number;
@@ -43,6 +50,7 @@ interface WalkerSummary {
   missing: number;
   error: number;
   skipped: number;
+  captcha: number;
   capped: boolean;
   chainEnd: boolean;
 }
@@ -71,6 +79,34 @@ function parseListInput(list: string): { listId: string } {
 function listUrl(listId: string, pageNum: number): string {
   const base = `https://www.goodreads.com/list/show/${listId}`;
   return pageNum > 1 ? `${base}?page=${pageNum}` : base;
+}
+
+export function listHtmlUsable(html: string): boolean {
+  return html.trim().length >= MIN_USABLE_LIST_HTML;
+}
+
+// A human-verification / CAPTCHA page parked in the headed browser tab needs a
+// real person — and crucially must NOT be re-navigated (each page.goto resets
+// the challenge). Detect it early so the walk can stop and wait for a solve.
+// Challenge shells and interstitials are COMPACT pages (< 64KB); real list
+// pages are 100KB+ even when light. Matching the marker anywhere in a multi-hundred-KB
+// document false-positives on legit pages whose JS bundles merely embed the word,
+// so a marker only counts on a small page.
+export function isCaptchaPage(html: string): boolean {
+  if (!html || html.length >= MAX_CHALLENGE_PAGE_BYTES) return false;
+  return /verify you are human|are you a human|route through the captcha|captcha|challenges?\.cloudflare\.com|aws waf certification|unusual traffic/i.test(html);
+}
+
+// Quiet, blocking wait for a single Enter press. Used to hand control back to
+// the user while a CAPTCHA is showing in the Chromium window.
+export function waitForEnter(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    rl.question('', () => {
+      rl.close();
+      resolve();
+    });
+  });
 }
 
 export function ensureListTables(): void {
@@ -137,17 +173,31 @@ interface ListFetch {
   error?: string;
 }
 
+const NAV_TIMEOUT_MS = 45_000;
+const HANG_RETRY_MS = Math.max(1000, parseInt(process.env.GOODREADS_HANG_RETRY_MS ?? '60000', 10) || 60_000);
+
 async function fetchListPage(page: Page, listId: string, pageNum: number): Promise<ListFetch> {
-  try {
-    page.setDefaultTimeout(30000);
-    const response = await page.goto(listUrl(listId, pageNum), { waitUntil: 'domcontentloaded' });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const attempt = (async () => {
+    const response = await page.goto(listUrl(listId, pageNum), { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS });
     await page.waitForTimeout(1200);
     const html = await page.content();
     const status = response?.status();
     if (status === 202 || status === 403 || status === 429) return { status, html: '', error: `Received ${status} interstitial` };
     return { status, html };
+  })();
+  try {
+    return await Promise.race<Promise<ListFetch>>([
+      attempt,
+      new Promise<ListFetch>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`fetchListPage hung > ${NAV_TIMEOUT_MS / 1000}s (Goodreads page hang)`)), NAV_TIMEOUT_MS);
+      }),
+    ]) as ListFetch;
   } catch (error: any) {
     return { html: '', error: String(error?.message || error) };
+  } finally {
+    if (timer) clearTimeout(timer);
+    attempt.catch(() => {});
   }
 }
 
@@ -182,7 +232,7 @@ export async function runListWalker(options: ListWalkerOptions): Promise<WalkerS
 
   const summary: WalkerSummary = {
     listsWalked: 0, listsSkipped: 0, processed: 0, ok: 0, throttled: 0,
-    missing: 0, error: 0, skipped: 0, capped: false, chainEnd: false,
+    missing: 0, error: 0, skipped: 0, captcha: 0, capped: false, chainEnd: false,
   };
 
   if (!options.dryRun) {
@@ -194,9 +244,15 @@ export async function runListWalker(options: ListWalkerOptions): Promise<WalkerS
 
   let currentListId: string | undefined = startListId;
   const started = Date.now();
+  const visitedInRun = new Set<string>();
 
   try {
     while (currentListId && summary.listsWalked < (options.maxLists > 0 ? options.maxLists : Number.MAX_SAFE_INTEGER)) {
+      if (visitedInRun.has(currentListId)) {
+        console.log(chalk.yellow(`   🔁 chain wrapped — list ${currentListId} was already ${visitedInRun.size > 1 ? 'visited during this run' : 'the starting list'}. Stopping the walk rather than cycling.`));
+        break;
+      }
+      visitedInRun.add(currentListId);
       const page = await (await getBrowserContext()).newPage();
       try {
         const { nextListId, chainEnd } = await walkOneList(page, currentListId, options, summary, strict, cooldownMs, maxThrottles);
@@ -212,13 +268,37 @@ export async function runListWalker(options: ListWalkerOptions): Promise<WalkerS
   }
 
   const mins = ((Date.now() - started) / 60000).toFixed(1);
-  console.log(chalk.cyan.bold(`\n   Done: ${summary.ok} ok, ${summary.throttled} throttled, ${summary.missing} missing, ${summary.error} error, ${summary.skipped} skipped, ${summary.listsWalked} lists (${summary.listsSkipped} skipped) in ${mins}m.`));
+  console.log(chalk.cyan.bold(`\n   Done: ${summary.ok} ok, ${summary.throttled} throttled, ${summary.missing} missing, ${summary.error} error, ${summary.skipped} skipped, ${summary.captcha} captcha, ${summary.listsWalked} lists (${summary.listsSkipped} skipped) in ${mins}m.`));
   if (summary.capped) console.log(chalk.gray(`   Stopped: reached the ${options.limit}-book limit. Re-run to continue from the checkpoint.`));
   if (summary.chainEnd) console.log(chalk.green('   Chain completed: reached the end of the rating-range chain.'));
   return summary;
 }
 
-async function walkOneList(
+export interface ListScrapeSkip {
+  title: string;
+  scrapedAt: string;
+  booksNote: string;
+  relistHint: number;
+}
+
+// Pure skip decision for a list whose list_walk row is already 'done' and
+// fresh enough (or --force). Pure DB read — NO network. Called up front by the
+// harvest loop so already-scraped lists are filtered out before the browser is
+// even opened, and re-checked inside walkOneList as the walk starts.
+export function listScrapeSkip(listId: string, options: Pick<ListWalkerOptions, 'force' | 'relistDays'>): ListScrapeSkip | null {
+  const prior = getListWalkRow(listId);
+  if (!prior || prior.status !== 'done' || options.force) return null;
+  const ageDays = prior.scraped_at ? (Date.now() - Date.parse(prior.scraped_at)) / 86_400_000 : Infinity;
+  if (options.relistDays > 0 && ageDays >= options.relistDays) return null; // re-walk window open
+  return {
+    title: prior.title ?? listId,
+    scrapedAt: (prior.scraped_at ?? '').slice(0, 10),
+    booksNote: `${prior.walkable_books ?? prior.total_books ?? '?'}/${prior.total_books ?? '?'} books`,
+    relistHint: Math.ceil(ageDays) + 1,
+  };
+}
+
+export async function walkOneList(
   page: Page,
   listId: string,
   options: ListWalkerOptions,
@@ -228,14 +308,15 @@ async function walkOneList(
   maxThrottles: number
 ): Promise<{ nextListId?: string; chainEnd: boolean }> {
   const prior = getListWalkRow(listId);
-  if (prior?.status === 'done' && !options.force) {
+  const skip = listScrapeSkip(listId, options);
+  if (skip) {
+    summary.listsSkipped++;
+    console.log(chalk.gray(`   📖 list ${listId} [skip] "${skip.title}" (scraped ${skip.scrapedAt}, ${skip.booksNote}; use --relist-days ${skip.relistHint} or --force to re-walk)`));
+    return { nextListId: prior?.next_list_id, chainEnd: false };
+  }
+  if (prior?.status === 'done') {
     const ageDays = prior.scraped_at ? (Date.now() - Date.parse(prior.scraped_at)) / 86_400_000 : Infinity;
-    if (options.relistDays <= 0 || ageDays < options.relistDays) {
-      summary.listsSkipped++;
-      console.log(chalk.gray(`   📖 list ${listId} [skip] "${prior.title}" (scraped ${prior.scraped_at.slice(0, 10)}, ${prior.walkable_books ?? prior.total_books ?? '?'}/${prior.total_books ?? '?'} books; use --relist-days ${Math.ceil(ageDays) + 1} or --force to re-walk)`));
-      return { nextListId: prior.next_list_id, chainEnd: false };
-    }
-    console.log(chalk.gray(`   ↻ list ${listId} "${prior.title}" last scraped ${prior.scraped_at.slice(0, 10)} (${Math.floor(ageDays)} days ago) — re-walking (--relist-days ${options.relistDays})`));
+    console.log(chalk.gray(`   ↻ list ${listId} "${prior.title ?? listId}" last scraped ${(prior.scraped_at ?? '').slice(0, 10)} (${Math.floor(ageDays)} days ago) — re-walking (--relist-days ${options.relistDays})`));
   }
 
   summary.listsWalked++;
@@ -243,8 +324,12 @@ async function walkOneList(
   let pageNum = prior?.status === 'started' && !options.force ? Math.max(1, prior.current_page ?? 1) : 1;
   const resumePage = prior?.status === 'started' && !options.force ? pageNum : 0;
   const resumePos = prior?.status === 'started' && !options.force ? (prior.resume_pos ?? 0) : 0;
+
+  console.log(chalk.cyan.bold(`\n   ➜ LIST START ${listId}${prior?.title ? ` "${prior.title}"` : ''} — direction=${options.direction}${resumePage > 0 ? `, resuming page ${resumePage}` : ''} (run #${summary.listsWalked})`));
+
   let chainLinks: ChainLink[] = [];
   let consecutiveThrottles = 0;
+  let emptyFetches = 0;
   let capped = false;
   let currentTitle: string | undefined = prior?.title;
   let currentTotals: { totalPages: number; totalBooks?: number; walkableBooks: number } | undefined;
@@ -296,6 +381,23 @@ async function walkOneList(
 
   while (!capped) {
     const fetch = await fetchListPage(page, listId, pageNum);
+    // A human-verification page in the headed Chromium tab needs the user.
+    // PAUSE: stop navigating (each goto resets the challenge) and quiet the
+    // terminal so they can actually solve it; resume re-fetching the same page
+    // after Enter. Each re-fetch is user-initiated, so pacing stays polite.
+    while (isCaptchaPage(fetch.html)) {
+      summary.captcha++;
+      if (!process.stdin.isTTY) {
+        console.log(chalk.yellow(`   🔒 CAPTCHA on list ${listId} page ${pageNum} but stdin isn't a TTY — cannot wait for a solve; treating as empty and moving on.`));
+        fetch.html = '';
+        break;
+      }
+      console.log(chalk.bold.red(`\n   🔒 CAPTCHA / human-verification detected on list ${listId} page ${pageNum}. The Chromium window is parked on the challenge.`));
+      console.log(chalk.bold('      The walk is PAUSED so you can solve it. Press Enter here once the page loads.'));
+      console.log(chalk.gray('      (If the page actually loaded normally — no challenge — just press Enter to continue.)'));
+      await waitForEnter();
+      Object.assign(fetch, await fetchListPage(page, listId, pageNum));
+    }
     if ((fetch.status === 202 || fetch.status === 403 || fetch.status === 429) && !strict) {
       console.log(chalk.yellow(`   ⏳ list ${listId} page ${pageNum} [throttled] http=${fetch.status} — cooldown ${(cooldownMs / 1000).toFixed(0)}s then 1 retry...`));
       await cooldown(cooldownMs);
@@ -312,9 +414,32 @@ async function walkOneList(
       return { chainEnd: false };
     }
     if (fetch.error && !fetch.html) {
+      const isHang = /hung|Timeout \d+ms exceeded/i.test(fetch.error);
+      if (isHang && !strict) {
+        console.log(chalk.yellow(`   ⏳ list ${listId} page ${pageNum} fetch hung > ${NAV_TIMEOUT_MS / 1000}s — Goodreads pages famously hang on their own; one patient ${(HANG_RETRY_MS / 1000).toFixed(0)}s retry, then moving on...`));
+        await cooldown(HANG_RETRY_MS);
+        const retry = await fetchListPage(page, listId, pageNum);
+        if (retry.html || retry.status) Object.assign(fetch, retry);
+        if (!fetch.html && !fetch.status) {
+          summary.error++;
+          console.log(chalk.red(`   ❌ list ${listId} page ${pageNum} still hung after a ${(HANG_RETRY_MS / 1000).toFixed(0)}s retry — marking [error] and aborting walk.`));
+          if (!options.dryRun) setListWalkRow({ list_id: listId, status: 'error', current_page: pageNum });
+          return { chainEnd: false };
+        }
+      } else {
+        summary.error++;
+        console.log(chalk.red(`   ❌ list ${listId} page ${pageNum} fetch error: ${fetch.error.slice(0, 140)}`));
+        if (!options.dryRun) setListWalkRow({ list_id: listId, status: 'error', current_page: pageNum });
+        return { chainEnd: false };
+      }
+    }
+
+    if (listHtmlUsable(fetch.html)) {
+      emptyFetches = 0;
+    } else if (++emptyFetches >= MAX_EMPTY_FETCHES) {
       summary.error++;
-      console.log(chalk.red(`   ❌ list ${listId} page ${pageNum} fetch error: ${fetch.error.slice(0, 140)}`));
-      if (!options.dryRun) setListWalkRow({ list_id: listId, status: 'error', current_page: pageNum });
+      console.log(chalk.red(`   🛑 list ${listId} page ${pageNum} produced no usable HTML ${MAX_EMPTY_FETCHES} consecutive times${fetch.error ? ` (${fetch.error.slice(0, 120)})` : ''} — marking [error] and stopping the chain.`));
+      if (!options.dryRun) setListWalkRow({ list_id: listId, status: 'error', current_page: pageNum, title: currentTitle });
       return { chainEnd: false };
     }
 
@@ -323,6 +448,19 @@ async function walkOneList(
     currentTitle = parsed.title;
     currentTotals = { totalPages: parsed.totalPages, totalBooks: parsed.totalBooks, walkableBooks: parsed.walkableBooks };
     console.log(chalk.cyan(`   📖 list ${listId} "${parsed.title}" — page ${pageNum} (${parsed.books.length} entries)${resumePage > 0 && pageNum === resumePage && resumePos > 0 ? `, resuming after position ~${resumePos}` : ''}`));
+
+    // A page with zero books is the real end of the list — Goodreads lists with
+    // < 100 books have no pagination, and asking for page=2..N on them returns
+    // empty pages that still parse as "has next" (markup quirk). Stop on empty
+    // instead of walking phantom pages until a flaky navigation fails.
+    if (parsed.books.length === 0) {
+      if (pageNum > 1) {
+        console.log(chalk.gray(`   ↛ list ${listId} page ${pageNum} returned 0 books — reached the real end after ${pageNum - 1} page${pageNum === 2 ? '' : 's'}.`));
+      } else {
+        console.log(chalk.yellow(`   ⚠️  list ${listId} page 1 returned 0 books — nothing to walk.`));
+      }
+      break;
+    }
 
     // Goodreads renumbers positions to 1..N on every page. Convert the stored
     // global resume position to a per-page offset: page k starts at (k-1)*100+1.
@@ -361,7 +499,7 @@ async function walkOneList(
       if (result.checkpoint.status === 'throttled') consecutiveThrottles++;
       else consecutiveThrottles = 0;
       console.log(color(
-        `   ✓ [${result.checkpoint.status}] ${book.bookId} http=${result.checkpoint.http ?? '-'} ${String(result.checkpoint.elapsed_ms ?? 0).padStart(5)}ms "${book.title.slice(0, 60)}"`
+        `   ✓ ${httpCallInfo(result.checkpoint.http, result.checkpoint.bytes, result.checkpoint.elapsed_ms, ['bookId', book.bookId], result.checkpoint.status)} pos=${book.position} "${book.title.slice(0, 60)}"`
       ));
       // Book handled at this position — advance the global resume point.
       markStarted(pageNum, globalOffset + book.position);
@@ -392,7 +530,7 @@ async function walkOneList(
   }
 
   if (!capped) {
-    const next = resolveNextChainLink(chainLinks, listId, options.direction);
+    const next = options.followChain === false ? undefined : resolveNextChainLink(chainLinks, listId, options.direction);
     const started = getListWalkRow(listId);
     if (!options.dryRun) {
       // Finished the whole list — clear the per-book resume point so a later
@@ -412,16 +550,22 @@ async function walkOneList(
     }
     if (next) {
       console.log(chalk.green(`   ➡️  ${listId} done → next chain list: ${next.label} (${next.listId})`));
-    } else {
+    } else if (options.followChain !== false) {
       console.log(chalk.green(`   ✓ ${listId} done — no further ${options.direction === 'desc' ? 'lower' : 'higher'} rating-range list (chain end).`));
       summary.chainEnd = true;
     }
+    console.log(chalk.green.bold(`   ✔ LIST FINISHED ${listId} — ${summary.ok} ok / ${summary.throttled} throttled / ${summary.missing} missing / ${summary.error} err / ${summary.skipped} skip`));
     return { nextListId: next?.listId, chainEnd: summary.chainEnd };
   }
   return { chainEnd: false };
 }
 
-function shouldSkipBook(bookId: string, options: ListWalkerOptions): string | null {
+interface SkipBookOptions {
+  force?: boolean;
+  skipHas: string[];
+}
+
+export function shouldSkipBook(bookId: string, options: SkipBookOptions): string | null {
   const prior = getCheckpoint(bookId);
   if (prior?.status === 'ok' && !options.force) return 'already-scraped';
   const existing = getBook(bookId);

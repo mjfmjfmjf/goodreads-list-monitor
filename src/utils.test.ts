@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, formatBookLink, isConnectivityError, isDbLockError } from './utils.js';
+import { formatDuration, formatBookLink, httpCallInfo, httpStatusWord, fmtBytes, isConnectivityError, isDbLockError } from './utils.js';
 
 describe('isConnectivityError', () => {
   it('recognizes DNS / connection-level error codes', () => {
@@ -71,6 +71,43 @@ describe('formatBookLink', () => {
   it('strips leading/trailing brackets and collapses spaces', () => {
     expect(formatBookLink('[Hello] World', '3')).toBe('[book:Hello World|3]');
     expect(formatBookLink('A  [B]  C', '4')).toBe('[book:A B C|4]');
+  });
+});
+
+describe('httpCallInfo', () => {
+  it('logs status as both a string word and a numeric code', () => {
+    expect(httpStatusWord(200)).toBe('ok');
+    expect(httpStatusWord(202)).toBe('throttled');
+    expect(httpStatusWord(403)).toBe('throttled');
+    expect(httpStatusWord(429)).toBe('throttled');
+    expect(httpStatusWord(404)).toBe('missing');
+    expect(httpStatusWord(500)).toBe('500');
+    expect(httpStatusWord(undefined)).toBe('-');
+  });
+
+  it('humanizes byte counts', () => {
+    expect(fmtBytes(850)).toBe('850B');
+    expect(fmtBytes(98914)).toBe('96.6KB');
+    expect(fmtBytes(1171235)).toBe('1.1MB');
+    expect(fmtBytes(undefined)).toBe('0B');
+  });
+
+  it('renders the keyed per-call line, seconds with 3 decimal places', () => {
+    expect(httpCallInfo(200, 1171235, 3216)).toBe('[ok] http=200 dur=3.216s size=1.1MB');
+    expect(httpCallInfo(200, 98914, 1130)).toBe('[ok] http=200 dur=1.130s size=96.6KB');
+    expect(httpCallInfo(200, 1171235, 3216, ['bookId', 136943])).toBe(
+      '[ok] bookId=136943 http=200 dur=3.216s size=1.1MB'
+    );
+    expect(httpCallInfo(202, 0, 501, ['listId', '163746'])).toBe(
+      '[throttled] listId=163746 http=202 dur=0.501s size=0B'
+    );
+    expect(httpCallInfo(undefined, 0, undefined)).toBe('[-] http=- dur=- size=0B');
+  });
+
+  it('honors an explicit status-word override', () => {
+    expect(httpCallInfo(500, 512, 900, ['bookId', 7], 'error')).toBe(
+      '[error] bookId=7 http=500 dur=0.900s size=512B'
+    );
   });
 });
 

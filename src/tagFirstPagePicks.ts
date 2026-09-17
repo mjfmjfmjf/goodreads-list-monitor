@@ -1,5 +1,6 @@
 import chalk from 'chalk';
-import { loadTagBooks, TagBookRow, loadBookCache, BookCache, CachedBook } from './storage.js';
+import { loadTagBooks, getBook } from './storage.js';
+import type { TagBookRow, BookCache, CachedBook } from './storage.js';
 import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.js';
 import { getYear, formatBookLink } from './utils.js';
 
@@ -140,7 +141,14 @@ export async function runTagFirstPagePicks(options: TagFirstPagePicksOptions = {
   }
 
   const rows = await loadTagBooks();
-  const bookCache = await loadBookCache();
+  // Build a sparse cache of only the books referenced by tag first pages.
+  const bookCache: BookCache = {};
+  for (const row of rows) {
+    if (row.position == null || row.position < 1 || row.position > FIRST_PAGE_MAX) continue;
+    if (bookCache[row.bookId]) continue;
+    const book = getBook(row.bookId);
+    if (book) bookCache[row.bookId] = book;
+  }
 
   const result = findTagFirstPagePicks(rows, bookCache, limit, filter);
 

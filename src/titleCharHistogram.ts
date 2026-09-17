@@ -1,5 +1,6 @@
 import chalk from 'chalk';
-import { loadBookCache, CachedBook } from './storage.js';
+import { iterateBooks, countBooks } from './storage.js';
+import type { CachedBook } from './storage.js';
 import { stripTitleSuffix } from './utils.js';
 
 export interface TitleCharRow {
@@ -14,7 +15,8 @@ export interface TitleCharHistogram {
 }
 
 export function computeTitleCharHistogram(
-  books: Pick<CachedBook, 'title'>[]
+  books: Iterable<Pick<CachedBook, 'title'>>,
+  total?: number
 ): TitleCharHistogram {
   const firstCounts = new Map<string, number>();
   const lastCounts = new Map<string, number>();
@@ -35,7 +37,7 @@ export function computeTitleCharHistogram(
       .map(([char, count]) => ({ char, count }))
       .sort((a, b) => b.count - a.count || a.char.charCodeAt(0) - b.char.charCodeAt(0));
 
-  return { first: toRows(firstCounts), last: toRows(lastCounts), total: books.length };
+  return { first: toRows(firstCounts), last: toRows(lastCounts), total: total ?? (books as any[]).length ?? 0 };
 }
 
 function printSection(title: string, rows: TitleCharRow[], total: number): void {
@@ -59,9 +61,7 @@ function printSection(title: string, rows: TitleCharRow[], total: number): void 
 }
 
 export async function runTitleCharHistogram(): Promise<void> {
-  const bookCache = await loadBookCache();
-  const books = Object.values(bookCache);
-  const hist = computeTitleCharHistogram(books);
+  const hist = computeTitleCharHistogram(iterateBooks(), countBooks());
 
   printSection('First Character of Title', hist.first, hist.total);
   printSection('Last Character of Title', hist.last, hist.total);

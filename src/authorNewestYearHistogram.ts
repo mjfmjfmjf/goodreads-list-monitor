@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
 import type { CachedBook } from './storage.js';
 import { normalizeAuthorName, looksLikeNameConcat } from './authorOrphans.js';
 
@@ -59,7 +59,7 @@ function bucketFor(year: number, mode: AuthorNewestMode): { label: string; min: 
 // ignore unknown-date books and use the max known year. Multi-author
 // concatenated rows are skipped. `now` is injectable for tests.
 export function computeAuthorsNewestYear(
-  books: CachedBook[],
+  books: Iterable<CachedBook>,
   mode: AuthorNewestMode = 'year',
   now: number = new Date().getFullYear(),
   sortMode: AuthorNewestSort = 'year'
@@ -125,9 +125,7 @@ export async function runAuthorNewestYearHistogram(
   mode: AuthorNewestMode = 'year',
   sortMode: AuthorNewestSort = 'year'
 ): Promise<void> {
-  const bookCache = await loadBookCache();
-  const books = Object.values(bookCache);
-  const { buckets, counts, totalAuthors, unknownAuthors, outOfRange } = computeAuthorsNewestYear(books, mode, new Date().getFullYear(), sortMode);
+  const { buckets, counts, totalAuthors, unknownAuthors, outOfRange } = computeAuthorsNewestYear(iterateBooks(), mode, new Date().getFullYear(), sortMode);
 
   console.log(chalk.cyan.bold('\n📅 Author Newest-Publication Histogram'));
   console.log(chalk.gray(mode === 'decade'

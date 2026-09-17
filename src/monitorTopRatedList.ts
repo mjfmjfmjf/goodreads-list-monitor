@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { getDb } from './db.js';
-import { loadBookCache } from './storage.js';
+import { iterateBooks, countBooks } from './storage.js';
 import type { CachedBook } from './storage.js';
 import { SERIES_POS_MULTI } from './seriesPos.js';
 import { scrapeUserVoteBooks } from './scraper.js';
@@ -221,6 +221,94 @@ export function computeTopRated(
   return { approved, excluded };
 }
 
+export interface TopRatedExcludedCounts {
+  missingWorkId: number;
+  duplicateEdition: number;
+  boxSet: number;
+  series: number;
+}
+
+// Bounded-memory variant of computeTopRated for the full book table: emits the
+// top-`limit` ranked books plus exclusion COUNTS (not the excluded books).
+// Per-work/series winner maps + a bounded top-N keep heap usage flat; the
+// counts feed the run() summary line. computeTopRated stays as the array-based
+// reference used by tests and small inputs.
+export function computeTopRatedStream(
+  books: Iterable<CachedBook>,
+  opts: { minRatings?: number; limit?: number } = {}
+): { approved: RankedBook[]; excludedCounts: TopRatedExcludedCounts } {
+  const minRatings = opts.minRatings ?? MIN_RATINGS;
+  const limit = opts.limit ?? LIST_SIZE;
+  const cmp = (a: CachedBook, b: CachedBook): number =>
+    parseAvg(b.avgRating) - parseAvg(a.avgRating) || parseNum(b.ratings) - parseNum(a.ratings);
+
+  const workBest = new Map<string, CachedBook>();
+  const excludedCounts: TopRatedExcludedCounts = { missingWorkId: 0, duplicateEdition: 0, boxSet: 0, series: 0 };
+
+  for (const b of books) {
+    if (b.isBad) continue;
+    if (parseNum(b.ratings) < minRatings) continue;
+    if (parseAvg(b.avgRating) <= 0) continue;
+    if (!b.workId) {
+      excludedCounts.missingWorkId++;
+      continue;
+    }
+    const k = editionKey(b);
+    const cur = workBest.get(k);
+    if (!cur || cmp(b, cur) < 0) {
+      if (cur) excludedCounts.duplicateEdition++;
+      workBest.set(k, b);
+    } else {
+      excludedCounts.duplicateEdition++;
+    }
+  }
+
+  const pushBounded = (arr: CachedBook[], book: CachedBook): void => {
+    if (arr.length < limit) {
+      arr.push(book);
+      arr.sort(cmp);
+    } else if (cmp(book, arr[arr.length - 1]) < 0) {
+      arr[arr.length - 1] = book;
+      arr.sort(cmp);
+    }
+  };
+
+  const standalone: CachedBook[] = [];
+  const seriesBest = new Map<string, CachedBook>();
+  for (const b of workBest.values()) {
+    if (isBoxSet(b)) {
+      excludedCounts.boxSet++;
+      continue;
+    }
+    const name = extractSeriesName(b.title);
+    if (name === undefined) {
+      pushBounded(standalone, b);
+    } else {
+      const key = normalizeSeriesName(name);
+      const cur = seriesBest.get(key);
+      if (!cur || cmp(b, cur) < 0) {
+        if (cur) excludedCounts.series++;
+        seriesBest.set(key, b);
+      } else {
+        excludedCounts.series++;
+      }
+    }
+  }
+
+  const combined = [...standalone, ...seriesBest.values()];
+  combined.sort(cmp);
+
+  const approved: RankedBook[] = combined.slice(0, limit).map((book, i) => ({
+    book,
+    rank: i + 1,
+    avgRating: parseAvg(book.avgRating),
+    ratings: parseNum(book.ratings),
+    seriesName: extractSeriesName(book.title) !== undefined ? normalizeSeriesName(extractSeriesName(book.title)!) : undefined,
+  }));
+
+  return { approved, excludedCounts };
+}
+
 export interface TopRatedDiff {
   dropped: (UserVoteEntry & { currentRank?: number })[];
   additions: RankedBook[];
@@ -308,18 +396,10 @@ export async function runMonitorTopRatedList(options: MonitorOptions = {}): Prom
   console.log(chalk.gray(`   Rating cutoff: ${minRatings.toLocaleString()}+ ratings · list size: ${limit}`));
   console.log(chalk.gray('------------------------------------------'));
 
-  const bookCache = loadBookCache();
-  console.log(chalk.gray(`   Loaded ${Object.keys(bookCache).length.toLocaleString()} cached books.`));
-  const books = Object.values(bookCache);
+  const { approved, excludedCounts } = computeTopRatedStream(iterateBooks(), { minRatings, limit });
+  console.log(chalk.gray(`   Scanned ${countBooks().toLocaleString()} cached books (streamed).`));
 
-  const rc = computeTopRated(books, { minRatings, limit });
-  const { approved, excluded } = rc;
-
-  const nWorkId = excluded.filter(e => e.reason === 'missing-work-id').length;
-  const nBox = excluded.filter(e => e.reason === 'box-set').length;
-  const nSeries = excluded.filter(e => e.reason === 'series').length;
-  const nDup = excluded.filter(e => e.reason === 'duplicate-edition').length;
-  console.log(chalk.gray(`   ${approved.length} approved · ${nWorkId} no work_id excluded · ${nBox} box sets excluded · ${nSeries} series runners-up excluded · ${nDup} duplicate editions excluded`));
+  console.log(chalk.gray(`   ${approved.length} approved · ${excludedCounts.missingWorkId} no work_id excluded · ${excludedCounts.boxSet} box sets excluded · ${excludedCounts.series} series runners-up excluded · ${excludedCounts.duplicateEdition} duplicate editions excluded`));
   console.log('');
 
   // ── Table ──────────────────────────────────────────────────────────

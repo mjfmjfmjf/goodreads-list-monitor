@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
-import { loadState, loadBookCache } from './storage.js';
+import { loadState } from './storage.js';
 import { TagConfig, ListEntry, AuditCriteria } from './tagConfig.js';
 import { SERIES_POS_STANDALONE } from './seriesPos.js';
 

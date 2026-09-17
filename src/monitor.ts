@@ -1,12 +1,15 @@
 import chalk from 'chalk';
 import { scrapeAllUserLists, scrapeListBooks, scrapeBookDetails, ListMetadata, BookMetadata } from './scraper.js';
-import { loadState, saveState, loadBookCache, syncBooksToCache, getBook, upsertBook, loadAuthorCache, syncAuthorsToCache, State, ListState, CachedBook } from './storage.js';
+import { loadState, saveState, syncBooksToCache, getBook, upsertBook, loadAuthorCache, syncAuthorsToCache, type State, type ListState, type CachedBook, type BookCache } from './storage.js';
 import { delay, formatDate, formatBookLink } from './utils.js';
 import { appendToLog } from './logger.js';
 
 export async function performIngest(userId: string, force = false): Promise<void> {
   const state = await loadState();
-  const bookCache = await loadBookCache();
+  // Don't load the full book cache (5.6M+ rows, several GB in JS memory) — the
+  // SQLite row is the merge source of truth inside syncBooksToCache (getBook),
+  // so an empty in-run cache suffices; it accumulates only this run's books.
+  const bookCache: BookCache = {};
   const authorCache = await loadAuthorCache();
   state.userId = userId;
 
@@ -70,7 +73,8 @@ export async function performIngest(userId: string, force = false): Promise<void
 
 export async function checkUpdates(userId: string): Promise<void> {
   const state = await loadState();
-  const bookCache = await loadBookCache();
+  // Same as performIngest: empty in-run book cache; DB row is the merge source.
+  const bookCache: BookCache = {};
   const authorCache = await loadAuthorCache();
   state.userId = userId;
 

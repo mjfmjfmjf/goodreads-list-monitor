@@ -189,7 +189,7 @@
     "url": "https://www.goodreads.com/list/show/94613.Best_Nonfiction_Biology_books_on_Goodreads",
     "criteria": {
        "min": 1000,
-       "minTags": 10,
+       "minTags": 15,
        "tag": "biology"
     }
   },

@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import path from 'path';
-import { loadBookCache, CachedBook } from './storage.js';
+import { iterateBooks } from './storage.js';
+import type { CachedBook } from './storage.js';
 import { RegexCriterion, matchesRegex } from './bookMatch.js';
 import { getYear, formatBookLink } from './utils.js';
 import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.js';
@@ -83,12 +84,38 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
   const maxYear = options.maxYear ? parseInt(options.maxYear, 10) : Infinity;
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
 
-  const bookCache = await loadBookCache();
-  const books = Object.values(bookCache) as CachedBook[];
+  const valueOf = (book: CachedBook): number | string => {
+    switch (sortBy) {
+      case 'ratings': return parseNum(book.ratings);
+      case 'avgRating': return parseFloat(book.avgRating || '0');
+      case 'year': return getYear(book.published) ?? 0;
+      case 'title': return (book.title || '').toLowerCase();
+      case 'author': return (book.author || '').toLowerCase();
+    }
+  };
 
+  const naturalDirection = sortBy === 'title' || sortBy === 'author' ? 'asc' : 'desc';
+  const direction = options.asc ? 'asc' : (options.desc ? 'desc' : naturalDirection);
+
+  const compare = (a: CachedBook, b: CachedBook): number => {
+    const va = valueOf(a);
+    const vb = valueOf(b);
+    let cmp = 0;
+    if (typeof va === 'number' && typeof vb === 'number') {
+      cmp = va - vb;
+    } else {
+      cmp = String(va).localeCompare(String(vb));
+    }
+    if (cmp === 0) cmp = parseNum(b.ratings) - parseNum(a.ratings);
+    if (cmp === 0) cmp = (a.title || '').localeCompare(b.title || '');
+    return direction === 'asc' ? cmp : -cmp;
+  };
+
+  // Stream the table, keeping only the top `limit` matches in memory.
   const matched: CachedBook[] = [];
   let reviewedExcluded = 0;
-  for (const book of books) {
+  let totalMatched = 0;
+  for (const book of iterateBooks()) {
     if (book.isBad && !options.includeBad) continue;
     if (book.title === 'Unknown') continue;
 
@@ -105,35 +132,16 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
       reviewedExcluded++;
       continue;
     }
+    totalMatched++;
+
+    if (limit > 0 && matched.length === limit) {
+      // Matched is kept sorted by `compare`; the end holds the worst element.
+      if (compare(book, matched[matched.length - 1]) > 0) continue;
+    }
     matched.push(book);
+    matched.sort(compare);
+    if (matched.length > limit) matched.pop();
   }
-
-  const valueOf = (book: CachedBook): number | string => {
-    switch (sortBy) {
-      case 'ratings': return parseNum(book.ratings);
-      case 'avgRating': return parseFloat(book.avgRating || '0');
-      case 'year': return getYear(book.published) ?? 0;
-      case 'title': return (book.title || '').toLowerCase();
-      case 'author': return (book.author || '').toLowerCase();
-    }
-  };
-
-  const naturalDirection = sortBy === 'title' || sortBy === 'author' ? 'asc' : 'desc';
-  const direction = options.asc ? 'asc' : (options.desc ? 'desc' : naturalDirection);
-
-  matched.sort((a, b) => {
-    const va = valueOf(a);
-    const vb = valueOf(b);
-    let cmp = 0;
-    if (typeof va === 'number' && typeof vb === 'number') {
-      cmp = va - vb;
-    } else {
-      cmp = String(va).localeCompare(String(vb));
-    }
-    if (cmp === 0) cmp = parseNum(b.ratings) - parseNum(a.ratings);
-    if (cmp === 0) cmp = (a.title || '').localeCompare(b.title || '');
-    return direction === 'asc' ? cmp : -cmp;
-  });
 
   const countToDisplay = Math.min(matched.length, limit);
 
@@ -175,7 +183,7 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
   }
 
   console.log(chalk.gray('------------------------------------------'));
-  let footerMsg = `Total books matching: ${matched.length.toLocaleString()} (Displayed: ${countToDisplay})`;
+  let footerMsg = `Total books matching: ${totalMatched.toLocaleString()} (Displayed: ${countToDisplay})`;
   if (library && options.excludeReviewed) footerMsg += ` | Excluded (already reviewed): ${reviewedExcluded.toLocaleString()}`;
   console.log(chalk.cyan(`${footerMsg}\n`));
 }

@@ -1,5 +1,6 @@
 import chalk from 'chalk';
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
+import type { CachedBook } from './storage.js';
 import { getYear, formatBookLink } from './utils.js';
 
 interface SummaryOptions {
@@ -10,9 +11,6 @@ interface SummaryOptions {
 }
 
 export async function runSummaryTopOrBottom(options: SummaryOptions = {}, isBottom = false): Promise<void> {
-  const bookCache = await loadBookCache();
-  const allBooks = Object.values(bookCache);
-
   const minAvg = options.minAvg ? parseFloat(options.minAvg) : 0;
   const maxAvg = options.maxAvg ? parseFloat(options.maxAvg) : Infinity;
   const minRatings = parseInt(options.minRatings?.replace(/,/g, '') || '0', 10);
@@ -28,8 +26,10 @@ export async function runSummaryTopOrBottom(options: SummaryOptions = {}, isBott
   }
   console.log(chalk.gray('------------------------------------------'));
 
-  // Filter books
-  const filtered = allBooks.filter(book => {
+  // Stream the whole table, keeping only the best `limit` matches in memory
+  // (or everything when limit is Infinity) — O(bounded)/O(1) memory instead of
+  // materializing the full 5.6M-row cache.
+  const matches = (book: CachedBook): boolean => {
     if (book.isBad) return false;
     if (!book.title || book.title === 'Unknown') return false;
 
@@ -40,7 +40,30 @@ export async function runSummaryTopOrBottom(options: SummaryOptions = {}, isBott
     if (ratings < minRatings) return false;
 
     return true;
-  });
+  };
+
+  const better = (a: CachedBook, b: CachedBook): boolean => {
+    const avgA = parseFloat(a.avgRating || '0');
+    const avgB = parseFloat(b.avgRating || '0');
+    if (avgA !== avgB) return isBottom ? avgA < avgB : avgA > avgB;
+    return parseInt(a.ratings.replace(/,/g, ''), 10) > parseInt(b.ratings.replace(/,/g, ''), 10);
+  };
+
+  const filtered: CachedBook[] = [];
+  let totalMatch = 0;
+  for (const book of iterateBooks()) {
+    if (!matches(book)) continue;
+    totalMatch++;
+    if (limit === Infinity || filtered.length < limit) {
+      filtered.push(book);
+      continue;
+    }
+    let worstIdx = 0;
+    for (let i = 1; i < filtered.length; i++) {
+      if (!better(filtered[i], filtered[worstIdx])) worstIdx = i;
+    }
+    if (better(book, filtered[worstIdx])) filtered[worstIdx] = book;
+  }
 
   // Sort by avgRating (ascending if isBottom, descending if not), then by ratings count descending
   filtered.sort((a, b) => {
@@ -78,7 +101,7 @@ export async function runSummaryTopOrBottom(options: SummaryOptions = {}, isBott
   }
 
   console.log(chalk.gray('------------------------------------------'));
-  console.log(chalk.cyan(`Total books matching criteria: ${filtered.length} (Displayed: ${countToDisplay})\n`));
+  console.log(chalk.cyan(`Total books matching criteria: ${totalMatch.toLocaleString()} (Displayed: ${countToDisplay})\n`));
 }
 
 export async function runSummaryTop(options: SummaryOptions = {}): Promise<void> {

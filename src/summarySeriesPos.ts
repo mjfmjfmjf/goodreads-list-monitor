@@ -1,5 +1,6 @@
 import chalk from 'chalk';
-import { loadBookCache, CachedBook } from './storage.js';
+import { iterateBooks, countBooks } from './storage.js';
+import type { CachedBook } from './storage.js';
 import { parseSeriesPos, SERIES_POS_MULTI } from './seriesPos.js';
 
 export interface SeriesPosHistogramRow {
@@ -15,8 +16,9 @@ export interface SeriesPosHistogram {
 }
 
 export function computeSeriesPosHistogram(
-  books: Pick<CachedBook, 'title' | 'seriesPos'>[],
-  options: { byCount?: boolean } = {}
+  books: Iterable<Pick<CachedBook, 'title' | 'seriesPos'>>,
+  options: { byCount?: boolean } = {},
+  total?: number
 ): SeriesPosHistogram {
   const counts = new Map<number, number>();
   let standalone = 0;
@@ -39,13 +41,11 @@ export function computeSeriesPosHistogram(
       ? (a, b) => b.count - a.count || a.pos - b.pos
       : (a, b) => a.pos - b.pos);
 
-  return { standalone, multiVolume, rows, total: books.length };
+  return { standalone, multiVolume, rows, total: total ?? (books as any[]).length ?? 0 };
 }
 
 export async function runSummarySeriesPos(options: { byCount?: boolean } = {}): Promise<void> {
-  const bookCache = await loadBookCache();
-  const books = Object.values(bookCache);
-  const hist = computeSeriesPosHistogram(books, { byCount: options.byCount });
+  const hist = computeSeriesPosHistogram(iterateBooks(), { byCount: options.byCount }, countBooks());
 
   const rows: { label: string; count: number; isSpecial: boolean }[] = [
     { label: 'standalone', count: hist.standalone, isSpecial: true },

@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
 import { scrapeListBooks, scrapeShelfBooks, scrapeBookDetails, scrapeTopShelves } from './scraper.js';
-import { loadState, loadBookCache, getBook, upsertBook, syncBooksToCache } from './storage.js';
+import { loadState, countBooks, getBook, upsertBook, syncBooksToCache, type BookCache } from './storage.js';
 import { TagConfig, ListEntry } from './tagConfig.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
 
@@ -43,8 +43,9 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
     console.log(chalk.yellow(`   Parsing shelf books into book cache without list audits.`));
   }
 
-  const bookCache = await loadBookCache();
-  const initialCacheSize = Object.keys(bookCache).length;
+  // Empty in-run book cache: syncBooksToCache/getBook read the live DB row.
+  const bookCache: BookCache = {};
+  const initialCacheSize = countBooks();
   const minTags = parseInt(globalOptions.minTags?.replace(/,/g, '') || '0', 10);
   const globalMinAvg = globalOptions.minAvg ? parseFloat(globalOptions.minAvg) : 0;
   const globalMaxAvg = globalOptions.maxAvg ? parseFloat(globalOptions.maxAvg) : Infinity;

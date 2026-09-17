@@ -2,7 +2,8 @@ import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
 import { scrapeListBooks, scrapeBookDetails, scrapeShelfBooks } from './scraper.js';
-import { loadState, saveState, loadBookCache, getBook, upsertBook, syncBooksToCache } from './storage.js';
+import { loadState, saveState, getBook, upsertBook, syncBooksToCache } from './storage.js';
+import type { BookCache, CachedBook } from './storage.js';
 import { getDb } from './db.js';
 import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink, withDbLockRetryAsync } from './utils.js';
 import { RegexCriterion, matchesRegex } from './bookMatch.js';
@@ -55,6 +56,23 @@ function isSameBook(book1: { id: string, title: string, author: string }, book2:
   const auth2 = normalizeAuthor(book2.author);
   
   return title1 === title2 && auth1 === auth2;
+}
+
+// Resolve a book's published year from ANOTHER cached edition of the same work
+// (same normalized title+author). Mirrors the workId resolution used for the
+// tag-shelf check below so the year audit needs no full-table cache load.
+function cachedPublishedYear(title: string, author: string): string | null {
+  const db = getDb();
+  const prefix = normalizeTitle(title);
+  const targetKey = `${prefix}|${normalizeAuthor(author)}`;
+  const rows = db.prepare(
+    `SELECT DISTINCT title, author, published FROM books WHERE published IS NOT NULL AND published != 'Unknown' AND title LIKE ?`
+  ).all(prefix + '%') as any[];
+  for (const r of rows) {
+    const key = `${normalizeTitle(r.title)}|${normalizeAuthor(r.author ?? '')}`;
+    if (r.published && key === targetKey) return r.published;
+  }
+  return null;
 }
 
 // ── DB-backed tag/shelf check (tag-audit functionality in bulk-audit) ──────
@@ -152,7 +170,7 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
   }
 
   const state = await withDbLockRetryAsync(() => Promise.resolve(loadState()));
-  const bookCache = await withDbLockRetryAsync(() => Promise.resolve(loadBookCache()));
+  const bookCache: BookCache = {};
   const listTitle = state.lists[listId]?.title || `List ${listId}`;
   
   const minRatings = parseInt(options.min?.replace(/,/g, '') || '0', 10);
@@ -308,7 +326,7 @@ async function updateCache(book: any, tag: string, bookCache: any) {
 
 export async function runAudit(listId: string, options: AuditOptions): Promise<AuditResult> {
   const state = await withDbLockRetryAsync(() => Promise.resolve(loadState()));
-  const bookCache = await withDbLockRetryAsync(() => Promise.resolve(loadBookCache()));
+  const bookCache: BookCache = {};
   const listTitle = state.lists[listId]?.title || `List ${listId}`;
   
   const minRatings = options.min ? parseInt(options.min.replace(/,/g, ''), 10) : 0;
@@ -401,15 +419,8 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
     const seriesPosMismatch: string[] = [];
     const belowTagShelves: string[] = [];
 
-    // Pre-index cache by normalized title for year lookups
-    const titleCache: Record<string, string> = {};
-    if (isYearAudit) {
-      for (const b of Object.values(bookCache) as any[]) {
-        if (b.published !== 'Unknown') {
-          titleCache[`${normalizeTitle(b.title)}|${normalizeAuthor(b.author)}`] = b.published;
-        }
-      }
-    }
+    // Year lookups resolve against the DB via cachedPublishedYear; no
+    // full-table cache and no title pre-index needed.
 
     for (let i = 0; i < listBooks.length; i++) {
       const book = listBooks[i];
@@ -434,12 +445,19 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
 
       // 2. YEAR CHECK
       if (isYearAudit) {
-        let bookData = bookCache[book.id];
+        let bookData: CachedBook | undefined = bookCache[book.id];
+        // The DB row is the source of truth for this book's own published year.
+        // The in-run cache only holds books this run's merge decided to write,
+        // so fall back to a single-row lookup before scraping — otherwise a
+        // stored year is re-scraped on every audit.
+        if (!bookData) {
+          bookData = await withDbLockRetryAsync(() => Promise.resolve(getBook(book.id)));
+          if (bookData) bookCache[book.id] = bookData;
+        }
         // If year unknown but we have it from list or other edition
         if (bookData?.published === 'Unknown' || !bookData) {
             const yearFromList = book.published !== 'Unknown' ? book.published : null;
-            const titleAuthorKey = `${normalizeTitle(book.title)}|${normalizeAuthor(book.author)}`;
-            const yearFromOtherEdition = titleCache[titleAuthorKey];
+            const yearFromOtherEdition = cachedPublishedYear(book.title, book.author);
             const resolvedYear = yearFromList || yearFromOtherEdition;
             
             if (resolvedYear) {

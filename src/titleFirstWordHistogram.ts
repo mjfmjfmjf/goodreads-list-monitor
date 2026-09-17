@@ -1,5 +1,6 @@
 import chalk from 'chalk';
-import { loadBookCache, CachedBook } from './storage.js';
+import { iterateBooks, countBooks } from './storage.js';
+import type { CachedBook } from './storage.js';
 import { stripTitleSuffix } from './utils.js';
 
 export interface FirstWordRow {
@@ -22,8 +23,9 @@ export function extractFirstWord(title: string): string | undefined {
 }
 
 export function computeTitleFirstWordHistogram(
-  books: Pick<CachedBook, 'title'>[],
-  options: { limit?: number } = {}
+  books: Iterable<Pick<CachedBook, 'title'>>,
+  options: { limit?: number } = {},
+  total?: number
 ): TitleFirstWordHistogram {
   const counts = new Map<string, number>();
 
@@ -38,13 +40,11 @@ export function computeTitleFirstWordHistogram(
     .sort((a, b) => b.count - a.count || a.word.localeCompare(b.word));
 
   const limit = options.limit && options.limit > 0 ? options.limit : all.length;
-  return { rows: all.slice(0, limit), total: books.length, distinctWords: all.length };
+  return { rows: all.slice(0, limit), total: total ?? (books as any[]).length ?? 0, distinctWords: all.length };
 }
 
 export async function runTitleFirstWordHistogram(options: { limit?: number } = {}): Promise<void> {
-  const bookCache = await loadBookCache();
-  const books = Object.values(bookCache);
-  const hist = computeTitleFirstWordHistogram(books, options);
+  const hist = computeTitleFirstWordHistogram(iterateBooks(), options, countBooks());
 
   console.log(chalk.cyan.bold('\n📚 Titles by first word:'));
   console.log(chalk.gray('----------------------------------------------------------------------'));

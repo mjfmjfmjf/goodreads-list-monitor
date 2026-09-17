@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache } from './storage.js';
+import { getBook } from './storage.js';
 import type { CachedBook } from './storage.js';
 import { parseSeriesPos } from './seriesPos.js';
 import { scrapeUserVoteBooks } from './scraper.js';
@@ -99,9 +99,14 @@ export async function runMonitorTopStandalones(options: StandaloneMonitorOptions
   }
   console.log(chalk.gray(`   Found ${votes.length} voted books.`));
 
-  console.log(chalk.gray('   Loading book cache...'));
-  const bookCache = loadBookCache();
-  const booksById = new Map(Object.entries(bookCache));
+  // Only the voted books (~a few hundred) are inspected, so look them up
+  // individually instead of loading the whole books table.
+  console.log(chalk.gray('   Looking up your voted books in the database...'));
+  const booksById = new Map<string, CachedBook>();
+  for (const v of votes) {
+    const book = getBook(v.bookId);
+    if (book) booksById.set(v.bookId, book);
+  }
 
   const { keep, notStandalone, unknown } = resortVotedBooks(votes, booksById, { minRatings });
   keep.forEach((v, i) => { v.rank = i + 1; });

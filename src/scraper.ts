@@ -4,7 +4,7 @@ import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
-import { delay, fetchWithRetry, formatDate, isConnectivityError, isDbLockError, parseDelayRange } from './utils.js';
+import { delay, fetchWithRetry, formatDate, httpCallInfo, isConnectivityError, isDbLockError, parseDelayRange } from './utils.js';
 import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_SCRAPE_FAIL_LIMIT, persistShelfPageCount } from './storage.js';
 import type { AuthorStats } from './storage.js';
 
@@ -117,9 +117,10 @@ export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]
         headers,
         timeout: TIMEOUT
       });
-      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      const duration = Date.now() - start;
+      const bodyLen = typeof response.data === 'string' ? response.data.length : 0;
 
-      console.log(chalk.gray(`   HTTP ${response.status} (${typeof response.data === 'string' ? response.data.length : 0} bytes, ${duration}s)`));
+      console.log(chalk.gray(`   ${httpCallInfo(response.status, bodyLen, duration, ['page', page])}`));
 
       const $ = cheerio.load(response.data);
       const pageLists: ListMetadata[] = [];
@@ -500,10 +501,10 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
         headers,
         timeout: TIMEOUT
       });
-      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      const duration = Date.now() - start;
       const bodyLen = typeof response.data === 'string' ? response.data.length : 0;
 
-      console.log(chalk.gray(`   HTTP ${response.status} (${bodyLen} bytes, ${duration}s)`));
+      console.log(chalk.gray(`   ${httpCallInfo(response.status, bodyLen, duration, ['listId', listId])} page=${page}`));
 
       const $ = cheerio.load(response.data);
 
@@ -688,6 +689,7 @@ export async function scrapeListsByTag(tag: string, options: ListsByTagOptions =
     if (configData.cookie) headers['Cookie'] = configData.cookie;
 
     try {
+      const start = Date.now();
       const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
       const $ = cheerio.load(response.data);
       const parsed = parseTagListPage($, tag);
@@ -699,7 +701,7 @@ export async function scrapeListsByTag(tag: string, options: ListsByTagOptions =
           added++;
         }
       }
-      console.log(chalk.cyan.bold(`🔖 Tag index "list/tag/${tag}" page ${page}: ${parsed.lists.length} lists (${added} new)${parsed.nextPage !== null ? ` · next → page ${parsed.nextPage}` : ' · last page'}. Cumulative: ${all.length} unique lists.`));
+      console.log(chalk.cyan.bold(`🔖 ${httpCallInfo(response.status, String(response.data).length, Date.now() - start, ['tag', tag])} page=${page}: ${parsed.lists.length} lists (${added} new)${parsed.nextPage !== null ? ` · next → page ${parsed.nextPage}` : ' · last page'}. Cumulative: ${all.length} unique lists.`));
 
       if (parsed.nextPage === null || (maxPages !== Infinity && page >= maxPages)) break;
       page = parsed.nextPage;
@@ -749,10 +751,10 @@ export async function scrapeUserVoteBooks(userVoteRef: string): Promise<UserVote
         headers,
         timeout: TIMEOUT
       });
-      const duration = ((Date.now() - start) / 1000).toFixed(2);
+      const duration = Date.now() - start;
       const bodyLen = typeof response.data === 'string' ? response.data.length : 0;
 
-      console.log(chalk.gray(`   HTTP ${response.status} (${bodyLen} bytes, ${duration}s)`));
+      console.log(chalk.gray(`   ${httpCallInfo(response.status, bodyLen, duration, ['page', page])}`));
 
       const $ = cheerio.load(response.data);
       const pageVotes: UserVoteEntry[] = [];
@@ -1280,7 +1282,9 @@ export async function scrapeAuthorStats(
     const headers: any = { 'User-Agent': USER_AGENT };
     if (sendCookie && config.cookie) headers['Cookie'] = config.cookie;
 
+    const start = Date.now();
     const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
+    const authorPageCall = httpCallInfo(response.status, String(response.data).length, Date.now() - start, ['authorId', authorSlug]);
     const $ = cheerio.load(response.data);
     const stats = parseAuthorStats($);
     if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) {
@@ -1297,7 +1301,7 @@ export async function scrapeAuthorStats(
       booksInserted = res.inserted;
       booksEnriched = res.updated;
       const catalogNote = catalogPages ? `, catalog spans ~${catalogPages} page${catalogPages === 1 ? '' : 's'}` : '';
-      console.log(chalk.dim(`   📚 ${authorSlug}: ${booksInserted} new / ${booksEnriched} enriched of ${works.length} on page${catalogNote}`));
+      console.log(chalk.dim(`   📚 ${authorPageCall} page=1: ${booksInserted} new / ${booksEnriched} enriched of ${works.length} on page${catalogNote}`));
     }
 
     if (crawlAllPages && catalogPages > 1) {
@@ -1316,13 +1320,15 @@ export async function scrapeAuthorStats(
         const retriesForLock = 3;
         for (let attempt = 1; attempt <= retriesForLock; attempt++) {
           try {
+            const pageStart = Date.now();
             const pageResponse = await fetchWithRetry(buildAuthorListUrl(authorSlug, sort, page), { headers, timeout: TIMEOUT });
+            const pageCall = httpCallInfo(pageResponse.status, String(pageResponse.data).length, Date.now() - pageStart, ['authorId', authorSlug]);
             const pageBooks = parseAuthorListBooks(cheerio.load(pageResponse.data), authorSlug);
             if (pageBooks.length) {
               const res = mergeBooksFromAuthorPage(pageBooks);
               booksInserted += res.inserted;
               booksEnriched += res.updated;
-              console.log(chalk.dim(`   📚 ${authorSlug} p${page}: +${res.inserted} new / ${res.updated} enriched of ${pageBooks.length}`));
+              console.log(chalk.dim(`   📚 ${pageCall} page=${page}: +${res.inserted} new / ${res.updated} enriched of ${pageBooks.length}`));
             }
             break; // success (or no books) — move on
           } catch (e) {

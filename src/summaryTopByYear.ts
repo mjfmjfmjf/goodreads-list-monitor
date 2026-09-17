@@ -1,15 +1,12 @@
 import chalk from 'chalk';
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
 import { getYear } from './utils.js';
 
 async function summarizeTopByYear() {
-  const bookCache = await loadBookCache();
-  const books = Object.values(bookCache);
-
   // Map to store: year -> { maxRatings: number, book: any }
   const topByYear: Record<number, { maxRatings: number; book: any }> = {};
 
-  for (const book of books) {
+  for (const book of iterateBooks()) {
     if (book.published === 'Unknown') continue;
 
     const year = getYear(book.published);

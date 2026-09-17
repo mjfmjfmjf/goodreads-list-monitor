@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
 
 export interface AvgHistogramOptions {
   step?: string;
@@ -8,9 +8,6 @@ export interface AvgHistogramOptions {
 }
 
 export async function runAvgHistogram(options: AvgHistogramOptions = {}): Promise<void> {
-  const bookCache = await loadBookCache();
-  const books = Object.values(bookCache);
-
   let rawStep = parseFloat(options.step || '0.01');
   if (isNaN(rawStep) || rawStep <= 0) rawStep = 0.01;
   // 0.01 or less means no grouping (each 0.01 value is its own bucket)
@@ -26,7 +23,7 @@ export async function runAvgHistogram(options: AvgHistogramOptions = {}): Promis
   let noAvgCount = 0;
   let filteredCount = 0;
 
-  for (const book of books) {
+  for (const book of iterateBooks()) {
     if (!book.avgRating || book.avgRating === 'Unknown') {
       noAvgCount++;
       continue;

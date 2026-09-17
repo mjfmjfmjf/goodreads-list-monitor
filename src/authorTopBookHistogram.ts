@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadBookCache, loadAuthorCache } from './storage.js';
+import { iterateBooks, loadAuthorCache } from './storage.js';
 import type { CachedBook } from './storage.js';
 import { normalizeAuthorName } from './authorOrphans.js';
 
@@ -62,7 +62,7 @@ function authorKey(book: CachedBook): { key: string; id?: string; name: string }
 // For each author in the book cache, find their highest-rated (largest rating
 // count) book, then bin it into the collapsed brackets above.
 export function computeAuthorTopBookHistogram(
-  books: CachedBook[],
+  books: Iterable<CachedBook>,
   knownAuthorNames: ReadonlySet<string> = new Set<string>(),
   knownAuthorIds: ReadonlySet<string> = new Set<string>()
 ): {
@@ -117,15 +117,13 @@ export function computeCumulatives(counts: number[]): { cumGE: number[]; cumLE: 
 }
 
 export async function runAuthorTopBookHistogram(): Promise<void> {
-  const bookCache = await loadBookCache();
   const authorCache = await loadAuthorCache();
   const authorNames = new Set(Object.keys(authorCache));
   const authorIds = new Set(Object.values(authorCache).map(e => String(e.id)));
 
-  const books = Object.values(bookCache);
   const buckets = buildAuthorBucketBuckets();
   const { counts, totalAuthors, inAuthorCache, notInAuthorCache } =
-    computeAuthorTopBookHistogram(books, authorNames, authorIds);
+    computeAuthorTopBookHistogram(iterateBooks(), authorNames, authorIds);
 
   console.log(chalk.cyan.bold('\n🏆 Author Top-Book Ratings Histogram'));
   console.log(chalk.gray('   For each author, take their highest-rated book (by rating count) and bin it.'));

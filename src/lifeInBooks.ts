@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { getLibrary, readAll } from './library.js';
-import { loadBookCache } from './storage.js';
+import { getBook } from './storage.js';
+import type { BookCache } from './storage.js';
 import {
   DIVIDER,
   Section,
@@ -111,7 +112,13 @@ export async function runLifeInBooks(options: LifeInBooksOptions = {}): Promise<
     return;
   }
 
-  const bookCache = await loadBookCache();
+  // Sparse cache: only the books actually read.
+  const bookCache: BookCache = {};
+  for (const entry of entries) {
+    if (bookCache[entry.id]) continue;
+    const book = getBook(entry.id);
+    if (book) bookCache[entry.id] = book;
+  }
   let reviewYear = 0;
   for (const entry of entries) {
     const y = parseInt(entry.dateRead.slice(0, 4), 10);

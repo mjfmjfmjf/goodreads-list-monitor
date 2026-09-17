@@ -1,5 +1,6 @@
 import chalk from 'chalk';
-import { loadBookCache } from './storage.js';
+import { iterateBooks } from './storage.js';
+import type { BookCache } from './storage.js';
 import { scrapeAndCacheBook } from './singleBook.js';
 import { getYear } from './utils.js';
 
@@ -21,8 +22,6 @@ function parseCustomDate(str: string): Date | null {
 }
 
 export async function runCheckQueue(options: CheckQueueOptions = {}): Promise<void> {
-  const bookCache = await loadBookCache();
-  
   const sinceDate = options.since ? parseCustomDate(options.since) : null;
   const untilDate = options.until ? parseCustomDate(options.until) : null;
 
@@ -35,36 +34,35 @@ export async function runCheckQueue(options: CheckQueueOptions = {}): Promise<vo
     return;
   }
 
-  const idsToCheck = Object.keys(bookCache).filter(id => {
-    const book = bookCache[id];
-    
-    // Skip bad books unless forceBad is set
-    if (book.isBad && !options.forceBad) return false;
+  // Stream the table, keeping only the queue candidates in memory.
+  const idsToCheck: string[] = [];
+  const bookCache: BookCache = {};
+  for (const book of iterateBooks()) {
+    if (book.isBad && !options.forceBad) continue;
+
+    let include = false;
 
     // 1. Time Range Filter (Highest priority if provided)
     if (sinceDate || untilDate) {
-      if (!book.lastUpdated) return false;
-      const lastUpdated = new Date(book.lastUpdated);
-      
-      if (sinceDate && lastUpdated < sinceDate) return false;
-      if (untilDate && lastUpdated > untilDate) return false;
-      
-      return true;
+      if (book.lastUpdated) {
+        const lastUpdated = new Date(book.lastUpdated);
+        if (!(sinceDate && lastUpdated < sinceDate) && !(untilDate && lastUpdated > untilDate)) include = true;
+      }
+    } else if (options.force || (book.isBad && options.forceBad)) {
+      include = true;
+    } else {
+      const year = getYear(book.published);
+      if (book.published === 'Unknown' || year === null) {
+        include = true; // 2. Explicitly Unknown
+      } else if (year < 100 && /^\d{1,2}\.\d{2}\.\d{2}$/.test(book.published)) {
+        include = true; // 3. Suspiciously low years that match our Y.MM.DD pattern
+      }
     }
 
-    if (options.force || (book.isBad && options.forceBad)) return true;
-
-    const year = getYear(book.published);
-
-    // 2. Explicitly Unknown
-    if (book.published === 'Unknown' || year === null) return true;
-
-    // 3. Suspiciously low years that match our Y.MM.DD pattern 
-    // (Likely parsing artifacts like 2.02.02 from 'Feb 2, 2021')
-    if (year < 100 && /^\d{1,2}\.\d{2}\.\d{2}$/.test(book.published)) return true;
-
-    return false;
-  });
+    if (!include) continue;
+    idsToCheck.push(book.id);
+    bookCache[book.id] = book;
+  }
 
   if (idsToCheck.length === 0) {
     console.log(chalk.green.bold('\n✅ No books matching criteria found in cache.'));

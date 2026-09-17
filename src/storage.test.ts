@@ -42,7 +42,8 @@ import {
   loadTagStats,
   backfillTagPageEstimates,
   upsertListScrape,
-  loadListScrape
+  loadListScrape,
+  mergeBooksFromAuthorPage
 } from './storage.js';
 import type { AuthorCacheEntry, CachedBook } from './storage.js';
 
@@ -374,6 +375,28 @@ describe('syncBooksToCache merge semantics', () => {
       makeBook({ id: '9106', ratings: '40' }),
     ], {});
     expect(second).toEqual({ inserted: 0, updated: 1 });
+  });
+
+  it('writes avg_rating 0 for books with zero ratings and no avg scraped', async () => {
+    await syncBooksToCache([makeBook({ id: '9107', ratings: '0' })], {});
+    expect(getBook('9107')!.avgRating).toBe('0');
+  });
+
+  it('keeps avg_rating NULL for rated books with no avg scraped (detectable gap)', async () => {
+    await syncBooksToCache([makeBook({ id: '9108', ratings: '5,000' })], {});
+    expect(getBook('9108')!.avgRating).toBeUndefined();
+  });
+
+  it('normalizes avg_rating to 0 on the author-page merge update path', async () => {
+    // Seed a legacy NULL row directly, bypassing bindBook's normalization.
+    getDb().prepare(
+      `INSERT INTO books (id, title, author, ratings, avg_rating, last_updated, first_seen)
+       VALUES ('9109', 'Unknown', 'Test Author', 0, NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`
+    ).run();
+    mergeBooksFromAuthorPage([{ id: '9109', title: 'New Title', author: 'Test Author' }]);
+    const got = getBook('9109')!;
+    expect(got.title).toBe('New Title');
+    expect(got.avgRating).toBe('0');
   });
 });
 

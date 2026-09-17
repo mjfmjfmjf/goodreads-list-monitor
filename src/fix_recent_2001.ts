@@ -1,18 +1,15 @@
 import { scrapeBookDetails } from './scraper.js';
 import { delay } from './utils.js';
-import { loadBookCache, upsertBook } from './storage.js';
+import { iterateBooks, upsertBook, type CachedBook } from './storage.js';
 
 async function fixSuspects() {
-  const cache = loadBookCache();
-  const ids = Object.keys(cache);
-  
-  // Find all books with a full YYYY.MM.DD date in 2001 that were updated recently
-  const suspects = ids.filter(id => {
-    const book = cache[id];
+  // Collect only the suspect books (a tiny set) while streaming the table.
+  const suspects: CachedBook[] = [];
+  for (const book of iterateBooks()) {
     const isFull2001 = book.published && book.published.startsWith('2001.') && book.published.length > 5;
     const isRecent = book.lastUpdated && book.lastUpdated.startsWith('2026-05');
-    return isFull2001 && isRecent;
-  });
+    if (isFull2001 && isRecent) suspects.push(book);
+  }
 
   console.log(`🔍 Found ${suspects.length} suspect books with full 2001 dates updated recently.`);
   
@@ -26,34 +23,33 @@ async function fixSuspects() {
   console.log(`📊 Checking a sample of ${limit} suspects to determine the error rate...`);
 
   for (let i = 0; i < limit; i++) {
-    const id = suspects[i];
-    const book = cache[id];
+    const book = suspects[i];
     checkedCount++;
 
     try {
-      const details = await scrapeBookDetails(id, book.title, book.author);
+      const details = await scrapeBookDetails(book.id, book.title, book.author);
       const newPub = details.published || 'Unknown';
 
       if (newPub !== book.published) {
         incorrectCount++;
-        console.log(`   ❌ WRONG: "${book.title}" (ID: ${id})`);
+        console.log(`   ❌ WRONG: "${book.title}" (ID: ${book.id})`);
         console.log(`      Cached:  ${book.published}`);
         console.log(`      Actual:  ${newPub}`);
         
         // Update cache
-        cache[id].published = newPub;
+        book.published = newPub;
         if (details.ratings && details.ratings !== '0') {
-          cache[id].ratings = details.ratings;
+          book.ratings = details.ratings;
         }
-        cache[id].lastUpdated = new Date().toISOString();
-        upsertBook(cache[id]);
+        book.lastUpdated = new Date().toISOString();
+        upsertBook(book);
       } else {
         console.log(`   ✅ CORRECT: "${book.title}" is actually from ${book.published}`);
       }
       
       await delay(400, 1000);
     } catch (e) {
-      console.error(`   ⚠️ Failed to check ID ${id}:`, (e as any).message);
+      console.error(`   ⚠️ Failed to check ID ${book.id}:`, (e as any).message);
     }
   }
 

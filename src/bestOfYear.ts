@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { scrapeListBooks } from './scraper.js';
-import { loadBookCache, syncBooksToCache, loadAuthorCache, syncAuthorsToCache } from './storage.js';
+import { syncBooksToCache, syncAuthorsToCache } from './storage.js';
+import type { BookCache, AuthorCache } from './storage.js';
 import { delay } from './utils.js';
 
 export const BEST_OF_YEAR_FIRST = 1980;
@@ -36,8 +37,8 @@ export async function runBestOfYear(options: BestOfYearOptions = {}): Promise<vo
 
   console.log(chalk.cyan.bold(`\n🏆 Scraping Goodreads best-of-year lists ${start}–${end} (max ${MAX_PAGES_PER_YEAR} pages each)...\n`));
 
-  const bookCache = await loadBookCache();
-  const authorCache = await loadAuthorCache();
+  const bookCache: BookCache = {};
+  const authorCache: AuthorCache = {};
 
   let totalBooks = 0;
   let totalInserted = 0;

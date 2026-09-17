@@ -2,7 +2,8 @@ import chalk from 'chalk';
 import * as cheerio from 'cheerio';
 import readline from 'readline';
 import { execSync } from 'child_process';
-import { loadBookCache, upsertBook, CachedBook, syncAuthorsToCache } from './storage.js';
+import { getBook, upsertBook, syncAuthorsToCache } from './storage.js';
+import type { CachedBook } from './storage.js';
 import { formatDate } from './utils.js';
 import { scrapeBookDetails } from './scraper.js';
 import { scrapeAndCacheBook } from './singleBook.js';
@@ -318,8 +319,7 @@ export async function addBookFromBuffer(bookIdOrUrl: string, rawInputArg?: strin
     return null;
   }
 
-  const bookCache = await loadBookCache();
-  const existing = bookCache[bookId];
+  const existing = getBook(bookId);
 
   let rawBuffer = rawInputArg || '';
 
@@ -335,7 +335,7 @@ export async function addBookFromBuffer(bookIdOrUrl: string, rawInputArg?: strin
     
     if (onlineResult && !onlineResult.isFailed && onlineResult.title && onlineResult.title !== 'Unknown') {
       console.log(chalk.green(`   ✅ Online lookup succeeded directly via Goodreads!`));
-      return await scrapeAndCacheBook(bookId, true, bookCache);
+      return await scrapeAndCacheBook(bookId, true, {});
     } else {
       console.log(chalk.yellow(`   ⚠️ Online HTTP lookup required fallback. Checking system clipboard...`));
     }
@@ -410,7 +410,6 @@ export async function addBookFromBuffer(bookIdOrUrl: string, rawInputArg?: strin
     failCount: 0
   };
 
-  bookCache[bookId] = updatedBook;
   upsertBook(updatedBook);
 
   // Sync author cache if author details exist
