@@ -77,10 +77,10 @@ beforeAll(() => {
 });
 
 beforeAll(async () => {
-  await upsertBook(book({ id: 'b1', title: 'Alpha Prime', author: 'A. Alpha', ratings: '3,000,000', avgRating: '4.50', published: '2001' }));
-  await upsertBook(book({ id: 'b2', title: 'Beta Waves', author: 'B. Beta', ratings: '500,000', avgRating: '4.00', published: '2001' }));
-  await upsertBook(book({ id: 'b3', title: 'Gamma Ray', author: 'G. Gamma', ratings: '120,000', avgRating: '2.00', published: '1999' }));
-  await upsertBook(book({ id: 'b4', title: 'Delta Dawn', author: 'D. Delta', ratings: '10,000', avgRating: '4.75', published: 'Unknown' }));
+  await upsertBook(book({ id: 'b1', title: 'Alpha Prime', author: 'A. Alpha', ratings: '3,000,000', avgRating: '4.50', published: '2001', workId: 'w1' }));
+  await upsertBook(book({ id: 'b2', title: 'Beta Waves', author: 'B. Beta', ratings: '500,000', avgRating: '4.00', published: '2001', workId: 'w2' }));
+  await upsertBook(book({ id: 'b3', title: 'Gamma Ray', author: 'G. Gamma', ratings: '120,000', avgRating: '2.00', published: '1999', workId: 'w3' }));
+  await upsertBook(book({ id: 'b4', title: 'Delta Dawn', author: 'D. Delta', ratings: '10,000', avgRating: '4.75', published: 'Unknown', workId: 'w4' }));
   await upsertBook(book({ id: 'b5', title: 'Bad Egg', author: 'B. Bad', ratings: '900,000', avgRating: '4.90', published: '2020', isBad: true }));
   await upsertBook(book({ id: 'b6', title: 'Epsilon Minus', author: 'E. Epsilon', ratings: '42', published: '2020' }));
   await upsertBook(book({ id: 'b7', title: 'Zeta Narrow', author: 'Z. Zeta', ratings: '60', avgRating: '4.50', published: '2012' }));
@@ -162,6 +162,28 @@ describe('runRatingsHistogram', () => {
       expect(out).toContain('Total books in cache: 9');
       expect(out).toContain('CUM >=');
       expect(out).toContain('CUM <=');
+    } finally {
+      c.restore();
+    }
+  });
+
+  it('onlyWorkId: total and cumulatives reconcile with the work-id subset', async () => {
+    const c = capture();
+    try {
+      await runRatingsHistogram({ onlyWorkId: true });
+      const out = c.out();
+      expect(out).toContain('Total books in cache: 4 with a work id');
+      expect(out).not.toContain('Total books in cache: 9 with a work id');
+      // The bottom bracket ("0") is the last row: its CUM >= must equal the
+      // full work-id subset total (everything has ratings >= 0).
+      const lines = out.split('\n');
+      const bottom = lines.filter((l) => l.includes('|') && /^\d+$/.test(l.trim().split('|')[0].trim())).pop()!;
+      const cols = bottom.split('|').map((s) => s.trim());
+      expect(cols[5]).toBe('4'); // CUM >=
+      // The top bracket's CUM <= must reconcile to the same subset total.
+      const top = lines.filter((l) => l.includes('|')).find((l) => l.includes('10,000,000+'))!;
+      const topCols = top.split('|').map((s) => s.trim());
+      expect(topCols[6]).toBe('4'); // CUM <=
     } finally {
       c.restore();
     }

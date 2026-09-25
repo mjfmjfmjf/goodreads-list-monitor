@@ -88,6 +88,18 @@ export async function runFieldCoverage(): Promise<void> {
   `).get() as any)
     : null;
 
+  const listScrapeTotals = hasTable('list_scrapes')
+    ? (db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN first_scraped != last_scraped THEN 1 ELSE 0 END) AS 'rescraped',
+      MIN(first_scraped) AS 'first_min',
+      MAX(first_scraped) AS 'first_max',
+      MAX(last_scraped) AS 'last_max'
+    FROM list_scrapes
+  `).get() as any)
+    : null;
+
   const bookTotals = db.prepare(`
     SELECT
       COUNT(*) AS total,
@@ -236,6 +248,18 @@ export async function runFieldCoverage(): Promise<void> {
       `  ${'total_books'.padEnd(14)} : ${chalk.yellow(((Number(listWalkTotals.total_books) || 0)).toLocaleString().padStart(7))}` +
       ` ${chalk.gray(`· ${((Number(listWalkTotals.walkable_books) || 0)).toLocaleString()} walkable`)}`
     );
+  }
+
+  if (listScrapeTotals && Number(listScrapeTotals.total) > 0) {
+    console.log(chalk.cyan.bold(`\n📊 List-tag walk ledger coverage (list_scrapes):`));
+    console.log(chalk.gray('----------------------------------------------------------------------'));
+    console.log(chalk.gray(`  total lists          : ${chalk.yellow(Number(listScrapeTotals.total).toLocaleString().padStart(7))}`));
+    console.log(chalk.gray(`  re-scraped           : ${chalk.yellow(Number(listScrapeTotals.rescraped || 0).toLocaleString().padStart(7))}`));
+    const first = (listScrapeTotals.first_min ?? '').slice(0, 10);
+    const firstEnd = (listScrapeTotals.first_max ?? '').slice(0, 10);
+    const last = (listScrapeTotals.last_max ?? '').slice(0, 10);
+    console.log(chalk.gray(`  first scrape range   : ${chalk.yellow(first)} → ${chalk.yellow(firstEnd)}`));
+    console.log(chalk.gray(`  latest scrape        : ${chalk.yellow(last)}`));
   }
 
   console.log();

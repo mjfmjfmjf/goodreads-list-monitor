@@ -3,6 +3,20 @@
 Record whenever Goodreads changes a page in a way that forces a code change.
 Newest entry on top. Timestamp format: `YYYY/MM/DD HH:MM` (local time).
 
+## 2026/09/25 10:30 — `/book/show` throttled by HTTP 202 interstitial while other endpoints pass
+
+- **Page / URL:** `https://www.goodreads.com/book/show/<id>` via the axios SSR engine.
+- **What happened:** A full integration run (2026/09/25 10:11) got all 14 non-book/show
+  live tests green (shelves, author stats/catalog, list pagination 1/2/3-page, review-list
+  year read, add-book lookup) but the axios book-page scrape was served an HTTP 202 0-byte
+  interstitial for `book/show/24548235` (Harry Potter and the Philosopher's Stone). Same
+  URL 202'd again after ~90s cooldown while the identical axios transport succeeded on
+  every other endpoint in the same run. This is the known anti-bot throttle pattern
+  (browser gets full 200), not a markup change or parser regression.
+- **Outcome:** No code change. The integration suite's `GOODREADS_STRICT_THROTTLE=1`
+  behavior correctly failed fast; retry after a longer cooldown. Signals that `/book/show`
+  is the first URL to be 202-throttled during cooldowns.
+
 ## 2026/09/02 08:45 — Review-list rows can carry a month-only Date Read
 
 - **Page / URL:** `https://www.goodreads.com/review/list/<userId>?shelf=read&read_at=YYYY`

@@ -5,7 +5,10 @@ export NVM_DIR="$HOME/.nvm"
 nvm use 22
 echo starting monitor.sh
 date
+# The DB snapshot is intentionally NOT part of this loop anymore: a
+# consistent-snapshot backup of the multi-GB DB takes ~an hour under crawler
+# load. Run it on its own schedule via ./backupDb.sh when nothing else is
+# using the DB.
 npm start
-npm start -- backup
 date
 echo ended monitor.sh

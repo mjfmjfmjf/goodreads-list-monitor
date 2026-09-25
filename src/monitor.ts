@@ -4,6 +4,24 @@ import { loadState, saveState, syncBooksToCache, getBook, upsertBook, loadAuthor
 import { delay, formatDate, formatBookLink } from './utils.js';
 import { appendToLog } from './logger.js';
 
+// Removed books were seen on this list on a past run, so their metadata is
+// usually already in SQLite even though the in-run BookCache is empty (the
+// 2026/09/13 refactor dropped the full in-memory book-cache load). Resolve
+// details from the accumulated in-run cache first, then the live DB row; only
+// fall through to a live scrape when neither holds a real title. Guarded by
+// unit tests so a future cache-model change can't silently regress this again.
+export function resolveRemovedBookDetails(
+  id: string,
+  bookCache: BookCache,
+  getBookFromDb: (id: string) => CachedBook | undefined
+): CachedBook | undefined {
+  const cached = bookCache[id];
+  if (cached && cached.title !== 'Unknown') return cached;
+  const dbRow = getBookFromDb(id);
+  if (dbRow && dbRow.title !== 'Unknown') return dbRow;
+  return cached ?? dbRow;
+}
+
 export async function performIngest(userId: string, force = false): Promise<void> {
   const state = await loadState();
   // Don't load the full book cache (5.6M+ rows, several GB in JS memory) — the
@@ -151,8 +169,8 @@ export async function checkUpdates(userId: string): Promise<void> {
 
       if (removedIds.length > 0) {
         for (const id of removedIds) {
-          // Check global cache first
-          let details = bookCache[id];
+          // Check global cache first (in-run cache, then the SQLite row).
+          let details = resolveRemovedBookDetails(id, bookCache, getBook);
           
           if (!details || details.title === 'Unknown') {
             console.log(chalk.gray(`   Fetching missing details for removed book ID ${id}...`));

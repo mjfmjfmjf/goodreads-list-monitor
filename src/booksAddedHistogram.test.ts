@@ -8,6 +8,7 @@ describe('dayBuckets', () => {
     const buckets = dayBuckets(3, '2026-09-07');
     expect(buckets.map(b => b.label)).toEqual(['2026-09-05', '2026-09-06', '2026-09-07']);
     expect(buckets.every(b => b.start === b.label && b.end === b.label)).toBe(true);
+    expect(buckets.every(b => b.added === 0 && b.total === 0 && b.avgRatings === 0 && b.maxRatings === 0)).toBe(true);
   });
 });
 

@@ -165,6 +165,7 @@ export async function scrapeTopShelves(page = 1): Promise<string[]> {
   const headers: any = { 'User-Agent': USER_AGENT };
   if (configData.cookie) headers['Cookie'] = configData.cookie;
 
+  const start = Date.now();
   const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
   const $ = cheerio.load(response.data);
 
@@ -180,6 +181,7 @@ export async function scrapeTopShelves(page = 1): Promise<string[]> {
     }
   });
 
+  console.log(chalk.dim(`   📚 ${httpCallInfo(response.status, String(response.data).length, Date.now() - start, ['shelfList', page])}: ${tags.length} tags on page`));
   return tags;
 }
 
@@ -263,7 +265,7 @@ export function extractShelfPageLinks($: cheerio.CheerioAPI, tag: string): numbe
   return [...new Set(pages)].sort((a, b) => a - b);
 }
 
-export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, startPage = 1): Promise<BookMetadata[]> {
+export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, startPage = 1, opts?: { skipAuthorSync?: boolean }): Promise<BookMetadata[]> {
   const configData = await loadConfig();
   let allBooks: BookMetadata[] = [];
   let thresholdReached = false;
@@ -282,7 +284,6 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
     // Never request a page past the shelf's true last page (short shelves).
     if (totalPages !== null && page > totalPages) break;
 
-    console.log(chalk.cyan.bold(`🌐 Scraping shelf "${tag}" page ${page}...`));
     const url = nextHref ?? `https://www.goodreads.com/shelf/show/${tag}?page=${page}`;
     
     try {
@@ -299,7 +300,9 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
         axiosConfig.headers['Cookie'] = configData.cookie;
       }
 
+      const pageStart = Date.now();
       const response = await fetchWithRetry(url, axiosConfig);
+      const shelfPageCall = httpCallInfo(response.status, String(response.data).length, Date.now() - pageStart, ['tag', `"${tag}"`], 'ok');
       const $ = cheerio.load(response.data);
 
       // Honor the pagination footer Goodreads actually rendered for this page.
@@ -324,6 +327,7 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
 
       const pageBooks: BookMetadata[] = [];
       const items = $('.elementList');
+      console.log(chalk.dim(`   📚 ${shelfPageCall} page=${page}: ${items.length} books on page${totalPages !== null ? ` · shelf spans ~${totalPages} page${totalPages === 1 ? '' : 's'}` : ''}`));
 
       if (items.length === 0) {
         if (page === 1) {
@@ -469,11 +473,13 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
   }
 
   // Automatically sync authors to cache
-  try {
-    const authorCache = await loadAuthorCache();
-    await syncAuthorsToCache(uniqueBooks, authorCache);
-  } catch (error) {
-    // Ignore cache sync errors in scraper
+  if (!opts?.skipAuthorSync) {
+    try {
+      const authorCache = await loadAuthorCache();
+      await syncAuthorsToCache(uniqueBooks, authorCache);
+    } catch (error) {
+      // Ignore cache sync errors in scraper
+    }
   }
 
   return uniqueBooks;
@@ -714,6 +720,40 @@ export async function scrapeListsByTag(tag: string, options: ListsByTagOptions =
   }
 
   return all;
+}
+
+export interface PopularListsPageOptions {
+  page?: number;
+}
+
+// Scrape ONE page of the Listopia popular-lists directory
+// (https://www.goodreads.com/list/popular_lists?page=N&ref=ls_pl_seeall),
+// returning the lists on that page plus the next directory page number (or
+// null on the last page). Unlike scrapeListsByTag this reads a SINGLE page —
+// the caller (runListPopularWalker) drives pagination itself so it can
+// interleave enumeration with per-list crawling instead of reading all ~100
+// directory pages up front. The directory uses the same .tableList markup as
+// the by-tag index, so parsing reuses parseTagListPage.
+export async function scrapePopularListsPage(page = 1): Promise<{ lists: TagListEntry[]; nextPage: number | null }> {
+  const configData = await loadConfig();
+  const baseUrl = 'https://www.goodreads.com/list/popular_lists';
+  const url = `${baseUrl}?page=${page}&ref=ls_pl_seeall`;
+
+  try {
+    const headers: any = { 'User-Agent': USER_AGENT };
+    if (configData.cookie) headers['Cookie'] = configData.cookie;
+
+    const start = Date.now();
+    const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
+    const $ = cheerio.load(response.data);
+    const parsed = parseTagListPage($, 'popular');
+    console.log(chalk.cyan.bold(`🔖 ${httpCallInfo(response.status, String(response.data).length, Date.now() - start, ['popular', page])} page=${page}: ${parsed.lists.length} lists${parsed.nextPage !== null ? ` · next → page ${parsed.nextPage}` : ' · last page'}`));
+    return parsed;
+  } catch (error) {
+    if (isConnectivityError(error)) throw error;
+    console.error(chalk.red.bold(`   ❌ Error fetching popular-lists directory page ${page}:`), (error as any).message);
+    return { lists: [], nextPage: page + 1 };
+  }
 }
 
 export interface UserVoteEntry {
@@ -1086,7 +1126,7 @@ export interface AuthorListBook {
   workId?: string;
 }
 
-function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
+export function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
   const $authorLink = $('a.authorName[href*="/author/show/"]').first();
   const name = $authorLink.text().trim() || undefined;
   const href = $authorLink.attr('href') || '';
@@ -1094,9 +1134,11 @@ function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
   const slug = slugMatch ? slugMatch[1] : undefined;
   const statsText = $('.leftContainer a.authorName[href*="/author/show/"]').first().parent().text();
   if (!statsText.trim()) return { name, slug };
-  const avgMatch = statsText.match(/Average rating\s+([\d.]+)/);
-  const ratingsMatch = statsText.match(/([\d,]+)\s+ratings/);
-  const reviewsMatch = statsText.match(/([\d,]+)\s+reviews/);
+  // Counts use plural-safe regexes: the list page writes "1 rating"/"1 review"
+  // in the singular (Goodreads drops the 's' at exactly 1).
+  const avgMatch = statsText.match(/Average rating:?\s+([\d.]+)/);
+  const ratingsMatch = statsText.match(/([\d,]+)\s+ratings?/);
+  const reviewsMatch = statsText.match(/([\d,]+)\s+reviews?/);
   const shelvesMatch = statsText.match(/shelved\s+([\d,]+)\s+times?/);
   return {
     averageRating: avgMatch ? avgMatch[1] : undefined,
@@ -1332,6 +1374,10 @@ export async function scrapeAuthorStats(
             }
             break; // success (or no books) — move on
           } catch (e) {
+            // Connectivity problems (DNS, refused, reset, network down) apply to
+            // EVERY remaining author — abort the whole crawl so callers can stop
+            // instead of grinding doomed requests through every catalog page.
+            if (isConnectivityError(e)) throw e;
             const msg = String((e as any).message || e);
             if (isDbLockError(e) && attempt < retriesForLock) {
               console.error(chalk.yellow(`   ⚠️ DB locked on page ${page} (attempt ${attempt}/${retriesForLock}), retrying...`));
@@ -1347,6 +1393,11 @@ export async function scrapeAuthorStats(
 
     return { stats, booksInserted, booksEnriched, catalogPages, books: works };
   } catch (error) {
+    // A connectivity failure (DNS, ECONNRESET, network down) will hit EVERY
+    // author, not just this one. Rethrow so the caller's loop can abort cleanly
+    // (and avoid marking the author as a "failure" — the author isn't at fault,
+    // the network is). Mirrors how scrapeTopShelves surfaces these to the walkers.
+    if (isConnectivityError(error)) throw error;
     const reason = String((error as any).code || (error as any).message || error);
     console.error(chalk.yellow(`   ⚠️ Author stats fetch failed for ${authorSlug}: ${reason}`));
     onError?.(reason);

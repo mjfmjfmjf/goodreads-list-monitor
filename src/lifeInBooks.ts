@@ -23,6 +23,8 @@ export interface LifeInBooksOptions {
   export?: string;
   library?: string;
   requireReviews?: boolean;
+  vote?: boolean;
+  voteBooks?: string;
 }
 
 function renderLifeStats(ctx: SectionContext): string[] {
@@ -124,7 +126,7 @@ export async function runLifeInBooks(options: LifeInBooksOptions = {}): Promise<
     const y = parseInt(entry.dateRead.slice(0, 4), 10);
     if (!isNaN(y) && y > reviewYear) reviewYear = y;
   }
-  const ctx: SectionContext = { entries, bookCache, reviewYear };
+  const ctx: SectionContext = { entries, bookCache, reviewYear, voteGenres: options.vote === true || options.voteBooks !== undefined, voteBooks: options.voteBooks };
 
   console.log(chalk.cyan.bold('\n📚 Life in Books'));
   console.log(chalk.gray(requireReviews

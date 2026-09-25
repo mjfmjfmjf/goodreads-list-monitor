@@ -7,7 +7,7 @@ vi.hoisted(() => {
 });
 
 import fs from 'fs-extra';
-import { closeDb, getDb } from './db.js';
+import { checkpointCompleted, closeDb, getDb } from './db.js';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 
@@ -48,5 +48,17 @@ describe('database lock observability', () => {
     stmt.run('t-1', 'now', 'now');
     stmt.run('t-2', 'now', 'now');
     expect(db.prepare('SELECT COUNT(*) AS c FROM genres WHERE name IN (?, ?)').get('t-1', 't-2')).toEqual({ c: 2 });
+  });
+});
+
+describe('backup snapshot decision', () => {
+  it('treats a fully-reclaimed WAL as cloneable', () => {
+    expect(checkpointCompleted({ busy: 0, log: 0, checkpointed: 0 })).toBe(true);
+    expect(checkpointCompleted({ busy: 0, log: 500, checkpointed: 500 })).toBe(true);
+  });
+
+  it('refuses when readers/writers resisted the TRUNCATE checkpoint', () => {
+    expect(checkpointCompleted({ busy: 12, log: 500, checkpointed: 488 })).toBe(false);
+    expect(checkpointCompleted({ busy: 0, log: 500, checkpointed: 300 })).toBe(false);
   });
 });

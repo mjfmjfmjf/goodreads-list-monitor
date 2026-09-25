@@ -37,6 +37,7 @@ import {
   replaceGenreTagXref,
   loadGenreTagXref,
   loadXrefTagMap,
+  upsertGenreTagXref,
   persistShelfPageCount,
   getKnownShelfPages,
   loadTagStats,
@@ -543,7 +544,7 @@ describe('genre_tag_xref', () => {
     expect(loadGenreTagXref().filter(x => x.genreName === 'science-fiction').map(x => x.tagName)).toEqual(['sf']);
   });
 
-  it('loadXrefTagMap maps each tag to its canonical genre', () => {
+  it('loads xref map with each tag mapped to its canonical genre', () => {
     replaceGenreTagXref('science-fiction', [
       { tagName: 'sf', kind: 'cognate' },
       { tagName: 'scifi', kind: 'cognate' },
@@ -551,6 +552,23 @@ describe('genre_tag_xref', () => {
     const map = loadXrefTagMap();
     expect(map.get('sf')).toBe('science-fiction');
     expect(map.get('scifi')).toBe('science-fiction');
+  });
+
+  it('upsertGenreTagXref adds a row and preserves curated kinds over similarity', () => {
+    expect(upsertGenreTagXref('audiobooks', 'audiobook', 'similarity')).toBe('added');
+    // re-run is idempotent
+    expect(upsertGenreTagXref('audiobooks', 'audiobook', 'similarity')).toBe('kept');
+    // curated cognate wins: similarity cannot downgrade it
+    expect(upsertGenreTagXref('audiobooks', 'audiobook', 'cognate')).toBe('updated');
+    expect(upsertGenreTagXref('audiobooks', 'audiobook', 'similarity')).toBe('kept');
+    expect(loadGenreTagXref().filter(x => x.genreName === 'audiobook' && x.tagName === 'audiobooks').map(x => x.kind)).toEqual(['cognate']);
+  });
+
+  it('replaceGenreTagXref does not delete machine-added similarity rows', () => {
+    upsertGenreTagXref('kindle', 'ebooks', 'similarity');
+    const r = replaceGenreTagXref('ebooks', [{ tagName: 'ebooks', kind: 'exact' }]);
+    expect(r.removed).toBe(0);
+    expect(loadGenreTagXref().some(x => x.genreName === 'ebooks' && x.tagName === 'kindle' && x.kind === 'similarity')).toBe(true);
   });
 });
 

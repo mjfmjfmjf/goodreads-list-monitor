@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { loadAuthorCache, iterateBooks, findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, AUTHOR_FAIL_LIMIT, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures, AUTHOR_SCRAPE_FAIL_LIMIT } from './storage.js';
 import type { CachedBook, AuthorCache, AuthorCacheEntry } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
-import { delay, parseDelayRange } from './utils.js';
+import { delay, isConnectivityError, parseDelayRange } from './utils.js';
 
 
 export interface AuthorOrphan {
@@ -230,6 +230,13 @@ export async function runOrphanScrape(
   for (let i = 0; i < toScrape.length; i++) {
     const orphan = toScrape[i];
     const authorId = orphan.authorId!;
+    // Anonymous crawls (no cookie) run at a faster but still polite cadence;
+    // GR_AUTHOR_DELAY_MS overrides either profile ("min,max").
+    const [authorDelayMin, authorDelayMax] = parseDelayRange(
+      process.env.GR_AUTHOR_DELAY_MS,
+      options.withCookie ? 2000 : 1000,
+      options.withCookie ? 5000 : 1800
+    );
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${orphan.normalizedName} (${authorId})`) + chalk.gray(` · sort key: ${formatNum(orphan.topRatings)} ratings on top cached book`));
       let failReason = 'no_stats_line';
@@ -239,6 +246,9 @@ export async function runOrphanScrape(
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${orphan.normalizedName}`));
         recordAuthorScrapeFailure(authorId, failReason);
         recordAuthorFailure(fallbackNameFromSlug(authorId), failReason);
+        const strikes = loadAuthorScrapeFailure(authorId)?.failCount ?? 1;
+        console.log(chalk.gray(`      ↳ Consecutive failure ${strikes}/${AUTHOR_SCRAPE_FAIL_LIMIT}${strikes >= AUTHOR_SCRAPE_FAIL_LIMIT ? ' — skipped for future runs' : ''}`));
+        await delay(authorDelayMin, authorDelayMax);
         continue;
       }
       // Success — clear any prior failure record for this id.
@@ -284,17 +294,20 @@ export async function runOrphanScrape(
         console.log(chalk.gray(`   (No change - values already current; refreshed last_seen)`));
       }
     } catch (error) {
+      // Network went down mid-run — aborts cleanly instead of black-marking
+      // every remaining author id with a scrape failure (the authors aren't
+      // at fault). Progress is saved per-author, so a re-run resumes.
+      if (isConnectivityError(error)) {
+        console.error(chalk.red.bold(`\n🛑 Aborting orphan sweep: network error (${(error as any).code} — ${(error as any).message}).`));
+        console.error(chalk.red.bold(`   Progress is saved to the DB; re-run when your connection is back.`));
+        const duration = ((Date.now() - start) / 1000).toFixed(1);
+        console.log(chalk.cyan.bold(`\n🏁 Aborted. Processed ${i} of ${toScrape.length} author ids, updated ${updated} (${noStats} no stats line, ${failed} failures, ${duration}s).`));
+        return;
+      }
       failed++;
       recordAuthorScrapeFailure(authorId, String((error as any)?.message || error));
       console.error(chalk.red.bold(`   ❌ Failed for ${orphan.normalizedName} (${authorId}): ${(error as any).message}`));
     }
-    // Anonymous crawls (no cookie) run at a faster but still polite cadence;
-    // GR_AUTHOR_DELAY_MS overrides either profile ("min,max").
-    const [authorDelayMin, authorDelayMax] = parseDelayRange(
-      process.env.GR_AUTHOR_DELAY_MS,
-      options.withCookie ? 2000 : 1000,
-      options.withCookie ? 5000 : 1800
-    );
     await delay(authorDelayMin, authorDelayMax);
   }
 

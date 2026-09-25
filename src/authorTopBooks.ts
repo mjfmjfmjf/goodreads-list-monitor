@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { loadAuthorCache, iterateBooks, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT } from './storage.js';
 import type { CachedBook } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
-import { delay, parseDelayRange } from './utils.js';
+import { delay, isConnectivityError, parseDelayRange } from './utils.js';
 
 export interface AuthorTopBooksOptions {
   minRatings?: string;
@@ -169,6 +169,17 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
         }
       }
     } catch (error) {
+      // Network went down mid-run — aborts cleanly instead of black-marking
+      // every remaining author with a failure strike (the authors aren't at
+      // fault, the outage is). Progress is saved per-author, so a re-run
+      // resumes where this run stopped.
+      if (isConnectivityError(error)) {
+        console.error(chalk.red.bold(`\n🛑 Aborting author top-books scan: network error (${(error as any).code} — ${(error as any).message}).`));
+        console.error(chalk.red.bold(`   Progress is saved to the DB; re-run when your connection is back.`));
+        const duration = ((Date.now() - start) / 1000).toFixed(1);
+        console.log(chalk.cyan.bold(`\n🏁 Aborted. Processed ${i} of ${toScrape.length} authors, updated ${updated} (${failed} failures, ${duration}s).`));
+        return;
+      }
       failed++;
       console.error(chalk.red.bold(`   ❌ Failed for ${author.name}: ${(error as any).message}`));
     }

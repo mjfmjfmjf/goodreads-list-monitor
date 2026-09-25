@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { scrapeShelfBooks, scrapeTopShelves } from './scraper.js';
 import { getDb } from './db.js';
-import { getBook, getKnownShelfPages, upsertBook } from './storage.js';
+import { getBook, getKnownShelfPages, loadAuthorCache, syncAuthorsToCache, syncBooksToCache, upsertBook } from './storage.js';
 import { delay, isConnectivityError } from './utils.js';
 
 export interface NewTagWalkerOptions {
@@ -32,10 +32,13 @@ function parseShelfRange(range: string): number {
 
 // Walk https://www.goodreads.com/shelf page by page. For every tag on the page
 // that we HAVEN'T already scraped into tag_books, scrape its shelf in the usual
-// way (scrapeShelfBooks persists tag_books membership, the shelf's real page
-// count into tag_stats, and syncs authors; we then stamp tags[tag] = shelving
-// count on the affected book rows like tag-discovery does). Already-scraped
-// tags are skipped, so an interrupted walk simply resumes on re-run.
+// way (scrapeShelfBooks persists tag_books membership and the shelf's real page
+// count into tag_stats; we then sync the shelf's books into the book cache,
+// sync its authors, and stamp tags[tag] = shelving count on the book rows,
+// mirroring gap-genre-tag-discovery). Already-scraped tags are skipped, so an
+// interrupted walk simply resumes on re-run. Per-tag and per-run lines report
+// how many books/authors were newly added, in the 📚 format of the other
+// scrapes.
 //
 // Unlike runTagDiscovery we do NOT reload the whole 4.3M-row book table per
 // tag (that is impractically slow when walking hundreds of tags) and we do NOT
@@ -55,6 +58,15 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
   const globalSeen = new Set<string>();
   let newCount = 0;
   let skipCount = 0;
+  let totalBooks = 0;
+  let totalBooksNew = 0;
+  let totalAuthors = 0;
+  let totalStamped = 0;
+
+  // One author cache for the whole run: scrapeShelfBooks skips its internal
+  // author sync (skipAuthorSync), so every author we mint here comes through
+  // our own syncAuthorsToCache call and can be counted precisely.
+  const authorCache = loadAuthorCache();
 
   console.log(chalk.cyan.bold('\n🔀 Walking top shelves for tags not yet scraped...'));
   console.log(chalk.gray(`   Start page ${startPage}, up to ${maxListPages} page(s), ${shelfPageEnd} shelf page(s) per tag, ${dryRun ? 'dry run (no scraping)' : 'scraping new tags'}.`));
@@ -69,7 +81,7 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
       if (isConnectivityError(err)) {
         console.log(chalk.red.bold(`\n🛑 Aborting walker: network error (${err.code} — ${err.message}).`));
         console.log(chalk.red.bold(`   Progress is saved to the DB; re-run when your connection is back.`));
-        printSummary(newCount, skipCount, scraped.size);
+        printSummary(newCount, skipCount, scraped.size, totalBooks, totalBooksNew, totalAuthors, totalStamped);
         return;
       }
       console.error(chalk.red.bold(`   ❌ Error fetching shelf page ${page}:`), err.message);
@@ -109,9 +121,9 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
       continue;
     }
 
-    for (const tag of newTags) {
+    for (const [pos, tag] of newTags.entries()) {
       newCount++;
-      console.log(chalk.yellow.bold(`\n   🆕 NEW TAG [${newCount}]: "${tag}"`));
+      console.log(chalk.yellow.bold(`\n   🆕 NEW TAG [${newCount}] (shelf list page ${page} · #${pos + 1} on page): "${tag}"`));
       if (dryRun) {
         const known = getKnownShelfPages(tag);
         console.log(chalk.gray(`      (dry run — would scrape ~${known ?? shelfPageEnd} page(s))`));
@@ -126,7 +138,15 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
       console.log(chalk.gray(`      Scraping shelf "${tag}" (pages 1-${end})...`));
 
       try {
-        const shelfBooks = await scrapeShelfBooks(tag, minTags, end, 1);
+        const shelfBooks = await scrapeShelfBooks(tag, minTags, end, 1, { skipAuthorSync: true });
+
+        // Sync the scraped shelf into the book cache and mint its authors,
+        // counting what was newly added this tag.
+        const bookOutcome = await syncBooksToCache(shelfBooks, {});
+        const authorAdded = syncAuthorsToCache(shelfBooks, authorCache);
+        totalBooks += shelfBooks.length;
+        totalBooksNew += bookOutcome.inserted;
+        totalAuthors += authorAdded;
 
         // Stamp tags[tag] = shelving count on affected books (same effect as
         // tag-discovery step 1b, but via the DB directly — no full-cache load).
@@ -142,13 +162,14 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
             stamped++;
           }
         }
+        totalStamped += stamped;
         scraped.add(tag);
-        console.log(chalk.green.bold(`      ✅ Scraped ${shelfBooks.length} books from "${tag}" (stamped presence on ${stamped}).`));
+        console.log(chalk.green.bold(`      ✅ "${tag}": ${shelfBooks.length} books scraped, +${bookOutcome.inserted} new in cache (${bookOutcome.updated} enriched), +${authorAdded} authors, ${stamped} books stamped.`));
       } catch (err: any) {
         if (isConnectivityError(err)) {
           console.log(chalk.red.bold(`\n🛑 Aborting walker: network error (${err.code} — ${err.message}).`));
           console.log(chalk.red.bold(`   Progress is saved to the DB; re-run when your connection is back.`));
-          printSummary(newCount, skipCount, scraped.size);
+          printSummary(newCount, skipCount, scraped.size, totalBooks, totalBooksNew, totalAuthors, totalStamped);
           return;
         }
         console.error(chalk.red.bold(`   ❌ Error scraping tag "${tag}":`), err.message);
@@ -160,12 +181,13 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
     if (page < lastPage) await delay(500, 1500);
   }
 
-  printSummary(newCount, skipCount, scraped.size);
+  printSummary(newCount, skipCount, scraped.size, totalBooks, totalBooksNew, totalAuthors, totalStamped);
 }
 
-function printSummary(newScraped: number, skipped: number, totalScraped: number): void {
+function printSummary(newScraped: number, skipped: number, totalScraped: number, totalBooks: number, totalBooksNew: number, totalAuthors: number, totalStamped: number): void {
   console.log(chalk.cyan.bold(`\n🎉 Walker complete. New tags scraped: ${newScraped}, skipped (already scraped): ${formatNum(skipped)}.`));
   console.log(chalk.green.bold(`   Tags now in tag_books: ${formatNum(totalScraped)}.`));
+  console.log(chalk.green.bold(`   Books scraped: ${formatNum(totalBooks)} (+${formatNum(totalBooksNew)} new in cache), authors added: ${formatNum(totalAuthors)}, presence stamped on ${formatNum(totalStamped)}.`));
 }
 
 const formatNum = (n: number): string => n.toLocaleString('en-US');

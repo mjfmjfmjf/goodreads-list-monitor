@@ -69,7 +69,16 @@
   are given. Both keys share `loadAuthorBookStats`, whose SQL drops years above
   `currentYear+5` (Goodreads encodes some BCE works as positive years, e.g.
   2600, which would otherwise outrank genuinely recent books).
-- The integration suite runs in STRICT throttle mode
+- **Author crawls abort on connectivity errors** (2026-09-25 fix). Previously
+  `scrapeAuthorStats` swallowed ENOTFOUND/ECONNRESET/etc. and returned
+  `undefined`, so author-rescan/orphans/top-books treated an outage as
+  author-level failures — bumping the author's persistent `failCount` strikes
+  AND grinding through the whole doomed candidate list. Now `scrapeAuthorStats`
+  rethrows `isConnectivityError` errors (both the outer fetch and the inner
+  multiPage page loop), and the author loops abort with a "network error —
+  progress saved" message without recording failure strikes (mirrors the
+  walkers). Do not remove this — a lost connection is not an author defect.
+- **Integration suite runs in STRICT throttle mode**
   (`GOODREADS_STRICT_THROTTLE=1`): on a 202/403/429 it gives up immediately
   (no retry/backoff) so a throttled run fails fast with a clear message.
   A failure with a throttle message means cooldown, NOT a parser change.
@@ -111,6 +120,17 @@
   idempotent upserts so replay-after-abort is safe.
 - Avoid running several heavy crawlers at once (e.g. gap-genre + author-rescan +
   list-tag-walk) — they serialize on the same writer lock either way.
+- **Daily DB backup runs on a schedule via `./backupDb.sh` (cron), NOT inside
+  `monitor.sh`** (a 2026/09/20 incident: the backup API snapshot took 57min
+  under crawler load and looked hung — fast to ~60% while the OS-cache-warm
+  bulk copied, then ~200KB/s through the cold tail). Crawlers are always
+  running, so the backup never waits for idle time. Fast path in `backupDb()`
+  (src/db.ts): `PRAGMA wal_checkpoint(TRUNCATE)` then an APFS copy-on-write
+  clone (`COPYFILE_FICLONE`) — instant, point-in-time, consistency verified.
+  Falls back to the SQLite backup API when another connection holds a read
+  mark and the WAL can't be reclaimed (`checkpointCompleted()` decides).
+  Do not re-add the backup to monitor.sh; do not make it skip when crawlers
+  are running.
 
 ## Goodreads page-change log
 - Whenever a Goodreads page change forces a code fix (selector updates, markup

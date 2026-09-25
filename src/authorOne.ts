@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure } from './storage.js';
 import type { AuthorCacheEntry } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
+import { isConnectivityError } from './utils.js';
 
 function parseAuthorInput(input: string): { id: string; slug: string } | undefined {
   const trimmed = input.trim();
@@ -39,7 +40,17 @@ export async function runAuthorOne(input: string, options: { multiPage?: boolean
   console.log(chalk.cyan.bold(`\n👤 Author Stats: fetching ${parsed.slug}${options.multiPage ? ' (full catalog crawl)' : ''}`));
 
   let failReason = 'no_stats_line';
-  const result = await scrapeAuthorStats(parsed.slug, (r) => { failReason = r; }, !!options.multiPage, undefined, !!options.withCookie);
+  let result: Awaited<ReturnType<typeof scrapeAuthorStats>>;
+  try {
+    result = await scrapeAuthorStats(parsed.slug, (r) => { failReason = r; }, !!options.multiPage, undefined, !!options.withCookie);
+  } catch (error) {
+    // Network went down — nothing to save for this single author.
+    if (isConnectivityError(error)) {
+      console.error(chalk.red.bold(`   🛑 Network error (${(error as any).code} — ${(error as any).message}) — not recorded as an author failure.`));
+      return;
+    }
+    throw error;
+  }
   if (!result) {
     console.log(chalk.yellow(`   ⚠️ No stats line found for ${parsed.slug}`));
     recordAuthorFailure(fallbackNameFromSlug(parsed.slug), failReason);

@@ -17,7 +17,7 @@ import { removeBookFromCache } from './removeBook.js';
 import { runCheckQueue } from './checkQueue.js';
 import { runSummaryByYear } from './summary.js';
 import { runSummaryRatings } from './summaryRatings.js';
-import { runRatingsHistogram } from './summaryHistogram.js';
+import { runRatingsHistogram, runRatingsCoverageHistogram } from './summaryHistogram.js';
 import { runBooksAddedHistogram } from './booksAddedHistogram.js';
 import { runRatingsByDateHistogram } from './ratingsByDateHistogram.js';
 import { runSummarySeriesPos } from './summarySeriesPos.js';
@@ -56,6 +56,7 @@ import { runBrowserBookScrape } from './browserBookScrape.js';
 import { runBrowserLogin } from './browserSession.js';
 import { runListWalker } from './listWalker.js';
 import { runListTagWalker } from './listTagWalker.js';
+import { runListPopularWalker } from './listPopularWalker.js';
 import { runListTagHarvest } from './listTagHarvest.js';
 import { runTagWalkBooks } from './tagWalkBooks.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
@@ -65,6 +66,7 @@ import { runYearInBooks } from './yearInBooks.js';
 import { runLifeInBooks } from './lifeInBooks.js';
 import { runFavoriteAuthors } from './favoriteAuthors.js';
 import { runPublisherStats } from './publisherStats.js';
+import { runPublisherCatalog } from './publisherCatalog.js';
 import { runShelfStats } from './shelfStats.js';
 import { runCommonMonitoredBooks } from './commonMonitoredBooks.js';
 import { runCommonUnreviewedMonitoredBooks } from './commonUnreviewedMonitoredBooks.js';
@@ -145,6 +147,17 @@ program
       await runRatingsHistogram({ onlyWorkId: options.onlyWorkId });
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate ratings histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('ratings-coverage-histogram')
+  .description('Ratings histogram split by coverage subset: ALL cached books vs books with a work id vs books present in the book_page field-coverage cache, with within-bracket coverage % (reveals whether coverage favors popular books)')
+  .action(async () => {
+    try {
+      await runRatingsCoverageHistogram();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate ratings coverage histogram:'), (error as any).message);
     }
   });
 
@@ -614,6 +627,7 @@ Examples:
   .option('--maxRatings <number>', 'Only consider authors with at most this many ratings')
   .option('--minAge <days>', 'Skip authors whose stats were last updated within this many days (default 0 = scrape everything)')
   .option('--rescanMissing', 'Target only authors with no stats yet')
+  .option('--rescanMissingField <field>', 'Target only authors that were author-page-scraped (avg set) but are missing a count field: ratings, reviews, or shelves. Skips never-scraped authors (use --rescanMissing for those). Use after parser fixes (e.g. a missed singular "1 rating") or when a field intermittently failed to parse. Default sort is --sortBy topRatings so popular-but-missed authors come first; --minRatings/--maxRatings then filter on the top-book rating.')
   .option('--multiPage', 'Target authors with null or ≥2 catalog pages (skip single-page catalogs); crawls all pages')
   .option('--onlyUntouched', 'With --multiPage, target only authors that have never been multi-page-crawled (no catalogPages yet). Use with --minAge 0 to grind exactly the remaining first-pass tail.')
   .option('--withCookie', 'Send the login cookie on author-page requests. Author pages need no auth, so crawls are anonymous by default and run faster; use this to opt back into cookie-authenticated pacing (GR_AUTHOR_DELAY_MS/GR_PAGE_DELAY_MS override delays; GR_USE_COOKIE=1 works too).')
@@ -811,6 +825,40 @@ Throttling: same 60s cooldown + 1 retry + 2-consecutive abort behavior as browse
   });
 
 program
+  .command('list-popular-walk')
+  .description('Walk the Listopia popular-lists directory (https://www.goodreads.com/list/popular_lists): read ONE directory page, crawl EACH list on it into the DB (books + authors), then advance to the next directory page. Enumeration and harvesting are interleaved — it never buffers all ~100 directory pages up front. Pass --dryRun to just list the lists instead of crawling.')
+  .addHelpText('after', `
+Examples:
+  $ ./listPopularWalk.sh                       (crawl every list in the directory)
+  $ ./listPopularWalk.sh --dryRun              (enumerate every list, crawl nothing)
+  $ ./listPopularWalk.sh --page-start 2        (start at directory page 2, read to the end)
+  $ ./listPopularWalk.sh --page-start 1 --page-end 3   (directory pages 1-3 only)
+  $ ./listPopularWalk.sh --skip-days 0         (harvest everything, ignore the window)
+  $ ./listPopularWalk.sh --list-max-pages 20   (cap each list's crawl at 20 pages)
+Skipping: lists fully scraped to the end within the last --skip-days days
+(default 7) are skipped; the list_scrapes table tracks list id, list name,
+first scraped, and last scraped. --list-max-pages crawls are partial and are
+NOT recorded as fully scraped. Set --skip-days 0 to disable skipping.`)
+  .option('--page-start <number>', 'Directory page to start at (default 1)', '1')
+  .option('--page-end <number>', 'Directory page to stop at, inclusive; default reads all pages to the end')
+  .option('--list-max-pages <number>', 'Stop each individual list crawl after this many pages (default: whole list)')
+  .option('--skip-days <number>', 'Skip lists whose last full scrape is younger than this many days (default 7; 0 = never skip)', '7')
+  .option('--dryRun', 'Enumerate the lists on each directory page but crawl none of them')
+  .action(async (options) => {
+    try {
+      await runListPopularWalker({
+        startPage: parseInt(options.pageStart, 10),
+        endPage: options.pageEnd !== undefined ? parseInt(options.pageEnd, 10) : undefined,
+        listMaxPages: options.listMaxPages !== undefined ? parseInt(options.listMaxPages, 10) : undefined,
+        skipDays: parseInt(options.skipDays, 10),
+        dryRun: options.dryRun,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run popular-lists walk:'), (error as any).message);
+    }
+  });
+
+program
   .command('walk-list-tag')
   .description('Walk the Listopia by-tag index (e.g. https://www.goodreads.com/list/tag/mjf): enumerate every list under the tag, then walk EACH list top-to-bottom in the logged-in headed browser, harvesting every book with the list-walk book engine (checkpoint/skip-has skipping, cooldown retries, pacing, --limit). Unlike list-tag-walk there is NO description-chain following — one tag, every list under it, then stop.')
   .addHelpText('after', `
@@ -956,7 +1004,10 @@ Examples:
   $ npm run books -- --title '^[jqx]'
   $ npm run books -- --authorLast '^sanderson'
   $ npm run books -- --authorFirst '^brandon' --sort year
-  $ npm run books -- --title 'space' --sort avgRating --minRatings 1000 --limit 50
+  $ npm run books -- --title 'space' --sort avgRatings --minRatings 1000 --limit 50
+  $ npm run books -- --sort numReviews --minRatings 1000 --limit 20
+  $ npm run books -- --sort numShelves --dedupe --limit 20
+  $ npm run books -- --sort reviewRatio --minRatings 50000 --limit 10
   $ npm run books -- '^j' --excludeReviewed          # uses cached library import
   $ npm run books -- '^j' --excludeReviewed --export ~/Downloads/goodreads_library_export.csv  # refresh cached import
   $ npm run books -- --import ~/Downloads/goodreads_library_export.csv   # import + validate + cache
@@ -964,8 +1015,9 @@ Examples:
   .option('--title <regex>', 'Match title against this regex')
   .option('--authorLast <regex>', 'Match first author\'s last name against this regex')
   .option('--authorFirst <regex>', 'Match first author\'s first name against this regex')
-  .option('--sort <field>', 'Sort by: ratings, avgRating, year, title, author (default ratings)', 'ratings')
+  .option('--sort <field>', 'Sort by: numRatings (or ratings), numReviews, avgRatings (or avgRating), numShelves, numTags, currentlyReading, toRead, editionCount, reviewRatio (reviews/ratings), year, title, author (default numRatings)', 'numRatings')
   .option('--limit <number>', 'Maximum number of books to show (default 100)', '100')
+  .option('--dedupe', 'Collapse editions of the same work to one row (uses books.is_work_rep); books with no work_id each stand alone')
   .option('--minRatings <number>', 'Only include books with at least this many ratings')
   .option('--maxRatings <number>', 'Only include books with at most this many ratings')
   .option('--minYear <year>', 'Only include books published in or after this year')
@@ -1022,6 +1074,8 @@ Examples:
   $ npm run year-in-books -- 2026 --requireReviews  # only books with review text
   $ npm run year-in-books -- 2026 --live  # current year only: also sync recent reads from the live review-list page (catch-up since last CSV export)
   $ npm run year-in-books -- 2026 --userId 5464134  # someone else's profile: build the whole year from their public review-list page — no CSV needed
+  $ npm run year-in-books -- 2026 --vote  # genre section: each book votes once for the genre whose tag holds it at the best shelf position
+  $ npm run year-in-books -- 2026 --voteBooks picture-books  # also list the books that voted for that genre (implies --vote)
   $ ./year-in-books.sh 2026`)
   .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
@@ -1029,6 +1083,8 @@ Examples:
   .option('--requireReviews', 'Only count books that also have review text (default: any book with a Date Read in the year)')
   .option('--live', 'Current year only: walk the live review-list page (shelf=read) until it catches up to your last CSV export, and add any books read since then. Needs the stored login cookie + user id.')
   .option('--userId <id>', 'Build the year from someone else\'s review-list page (read_at=YYYY) instead of a CSV export. Uses the stored login cookie (Goodreads redirects anonymous review-list requests to a Sign-in page). Publisher data is unavailable from the review-list page.')
+  .option('--vote', 'In the Tags section, also show a "best-position vote" genre view: each book votes once, for the canonical genre whose tag holds the book at the lowest position on its shelf — instead of the union count. Requires tag_books rows with shelf positions (a tag walk).')
+  .option('--voteBooks <genre>', 'With --vote: also list the books that voted for a specific genre (e.g. picture-books), each with its full ranked genre list. Accepts a tag name or canonical genre name. Implies --vote.')
   .action(async (year, options) => {
     try {
       await runYearInBooks({ ...options, year, export: options.export || options.import });
@@ -1045,12 +1101,16 @@ Examples:
   $ npm run life-in-books
   $ npm run life-in-books --export ~/Downloads/goodreads_library_export.csv  # refresh cache first
   $ npm run life-in-books --requireReviews  # only books with review text
+  $ npm run life-in-books --vote  # genre section: each book votes once for the genre whose tag holds it at the best shelf position
+  $ npm run life-in-books --voteBooks picture-books  # also list the books that voted for that genre (implies --vote)
   $ ./life-in-books.sh
   $ npm run life-in-books -- --library friend --export ~/Downloads/friends_library_export.csv  # someone else's export`)
   .option('--library <name>', 'Use a named library cache (e.g. --library friend) instead of the default, so multiple people\'s exports don\'t overwrite each other')
   .option('--export <path>', 'Path to a Goodreads library export CSV to import + cache (e.g. ~/Downloads/goodreads_library_export.csv)')
   .option('--import <path>', 'Alias for --export: imports + caches your Goodreads library export CSV')
   .option('--requireReviews', 'Only count books that also have review text (default: any book with a Date Read)')
+  .option('--vote', 'In the Tags section, also show a "best-position vote" genre view: each book votes once, for the canonical genre whose tag holds the book at the lowest position on its shelf — instead of the union count. Requires tag_books rows with shelf positions (a tag walk).')
+  .option('--voteBooks <genre>', 'With --vote: also list the books that voted for a specific genre (e.g. picture-books), each with its full ranked genre list. Accepts a tag name or canonical genre name. Implies --vote.')
   .action(async (options) => {
     try {
       await runLifeInBooks({ ...options, export: options.export || options.import });
@@ -1081,6 +1141,27 @@ Examples:
       await runFavoriteAuthors({ ...options, export: options.export || options.import });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run favorite authors:'), (error as any).message);
+    }
+  });
+
+program
+  .command('publisher-catalog')
+  .description('Top publishers by number of books or by average star rating, computed from the cached books + browser book-page scrapes (publisher lives in book_page). Editions of the same work collapse into one work per publisher. Use --minRatings to only count works with at least that many ratings, and --minBooks to skip publishers with too few works.')
+  .addHelpText('after', `
+Examples:
+  $ ./publisherCatalog.sh                          # publishers by # works
+  $ ./publisherCatalog.sh --sortBy avgRating --minRatings 1000 --minBooks 5
+  $ ./publisherCatalog.sh --sortBy totalRatings --limit 20
+  $ npm run publisher-catalog -- --minBooks 3 --limit 30`)
+  .option('--limit <number>', 'Number of top publishers to show (default 25)', '25')
+  .option('--sortBy <field>', 'Sort: books (default), avgRating, totalRatings', 'books')
+  .option('--minRatings <number>', 'Only count works with at least this many ratings (default 0)', '0')
+  .option('--minBooks <number>', 'Minimum number of works a publisher must have (default 1)', '1')
+  .action(async (options) => {
+    try {
+      await runPublisherCatalog(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run publisher catalog:'), (error as any).message);
     }
   });
 
@@ -1620,6 +1701,8 @@ program
   .option('--limit <number>', 'Top-K genres to show per tag (default 5)', '5')
   .option('--minBooks <number>', 'Only consider non-genre tags with >= this many books (default 0)')
   .option('--maxResults <number>', 'Max non-genre tags to report (default all)')
+  .option('--minJaccard <percent>', 'Only show a tag whose best genre match is >= this %; list only matches at/above it (default 0 = show all tags)')
+  .option('--loadXref <percent>', 'Incrementally sync the tag→genre xref rows (kind=similarity): insert new mappings, re-point changed ones, drop rows now below this % Jaccard — reporting each add/change/remove, then exit (curated exact/cognate mappings are preserved)')
   .action(async (options) => {
     try {
       computeTagPairings(options);
@@ -1725,7 +1808,7 @@ program
 
 program
   .command('backup')
-  .description('Backup the SQLite database via its consistent-snapshot backup API (keeps last 7 daily backups)')
+  .description('Backup the SQLite database (WAL checkpoint + instant COW clone, falling back to the backup API; keeps last 7 daily backups)')
   .action(async () => {
     try {
       await backupDb();

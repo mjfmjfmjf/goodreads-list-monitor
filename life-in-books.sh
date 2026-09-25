@@ -10,5 +10,6 @@
 #   ./life-in-books.sh --requireReviews
 #   ./life-in-books.sh --export ~/Downloads/goodreads_library_export.csv
 #   ./life-in-books.sh --library friend --export ~/Downloads/friends_library_export.csv
+#   ./life-in-books.sh --vote  # genre section: each book votes once for its best shelf-position genre
 # Run ./life-in-books.sh --help for full details.
 npm run life-in-books -- "$@"

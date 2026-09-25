@@ -2,6 +2,7 @@ import { createGunzip } from 'node:zlib';
 import { createReadStream, openSync, readSync, closeSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import chalk from 'chalk';
+import { recomputeWorkReps } from './db.js';
 
 // Importer for the sanitized CSV+gzip exports produced by exportData.
 // Policy (per existing merge conventions in storage.ts):
@@ -387,6 +388,9 @@ export async function importBooksFile(
     }
   });
   if (batch.length) commit(batch);
+  // The bulk merge can introduce new works / raise existing reps' ratings, so
+  // recompute the representative flags from scratch (offline, single UPDATE).
+  recomputeWorkReps(db);
   return { total };
 }
 

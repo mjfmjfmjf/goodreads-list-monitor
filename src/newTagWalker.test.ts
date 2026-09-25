@@ -90,6 +90,38 @@ describe('runNewTagWalker', () => {
     // stamps tags[grilling]=42 on the book row (the discovery "usual way")
     const stamped = getBook('111')!;
     expect(stamped.tags).toEqual({ grilling: 42 });
+    // new shelf book (222) is synced into the cache and stamped too
+    const inserted = getBook('222')!;
+    expect(inserted.tags).toEqual({ medicine: 7 });
+  });
+
+  it('reports per-tag book and author adds in the end-of-tag line', async () => {
+    mockTopShelves.mockResolvedValueOnce(['brand-new']).mockResolvedValueOnce([]);
+    mockShelfBooks.mockResolvedValueOnce([
+      {
+        ...book('333', '80'),
+        author: 'Mint New Author',
+        authorId: '999',
+        authorSlug: '999.Mint_New_Author',
+        position: 1,
+        tagCount: 3,
+      },
+    ]);
+
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => logs.push(args.map(String).join(' ')));
+    try {
+      await runNewTagWalker({});
+    } finally {
+      spy.mockRestore();
+    }
+
+    const tagLine = logs.find(l => l.includes('✅ "brand-new"'));
+    expect(tagLine).toMatch(/1 books scraped.*\+1 new in cache.*\+1 authors/);
+    expect(getBook('333')).toBeTruthy();
+    const authors = getDb().prepare('SELECT * FROM authors WHERE name = ?').get('Mint New Author') as any;
+    expect(authors).toBeTruthy();
+    expect(authors.id).toBe('999');
   });
 
   it('dry run lists new tags without scraping', async () => {

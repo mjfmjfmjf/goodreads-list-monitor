@@ -9,6 +9,8 @@ interface PeriodBucket {
   end: string; // ISO date 'YYYY-MM-DD' (inclusive)
   added: number;
   total: number;
+  avgRatings: number;
+  maxRatings: number;
 }
 
 // Most recent Monday on or before `date`, as an ISO date string.
@@ -30,7 +32,7 @@ export function dayBuckets(n: number, todayIso: string = new Date().toISOString(
     const d = new Date(`${todayIso}T00:00:00Z`);
     d.setUTCDate(d.getUTCDate() - i);
     const iso = d.toISOString().slice(0, 10);
-    out.push({ label: iso, start: iso, end: iso, added: 0, total: 0 });
+    out.push({ label: iso, start: iso, end: iso, added: 0, total: 0, avgRatings: 0, maxRatings: 0 });
   }
   return out;
 }
@@ -45,7 +47,7 @@ export function weekBuckets(n: number, todayIso: string = new Date().toISOString
     const end = new Date(start);
     end.setUTCDate(end.getUTCDate() + 6);
     const startIso = start.toISOString().slice(0, 10);
-    out.push({ label: startIso, start: startIso, end: end.toISOString().slice(0, 10), added: 0, total: 0 });
+    out.push({ label: startIso, start: startIso, end: end.toISOString().slice(0, 10), added: 0, total: 0, avgRatings: 0, maxRatings: 0 });
   }
   return out;
 }
@@ -58,7 +60,7 @@ export function monthBuckets(n: number, todayIso: string = new Date().toISOStrin
     const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
     const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0));
     const startIso = start.toISOString().slice(0, 7) + '-01';
-    out.push({ label: startIso.slice(0, 7), start: startIso, end: end.toISOString().slice(0, 10), added: 0, total: 0 });
+    out.push({ label: startIso.slice(0, 7), start: startIso, end: end.toISOString().slice(0, 10), added: 0, total: 0, avgRatings: 0, maxRatings: 0 });
   }
   return out;
 }
@@ -91,10 +93,11 @@ export function runBooksAddedHistogram(options: { days?: number; weeks?: number;
 
   // Grouped additions within the window, keyed by the padded bucket-start date.
   const grouped = db.prepare(
-    `SELECT date(first_seen) AS d, COUNT(*) AS c FROM books
+    `SELECT date(first_seen) AS d, COUNT(*) AS c, SUM(ratings) AS sr, MAX(ratings) AS mr
+     FROM books
      WHERE first_seen IS NOT NULL AND first_seen != '' AND first_seen >= ? AND date(first_seen) <= ?
      GROUP BY date(first_seen)`
-  ).all(windowStart, buckets[buckets.length - 1].end) as { d: string; c: number }[];
+  ).all(windowStart, buckets[buckets.length - 1].end) as { d: string; c: number; sr: number; mr: number }[];
 
   const dayToBucket = new Map<string, PeriodBucket>();
   for (const b of buckets) {
@@ -105,10 +108,19 @@ export function runBooksAddedHistogram(options: { days?: number; weeks?: number;
       d.setUTCDate(d.getUTCDate() + 1);
     }
   }
+  // Total ratings across books added in each bucket (for the per-period avg).
+  const ratingSum = new Map<string, number>();
   for (const r of grouped) {
     const key = unit === 'month' ? r.d.slice(0, 7) : r.d;
     const b = dayToBucket.get(key);
-    if (b) b.added += r.c;
+    if (b) {
+      b.added += r.c;
+      ratingSum.set(key, (ratingSum.get(key) ?? 0) + r.sr);
+      b.maxRatings = Math.max(b.maxRatings, r.mr);
+    }
+  }
+  for (const b of buckets) {
+    b.avgRatings = b.added > 0 ? Math.round((ratingSum.get(unit === 'month' ? b.label : b.start) ?? 0) / b.added) : 0;
   }
 
   // Running cumulative: books first seen anywhere before this period, plus all
@@ -128,7 +140,10 @@ export function runBooksAddedHistogram(options: { days?: number; weeks?: number;
   const AW = Math.max(5, ...buckets.map(b => formatNum(b.added).length)); // header: ADDED
   const TW = Math.max(5, ...buckets.map(b => formatNum(b.total).length)); // header: TOTAL
   const PW = Math.max(5, ...buckets.map(b => pctOf(b.total).length)); // header: OF DB
-  const rule = '-'.repeat(LW + AW + TW + PW + 3 * 3);
+  const avgW = (w: number): string => w.toLocaleString('en-US');
+  const AVW = Math.max(9, ...buckets.map(b => avgW(b.avgRatings).length)); // header: AVG RTG
+  const MXW = Math.max(9, ...buckets.map(b => formatNum(b.maxRatings).length)); // header: MAX RTG
+  const rule = '-'.repeat(LW + AW + TW + PW + AVW + MXW + 5 * 3);
 
   console.log();
   console.log(chalk.cyan.bold('Books in the DB by first-seen period'));
@@ -138,7 +153,9 @@ export function runBooksAddedHistogram(options: { days?: number; weeks?: number;
     chalk.white('PERIOD'.padEnd(LW) + ' | ' +
       'ADDED'.padStart(AW) + ' | ' +
       'TOTAL'.padStart(TW) + ' | ' +
-      'OF DB'.padStart(PW))
+      'OF DB'.padStart(PW) + ' | ' +
+      'AVG RTG'.padStart(AVW) + ' | ' +
+      'MAX RTG'.padStart(MXW))
   );
   console.log(chalk.gray(rule));
 
@@ -146,9 +163,11 @@ export function runBooksAddedHistogram(options: { days?: number; weeks?: number;
     const added = formatNum(b.added).padStart(AW);
     const total = formatNum(b.total).padStart(TW);
     const pct = pctOf(b.total).padStart(PW);
-    const addedColored = b.added > 0 ? chalk.yellow(added) : chalk.gray(added);
+    const avgCol = b.added > 0 ? chalk.green(avgW(b.avgRatings).padStart(AVW)) : chalk.gray(avgW(0).padStart(AVW));
+    const maxCol = b.added > 0 ? chalk.yellow(formatNum(b.maxRatings).padStart(MXW)) : chalk.gray('—'.padStart(MXW));
+    const addedColored = b.added > 0 ? chalk.white(added) : chalk.gray(added);
     console.log(
-      `${chalk.white(b.label.padEnd(LW))} | ${addedColored} | ${chalk.magenta(total)} | ${chalk.cyan(pct)}`
+      `${chalk.white(b.label.padEnd(LW))} | ${addedColored} | ${chalk.magenta(total)} | ${chalk.cyan(pct)} | ${avgCol} | ${maxCol}`
     );
   }
 
@@ -157,6 +176,7 @@ export function runBooksAddedHistogram(options: { days?: number; weeks?: number;
   console.log(chalk.gray(
     `   ${formatNum(totalsAdded)} added in the window · ${formatNum(beforeWindow)} predate the window (cumulative, not in-window counts)`
   ));
+  console.log(chalk.gray(`   AVG RTG / MAX RTG: average and max ratings among the books ADDED that period (not cumulative)`));
   if (missing > 0) {
     console.log(chalk.gray(`   First-seen unknown for ${formatNum(missing)} books (${pctOf(missing)} of DB) — excluded from the totals above`));
   }

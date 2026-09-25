@@ -85,35 +85,35 @@
   },
   {
     "nickname": "2017 Average Rating of 4.50 and above with at least 1000 ratings",
-    "officialTitle": "2017 Average Rating of 4.40 and above with at least 1000 ratings",
+    "officialTitle": "2017 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "418349",
     "url": "https://www.goodreads.com/list/show/418349",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2017,
       "maxYear": 2017
     }
   },
   {
-    "nickname": "2018 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2018 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2018 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2018 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "418303",
     "url": "https://www.goodreads.com/list/show/418303",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2018,
       "maxYear": 2018
     }
   },
   {
-    "nickname": "2019 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2019 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2019 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2019 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "418261",
     "url": "https://www.goodreads.com/list/show/418261",
     "criteria": {
-      "minAvg": 4.40,
+      "minAvg": 4.50,
       "min": 1000,
       "minYear": 2019,
       "maxYear": 2019
@@ -132,8 +132,8 @@
     }
   },
   {
-    "nickname": "2021 Average Rating of 4.40 and above with at least 1000 ratings",
-    "officialTitle": "2021 Average Rating of 4.40 and above with at least 1000 ratings",
+    "nickname": "2021 Average Rating of 4.50 and above with at least 1000 ratings",
+    "officialTitle": "2021 Average Rating of 4.50 and above with at least 1000 ratings",
     "id": "418217",
     "url": "https://www.goodreads.com/list/show/418205",
     "criteria": {

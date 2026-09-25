@@ -212,14 +212,14 @@ export function parseBookFromCopyPasteBuffer(input: string, bookId: string): Par
 
   // 4. Extract Avg Rating & Ratings count from anywhere in the text
   if (!result.avgRating) {
-    const avgMatch = trimmed.match(/(?:avg rating|average rating|rating:?)\s*([0-5]\.\d{1,2})|([0-5]\.\d{1,2})\s*(?:avg rating|average rating|rating|\d+\s*ratings|\d+\s*reviews)?/i);
+    const avgMatch = trimmed.match(/(?:avg rating|average rating|rating:?)\s*([0-5]\.\d{1,2})|([0-5]\.\d{1,2})\s*(?:avg rating|average rating|rating|\d+\s*ratings?|\d+\s*reviews?)?/i);
     if (avgMatch) {
       result.avgRating = sanitizeAvgRating(avgMatch[1] || avgMatch[2]);
     }
   }
 
   if (!result.ratings) {
-    const ratMatch = trimmed.match(/([\d,]+)\s*ratings/i);
+    const ratMatch = trimmed.match(/([\d,]+)\s*ratings?/i);
     if (ratMatch) {
       result.ratings = sanitizeRatings(ratMatch[1]);
     }

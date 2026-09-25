@@ -15,7 +15,7 @@ import {
   parseYear,
   CharField
 } from './library.js';
-import { getBook, loadTagBooks } from './storage.js';
+import { getBook, loadGenreTagXref, loadTagBooks } from './storage.js';
 import type { BookCache, TagBookRow } from './storage.js';
 import { getYear, formatBookLink } from './utils.js';
 import { groupFavoriteAuthors } from './favoriteAuthors.js';
@@ -29,6 +29,8 @@ export interface YearInBooksOptions {
   requireReviews?: boolean;
   live?: boolean;
   userId?: string;
+  vote?: boolean;
+  voteBooks?: string;
 }
 
 const CHAR_FIELDS: CharField[] = ['title', 'authorLast', 'authorFirst'];
@@ -53,6 +55,8 @@ export interface SectionContext {
   entries: LibraryEntry[];
   bookCache: BookCache;
   reviewYear: number;
+  voteGenres?: boolean;
+  voteBooks?: string;
 }
 
 export interface Section {
@@ -395,19 +399,248 @@ export function computeTagCounts(entries: LibraryEntry[], tagRows: TagBookRow[])
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
+const TOP_TAGS = 100;
+const TOP_GENRE_TAGS = 100;
+const TOP_VOTE_BOOKS = 100;
+
+export interface GenreVoteRow {
+  genre: string;
+  votes: number;
+  pct: number;
+}
+
+export interface GenreVoteDetail {
+  genre: string;
+  tag?: string; // the tag that gave the winning best position (positioned vote only)
+  position?: number; // the winning best position (lower = stronger; positioned vote only)
+  fallback?: boolean; // true when the vote came from books.genres[0] (no positioned genre tag)
+}
+
+// Normalize a genre/tag name for canonical-genre matching: lowercased,
+// non-alphanumerics stripped (e.g. "Picture Books" -> "picturebooks",
+// "middle-grade" -> "middlegrade").
+export function normalizeGenreName(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Maps any genre-like name to a canonical genre name so book-page display
+// strings ("Picture Books") and xref slugs ("picture-books"/"picture-book")
+// all fold into one vote bucket. Keyed by normalized name.
+export function buildCanonicalGenreLookup(xrefTagToGenre: Map<string, string>): Map<string, string> {
+  const lookup = new Map<string, string>();
+  for (const [tag, genre] of xrefTagToGenre) {
+    lookup.set(normalizeGenreName(tag), genre);
+    lookup.set(normalizeGenreName(genre), genre);
+  }
+  return lookup;
+}
+
+// Best-position genre voting: each book casts ONE vote, for the canonical
+// genre whose tag holds the book at the lowest position on its shelf
+// (position = rank on that tag's shelf at harvest time; 1 = most central).
+// A genre's "strength" for a book is the best (lowest) position among all the
+// book's tags that map to it. Ties break by more distinct mapping tags, then
+// alphabetically. Books with no genre-mapped tag carrying a shelf position
+// fall back to the first entry in the book's own genre column (books.genres[0],
+// as scraped from the book page) so they still get a vote.
+export function computeGenreVoteByBook(
+  entries: LibraryEntry[],
+  tagRows: TagBookRow[],
+  xrefTagToGenre: Map<string, string>,
+  bookCache?: BookCache
+): Map<string, GenreVoteDetail> {
+  const rowsByBook = new Map<string, TagBookRow[]>();
+  for (const row of tagRows) {
+    if (!xrefTagToGenre.has(row.tagName)) continue;
+    let arr = rowsByBook.get(row.bookId);
+    if (!arr) {
+      arr = [];
+      rowsByBook.set(row.bookId, arr);
+    }
+    arr.push(row);
+  }
+
+  const canonicalLookup = buildCanonicalGenreLookup(xrefTagToGenre);
+
+  const byBook = new Map<string, GenreVoteDetail>();
+  for (const entry of entries) {
+    const rows = rowsByBook.get(entry.id);
+    let winner: GenreVoteDetail | undefined;
+
+    if (rows && rows.length > 0) {
+      const candidates = new Map<string, { best: number; tagCount: number; bestTag: string }>();
+      for (const row of rows) {
+        const genre = xrefTagToGenre.get(row.tagName)!;
+        let c = candidates.get(genre);
+        if (!c) {
+          c = { best: Infinity, tagCount: 0, bestTag: '' };
+          candidates.set(genre, c);
+        }
+        c.tagCount++;
+        if (row.position !== undefined && row.position !== null) {
+          if (row.position < c.best) {
+            c.best = row.position;
+            c.bestTag = row.tagName;
+          } else if (row.position === c.best && row.tagName < c.bestTag) {
+            c.bestTag = row.tagName;
+          }
+        }
+      }
+
+      let bestGenre = '';
+      let bestKey: number = Infinity;
+      let bestTagCount: number = 0;
+      for (const [genre, c] of candidates) {
+        if (c.best === Infinity) continue; // no positioned tag for this genre
+        const key = c.best;
+        if (
+          bestGenre === '' ||
+          key < bestKey ||
+          (key === bestKey && c.tagCount > bestTagCount) ||
+          (key === bestKey && c.tagCount === bestTagCount && genre < bestGenre)
+        ) {
+          bestGenre = genre;
+          bestKey = key;
+          bestTagCount = c.tagCount;
+        }
+      }
+      if (bestGenre) {
+        const c = candidates.get(bestGenre)!;
+        winner = { genre: bestGenre, tag: c.bestTag, position: c.best };
+      }
+    }
+
+    if (!winner && bookCache) {
+      const genres = bookCache[entry.id]?.genres;
+      if (genres && genres.length > 0) {
+        const fallbackGenre = canonicalLookup.get(normalizeGenreName(genres[0])) || genres[0];
+        winner = { genre: fallbackGenre, fallback: true };
+      }
+    }
+
+    if (winner) byBook.set(entry.id, winner);
+  }
+  return byBook;
+}
+
+export function computeGenreVotes(
+  entries: LibraryEntry[],
+  tagRows: TagBookRow[],
+  xrefTagToGenre: Map<string, string>,
+  bookCache?: BookCache
+): GenreVoteRow[] {
+  const byBook = computeGenreVoteByBook(entries, tagRows, xrefTagToGenre, bookCache);
+  const counts = new Map<string, number>();
+  for (const detail of byBook.values()) counts.set(detail.genre, (counts.get(detail.genre) || 0) + 1);
+
+  const total = entries.length;
+  return Array.from(counts.entries())
+    .map(([genre, votes]) => ({ genre, votes, pct: total > 0 ? (votes / total) * 100 : 0 }))
+    .sort((a, b) => b.votes - a.votes || a.genre.localeCompare(b.genre));
+}
+
 export function renderTags(ctx: SectionContext): string[] {
   const rows = loadTagBooks();
   const tags = computeTagCounts(ctx.entries, rows);
   const taggedBooks = new Set(rows.map(r => r.bookId));
+  const xrefTagToGenre = new Map(loadGenreTagXref().map((x): [string, string] => [x.tagName, x.genreName]));
 
-  if (tags.length === 0) return [chalk.gray('   (no tags found for books read this year)')];
-
-  const covered = ctx.entries.filter(e => taggedBooks.has(e.id)).length;
   const lines: string[] = [];
-  lines.push(`   ${chalk.white(tags.length.toLocaleString())} distinct tags across ${chalk.white(covered.toLocaleString())} of ${chalk.white(ctx.entries.length.toLocaleString())} books`);
+  if (tags.length === 0) {
+    lines.push(chalk.gray('   (no tags found for these books)'));
+  } else {
+    const covered = ctx.entries.filter(e => taggedBooks.has(e.id)).length;
+    const truncated = tags.length > TOP_TAGS;
+    lines.push(`   ${chalk.white(tags.length.toLocaleString())} distinct tags across ${chalk.white(covered.toLocaleString())} of ${chalk.white(ctx.entries.length.toLocaleString())} books${truncated ? chalk.gray(` — showing top ${TOP_TAGS}`) : ''}`);
+    lines.push(chalk.gray(DIVIDER));
+    tags.slice(0, TOP_TAGS).forEach(({ tag, count, pct }, i) => {
+      lines.push(`   ${String(i + 1).padStart(3, ' ')}. ${chalk.white(tag)}: ${chalk.yellow(count.toLocaleString())} (${pct.toFixed(1)}%)`);
+    });
+  }
+
+  // Tags the reader's books carry that also map to a canonical genre via
+  // genre_tag_xref (tag_name -> genre_name, kind=exact|cognate). Aliases fold
+  // into the canonical genre: a genre's count is the UNION of books carrying
+  // any of that genre's tags — the same rule the genre-tag follow-up uses.
+  const genreBooks = new Map<string, { books: Set<string>; tagNames: Set<string> }>();
+  const entryIds = new Set(ctx.entries.map(e => e.id));
+  for (const row of rows) {
+    const genre = xrefTagToGenre.get(row.tagName);
+    if (!genre || !entryIds.has(row.bookId)) continue;
+    let g = genreBooks.get(genre);
+    if (!g) {
+      g = { books: new Set(), tagNames: new Set() };
+      genreBooks.set(genre, g);
+    }
+    g.books.add(row.bookId);
+    g.tagNames.add(row.tagName);
+  }
+
   lines.push(chalk.gray(DIVIDER));
-  for (const { tag, count, pct } of tags) {
-    lines.push(`   ${chalk.white(tag)}: ${chalk.yellow(count.toLocaleString())} (${pct.toFixed(1)}%)`);
+  if (genreBooks.size === 0) {
+    lines.push(chalk.gray('   (no tags map to a canonical genre yet — seed/import genre_tag_xref to see genre coverage)'));
+  } else {
+    const genreTags = Array.from(genreBooks.entries())
+      .map(([genre, g]) => ({ genre, count: g.books.size, tags: g.tagNames.size }))
+      .sort((a, b) => b.count - a.count || a.genre.localeCompare(b.genre));
+
+    const genreTruncated = genreTags.length > TOP_GENRE_TAGS;
+    lines.push(chalk.white.bold(`   Genres (folding tag aliases)${genreTruncated ? chalk.gray(` (showing top ${TOP_GENRE_TAGS} of ${genreTags.length})`) : ''}:`));
+    genreTags.slice(0, TOP_GENRE_TAGS).forEach(({ genre, count, tags }, i) => {
+      const pct = (count / ctx.entries.length) * 100;
+      const via = tags > 1 ? chalk.gray(` (${tags} tags)`) : '';
+      lines.push(`   ${String(i + 1).padStart(3, ' ')}. ${chalk.white(genre)}: ${chalk.yellow(count.toLocaleString())} (${pct.toFixed(1)}%)${via}`);
+    });
+  }
+
+  if (ctx.voteGenres) {
+    const votes = computeGenreVotes(ctx.entries, rows, xrefTagToGenre, ctx.bookCache);
+    const bookDetails = computeGenreVoteByBook(ctx.entries, rows, xrefTagToGenre, ctx.bookCache);
+    const noVote = ctx.entries.filter(e => !bookDetails.has(e.id)).length;
+    lines.push(chalk.gray(DIVIDER));
+    if (votes.length === 0) {
+      lines.push(chalk.gray(`   (no book has a voted genre — run a tag walk to harvest positions or scrape book-page genres, then retry)`));
+    } else {
+      const genreVoteTruncated = votes.length > TOP_GENRE_TAGS;
+      lines.push(chalk.white.bold(`   Genres (best-position vote — each book votes once)${genreVoteTruncated ? chalk.gray(` (showing top ${TOP_GENRE_TAGS} of ${votes.length})`) : ''}:`));
+      votes.slice(0, TOP_GENRE_TAGS).forEach(({ genre, votes, pct }, i) => {
+        lines.push(`   ${String(i + 1).padStart(3, ' ')}. ${chalk.white(genre)}: ${chalk.yellow(votes.toLocaleString())} (${pct.toFixed(1)}%)`);
+      });
+      lines.push(chalk.gray(`   ${noVote.toLocaleString()} of ${ctx.entries.length.toLocaleString()} books had no voted genre`));
+
+      // When --voteBooks is given, resolve the target to a canonical genre
+      // (tag name → genre via xref, or use the value directly as a genre name)
+      // and list the books whose vote went to it, with the driving tag+position.
+      if (ctx.voteBooks) {
+        const target = xrefTagToGenre.get(ctx.voteBooks) || ctx.voteBooks;
+        const targetVotes = votes.find(v => v.genre === target);
+        lines.push(chalk.gray(DIVIDER));
+        if (!targetVotes || targetVotes.votes === 0) {
+          lines.push(chalk.gray(`   (no book voted for "${target}" — check the genre list above for a valid name)`));
+        } else {
+          const books = ctx.entries
+            .map(e => ({ entry: e, detail: bookDetails.get(e.id) }))
+            .filter(x => x.detail && x.detail.genre === target)
+            .sort((a, b) =>
+              (a.detail!.position ?? Infinity) - (b.detail!.position ?? Infinity) ||
+              a.entry.title.localeCompare(b.entry.title)
+            );
+          const truncatedBooks = books.length > TOP_VOTE_BOOKS;
+          lines.push(chalk.white.bold(`   Books that voted for "${chalk.white(target)}" (${chalk.yellow(books.length.toLocaleString())})${truncatedBooks ? chalk.gray(` — showing first ${TOP_VOTE_BOOKS}`) : ''}:`));
+          books.slice(0, TOP_VOTE_BOOKS).forEach(({ entry, detail }, i) => {
+            const via = detail!.position !== undefined && detail!.position !== null
+              ? chalk.gray(` via ${detail!.tag} @ pos ${detail!.position}`)
+              : chalk.gray(' via book-page genre (no positioned tag)');
+            lines.push(`   ${String(i + 1).padStart(3, ' ')}. ${chalk.white(entry.title)} — ${chalk.white(entry.author)} (${chalk.gray(entry.dateRead)})${via}`);
+            const book = ctx.bookCache[entry.id];
+            const pageGenres = book?.genres;
+            if (pageGenres && pageGenres.length > 0) {
+              lines.push(`        ${chalk.gray('book page genres: ')}${chalk.white(pageGenres.join(', '))}`);
+            }
+          });
+        }
+      }
+    }
   }
   return lines;
 }
@@ -546,7 +779,7 @@ export async function runYearInBooks(options: YearInBooksOptions = {}): Promise<
     const book = getBook(entry.id);
     if (book) bookCache[entry.id] = book;
   }
-  const ctx: SectionContext = { entries, bookCache, reviewYear: parseInt(year, 10) };
+  const ctx: SectionContext = { entries, bookCache, reviewYear: parseInt(year, 10), voteGenres: options.vote === true || options.voteBooks !== undefined, voteBooks: options.voteBooks };
   const allDated = library.entries.filter(e => /^\d{4}\//.test(e.dateRead));
   const perDay: PerDayContext = { year: parseInt(year, 10), allEntries: allDated };
   const sections: Section[] = [

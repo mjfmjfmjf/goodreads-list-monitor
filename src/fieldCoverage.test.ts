@@ -82,4 +82,31 @@ describe('runFieldCoverage', () => {
     expect(zeroLine).toContain('1');
     expect(zeroLine).toContain('0 ratings');
   });
+
+  it('prints the list_scrapes ledger section when the table exists', async () => {
+    const db = getDb();
+    const ins = db.prepare(
+      'INSERT INTO list_scrapes (list_id, list_name, first_scraped, last_scraped) VALUES (?, ?, ?, ?)'
+    );
+    ins.run('1', 'A', '2026-09-09T10:00:00Z', '2026-09-09T10:00:00Z');
+    ins.run('2', 'B', '2026-09-10T10:00:00Z', '2026-09-12T10:00:00Z');
+
+    chalk.level = 0;
+    const out = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runFieldCoverage();
+    const lines = out.mock.calls.map((c) => c.join(' '));
+    out.mockRestore();
+
+    const header = lines.find((l) => l.includes('List-tag walk ledger coverage'));
+    expect(header).toBeTruthy();
+    const total = lines.find((l) => l.includes('total lists'));
+    expect(total).toContain('2');
+    const rescraped = lines.find((l) => l.includes('re-scraped'));
+    expect(rescraped).toContain('1');
+    const range = lines.find((l) => l.includes('first scrape range'));
+    expect(range).toContain('09-09');
+    expect(range).toContain('09-10');
+    const latest = lines.find((l) => l.includes('latest scrape'));
+    expect(latest).toContain('09-12');
+  });
 });

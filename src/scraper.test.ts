@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as cheerio from 'cheerio';
-import { extractAuthorId, acceptAuthorListMatch, findOnAuthorPage, extractShelfPageLinks, isPermanentAuthorPageFailure, parseTagListPage } from './scraper.js';
+import { extractAuthorId, acceptAuthorListMatch, findOnAuthorPage, extractShelfPageLinks, isPermanentAuthorPageFailure, parseTagListPage, parseAuthorStats } from './scraper.js';
 
 describe('extractAuthorId', () => {
   it('returns the bare id as-is', () => {
@@ -186,5 +186,48 @@ describe('findOnAuthorPage', () => {
   it('prefers id over title when both are present', () => {
     const hit = findOnAuthorPage('100', null, books);
     expect(hit?.id).toBe('100');
+  });
+});
+
+describe('parseAuthorStats', () => {
+  // Mirrors the /author/list/<id> page header block (the page scrapeAuthorStats reads).
+  const statsBlock = `
+    <div class="leftContainer">
+      <a class="leftAlignedImage" href="/author/show/15199838.Michael_Astour"><img alt="Michael Astour"/></a>
+      <div class=""><a class="authorName" href="/author/show/15199838.Michael_Astour">Michael Astour</a><br/>
+        Average rating 5.00 &middot;
+        1 rating &middot;
+        0 reviews &middot;
+        shelved 15 times
+      </div>
+    </div>`;
+
+  it('parses plural counts and the singular "1 rating"/"1 review" forms', () => {
+    const stats = parseAuthorStats(cheerio.load(statsBlock));
+    expect(stats.name).toBe('Michael Astour');
+    expect(stats.slug).toBe('15199838.Michael_Astour');
+    expect(stats.averageRating).toBe('5.00');
+    expect(stats.numRatings).toBe('1');
+    expect(stats.numReviews).toBe('0');
+    expect(stats.numShelves).toBe('15');
+  });
+
+  it('also handles an "Average rating:" colon variant and large plural counts', () => {
+    const html = `
+      <div class="leftContainer">
+        <div class=""><a class="authorName" href="/author/show/22498219.Tom_Turtle">Tom Turtle</a><br/>
+          Average rating: 4.68 &middot; 228 ratings &middot; 0 reviews &middot; shelved 551 times
+        </div>
+      </div>`;
+    const stats = parseAuthorStats(cheerio.load(html));
+    expect(stats.averageRating).toBe('4.68');
+    expect(stats.numRatings).toBe('228');
+    expect(stats.numReviews).toBe('0');
+    expect(stats.numShelves).toBe('551');
+  });
+
+  it('returns just name/slug when the stats line is absent', () => {
+    const stats = parseAuthorStats(cheerio.load(`<div class="leftContainer"><a class="authorName" href="/author/show/1.A">A</a></div>`));
+    expect(stats).toEqual({ name: 'A', slug: '1.A' });
   });
 });

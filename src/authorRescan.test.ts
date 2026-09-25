@@ -131,3 +131,44 @@ describe('selectMultiPageAuthors', () => {
     expect(out.map((o) => o.name)).toEqual(['a1']);
   });
 });
+
+describe('selectMultiPageAuthors with missingField', () => {
+  const opts = { ...base, onlyUntouched: false };
+
+  it('selects scraped authors missing the target count field, skips others', () => {
+    const cache = {
+      missR: entry('1', { averageRating: '4.5', numRatings: '0', numReviews: '1', numShelves: '100' }),
+      hasR: entry('2', { averageRating: '4.5', numRatings: '5' }),
+      noAvg: entry('3', { numRatings: '0' }),
+      unscraped: entry('4'),
+    };
+    const out = selectMultiPageAuthors(cache, { ...opts, sortBy: 'numRatings', missingField: 'ratings' });
+    expect(out.map((o) => o.name)).toEqual(['missR']);
+  });
+
+  it('targets each requested field independently', () => {
+    const cache = {
+      noShelves: entry('1', { averageRating: '4.67', numRatings: '3', numReviews: '14', numShelves: '0' }),
+      noReviews: entry('2', { averageRating: '5.0', numRatings: '2', numReviews: '0', numShelves: '4408' }),
+      fine: entry('3', { averageRating: '4.2', numRatings: '9', numReviews: '2', numShelves: '50' }),
+    };
+    expect(selectMultiPageAuthors(cache, { ...opts, sortBy: 'numRatings', missingField: 'shelves' }).map(o => o.name)).toEqual(['noShelves']);
+    expect(selectMultiPageAuthors(cache, { ...opts, sortBy: 'numRatings', missingField: 'reviews' }).map(o => o.name)).toEqual(['noReviews']);
+    expect(selectMultiPageAuthors(cache, { ...opts, sortBy: 'numRatings', missingField: 'ratings' })).toEqual([]);
+  });
+
+  it('orders misses by top-book ratings and applies minRatings (topRatings sort)', () => {
+    const cache = {
+      small: entry('1', { averageRating: '4.0', numRatings: '0' }),
+      big: entry('2', { averageRating: '4.5', numRatings: '0' }),
+      withRatings: entry('3', { averageRating: '4.6', numRatings: '777' }),
+    };
+    const bookStats = {
+      '1': { topRatings: 5, newestYear: 2020, books: 1 },
+      '2': { topRatings: 5000, newestYear: 2020, books: 1 },
+      '3': { topRatings: 99999, newestYear: 2020, books: 1 },
+    };
+    const out = selectMultiPageAuthors(cache, { ...opts, sortBy: 'topRatings', bookStats, missingField: 'ratings' });
+    expect(out.map((o) => o.name)).toEqual(['big', 'small']);
+  });
+});

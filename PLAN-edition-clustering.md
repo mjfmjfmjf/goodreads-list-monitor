@@ -19,6 +19,15 @@ translated titles). Our books db stores each ID as an unrelated row, so:
 ## What exists today (2026/08)
 
 - `books.work_id TEXT` column (auto-migration in `db.ts`)
+- **`books.is_work_rep INTEGER` (2026/09/21)**: materialized de-duplicated
+  "representative edition" per distinct work_id (highest ratings, lowest id on
+  tie). Auto-migrated + backfilled in `db.ts`; kept fresh by `refreshWorkRep`
+  on `upsertBook` / `mergeBooksFromAuthorPage`; full `recomputeWorkReps` runs
+  after offline `importData`. Rows without a work_id never become reps.
+  Consumers can count each work exactly once via `WHERE is_work_rep = 1`
+  (indexed). The `ratings-coverage-histogram` command reports a WORKS column
+  from it. Clustering for books WITHOUT a work_id (normalizeTitle+authorId) is
+  still not started — those rows stay non-representative until then.
 - `extractWorkId()` in `scraper.ts` — parses `/work/editions/{id}` from HTML
 - Opportunistic capture: `scrapeBookDetails` (book-page path only — the
   author-page shortcut cannot see it) writes it via BookMetadata.workId

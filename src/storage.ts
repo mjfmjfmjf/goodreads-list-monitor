@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import { parseSeriesPos } from './seriesPos.js';
-import { getDb, TAG_PAGE_ESTIMATE_BACKFILL_SQL } from './db.js';
+import { getDb, refreshWorkRep, TAG_PAGE_ESTIMATE_BACKFILL_SQL } from './db.js';
 
 export interface ListState {
   title: string;
@@ -31,6 +31,7 @@ export interface CachedBook {
   failCount?: number;
   workId?: string;
   firstSeen?: string;
+  isWorkRep?: boolean;
 }
 
 export interface State {
@@ -130,6 +131,7 @@ function rowToBook(row: any): CachedBook {
     failCount: row.fail_count || undefined,
     workId: row.work_id || undefined,
     firstSeen: row.first_seen || undefined,
+    isWorkRep: row.is_work_rep === 1,
   };
 }
 
@@ -205,7 +207,9 @@ function bindBook(book: CachedBook) {
 }
 
 export function upsertBook(book: CachedBook): void {
-  getDb().prepare(BOOK_UPSERT_SQL).run(bindBook(book));
+  const db = getDb();
+  db.prepare(BOOK_UPSERT_SQL).run(bindBook(book));
+  if (book.workId) refreshWorkRep(db, book.workId);
 }
 
 export function getBook(id: string): CachedBook | undefined {
@@ -313,6 +317,7 @@ export function mergeBooksFromAuthorPage(books: AuthorPageBookRow[]): { inserted
         workId: b.workId || null,
         lastUpdated: b.lastUpdated,
       });
+      if (b.workId) refreshWorkRep(db, b.workId);
       result.updated++;
     } else {
       result.skipped++;
@@ -735,11 +740,13 @@ export function replaceGenreTagXref(genre: string, tags: Array<{ tagName: string
   let added = 0;
   let removed = 0;
   const tx = db.transaction(() => {
-    const existing = (db.prepare('SELECT tag_name FROM genre_tag_xref WHERE genre_name = ?').all(genre) as any[]).map((r: any) => r.tag_name);
+    const existingRows = (db.prepare('SELECT tag_name, kind FROM genre_tag_xref WHERE genre_name = ?').all(genre) as any[]);
     const want = new Set(tags.map(t => t.tagName));
-    for (const e of existing) {
-      if (!want.has(e)) {
-        db.prepare('DELETE FROM genre_tag_xref WHERE genre_name = ? AND tag_name = ?').run(genre, e);
+    // Curated edits never delete machine-added 'similarity' rows (e.g. a
+    // re-run of --seed-xref after tag-pairings --loadXref must not nuke them).
+    for (const e of existingRows) {
+      if (!want.has(e.tag_name) && e.kind !== 'similarity') {
+        db.prepare('DELETE FROM genre_tag_xref WHERE genre_name = ? AND tag_name = ?').run(genre, e.tag_name);
         removed++;
       }
     }
@@ -758,6 +765,23 @@ export function replaceGenreTagXref(genre: string, tags: Array<{ tagName: string
   return { added, removed };
 }
 
+// Add a single tag→genre mapping without disturbing the genre's other rows
+// (unlike replaceGenreTagXref). Kind precedence: curated kinds ('exact',
+// 'cognate') always win over a machine-inferred 'similarity', so an automated
+// load can never downgrade an edited mapping. Returns what happened.
+export function upsertGenreTagXref(tagName: string, genreName: string, kind: string): 'added' | 'kept' | 'updated' {
+  const db = getDb();
+  const existing = db.prepare('SELECT kind FROM genre_tag_xref WHERE genre_name = ? AND tag_name = ?').get(genreName, tagName) as any;
+  if (existing) {
+    if (existing.kind === kind) return 'kept';
+    if (existing.kind !== 'similarity' && kind === 'similarity') return 'kept';
+    db.prepare('UPDATE genre_tag_xref SET kind = ? WHERE genre_name = ? AND tag_name = ?').run(kind, genreName, tagName);
+    return 'updated';
+  }
+  db.prepare('INSERT INTO genre_tag_xref (genre_name, tag_name, kind) VALUES (?, ?, ?)').run(genreName, tagName, kind);
+  return 'added';
+}
+
 export function loadGenreTagXref(): GenreTagXrefRow[] {
   const rows = getDb().prepare('SELECT * FROM genre_tag_xref').all() as any[];
   return rows.map(row => ({ genreName: row.genre_name, tagName: row.tag_name, kind: row.kind }));
@@ -770,9 +794,9 @@ export function loadXrefTagMap(): Map<string, string> {
   return map;
 }
 
-export function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {
+export function syncAuthorsToCache(books: any[], authorCache: AuthorCache): number {
   const db = getDb();
-  let updated = false;
+  let added = 0;
 
   const upsert = db.prepare(`
     INSERT INTO authors (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves)
@@ -795,6 +819,7 @@ export function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {
       }
       const existing = authorCache[book.author];
       if (!existing || existing.slug !== book.authorSlug) {
+        if (!existing) added++;
         const entry: AuthorCacheEntry = {
           id: book.authorId || book.authorSlug.split('.')[0],
           slug: book.authorSlug,
@@ -807,10 +832,10 @@ export function syncAuthorsToCache(books: any[], authorCache: AuthorCache) {
           slug: entry.slug,
           lastSeen: entry.lastSeen,
         });
-        updated = true;
       }
     }
   }
+  return added;
 }
 
 // ── State ──────────────────────────────────────────────────────────

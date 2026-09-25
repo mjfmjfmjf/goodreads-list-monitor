@@ -4,11 +4,12 @@ import { selectAuthors } from './authorTopStats.js';
 import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { getDb } from './db.js';
-import { delay, parseDelayRange } from './utils.js';
+import { delay, isConnectivityError, parseDelayRange } from './utils.js';
 
 export interface AuthorRescanOptions extends AuthorTopStatsOptions {
   minAge?: string;
   rescanMissing?: boolean;
+  rescanMissingField?: string;
   multiPage?: boolean;
   onlyUntouched?: boolean;
   withCookie?: boolean;
@@ -16,6 +17,14 @@ export interface AuthorRescanOptions extends AuthorTopStatsOptions {
   minYear?: string;
   minBookYear?: string;
 }
+
+// --rescanMissingField maps a Goodreads author-page count field name to the
+// author-cache property that holds it.
+export const MISSING_FIELD_PROPS: Record<string, string> = {
+  ratings: 'numRatings',
+  reviews: 'numReviews',
+  shelves: 'numShelves',
+};
 
 const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
 
@@ -46,6 +55,7 @@ export interface MultiPageSelectionOptions {
   minRatings: number;
   maxRatings: number;
   onlyUntouched?: boolean;
+  missingField?: string;
   bookStats?: Record<string, AuthorBookStats>;
 }
 
@@ -97,12 +107,23 @@ export function selectMultiPageAuthors(
   const bookBased = opts.sortBy === 'topRatings' || opts.sortBy === 'newestYear';
   return Object.entries(authorCache)
     .filter(([, entry]) => {
-      const isMultiPage = !entry.catalogPages || entry.catalogPages >= 2;
-      if (opts.onlyUntouched && entry.catalogPages && entry.catalogPages >= 2) return false;
       const stats = opts.bookStats?.[entry.id];
       const filterRatings = bookBased ? (stats?.topRatings ?? 0) : parseNum(entry.numRatings);
       // Book-based sorts require the author to actually have a qualifying book.
       if (bookBased && !stats) return false;
+      if (opts.missingField) {
+        // Re-scrub a partially-parsed author: avg proves the author page was
+        // scraped, but the requested count field never came through (a singular
+        // "1 rating" missed by a plural-only regex, a shelves widget that didn't
+        // render, or a genuine 0). Rows with no stats at all belong to
+        // --rescanMissing, not this path.
+        const prop = MISSING_FIELD_PROPS[opts.missingField];
+        if (!entry.averageRating) return false;
+        if (parseNum((entry as any)[prop]) > 0) return false;
+        return filterRatings >= opts.minRatings && filterRatings <= opts.maxRatings;
+      }
+      const isMultiPage = !entry.catalogPages || entry.catalogPages >= 2;
+      if (opts.onlyUntouched && entry.catalogPages && entry.catalogPages >= 2) return false;
       return isMultiPage && filterRatings >= opts.minRatings && filterRatings <= opts.maxRatings;
     })
     .map(([name, entry]) => ({ name, entry, value: valueOf(entry) }))
@@ -146,13 +167,40 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
       .filter(([, entry]) => !entry.numRatings && !entry.averageRating && !entry.numReviews && !entry.numShelves)
       .map(([name, entry]) => ({ name, entry, value: 0 }));
     console.log(chalk.cyan.bold(`\n👤 Author Rescan: scanning authors with no stats (limit ${limit})`));
+  } else if (options.rescanMissingField) {
+    const field = options.rescanMissingField.toLowerCase();
+    if (!(field in MISSING_FIELD_PROPS)) {
+      throw new Error(`--rescanMissingField expects one of: ratings, reviews, shelves (got "${options.rescanMissingField}")`);
+    }
+    const minRatings = options.minRatings !== undefined ? parseNum(options.minRatings) : 0;
+    const maxRatings = options.maxRatings !== undefined ? parseNum(options.maxRatings) : Infinity;
+    // --minBookYear restricts candidate books to those published ≥ that year
+    // (and ≥ minRatings) for the topRatings/newestYear sorts, exactly like the
+    // multiPage path below.
+    const minBookYear = options.minBookYear !== undefined ? parseNum(options.minBookYear) : 0;
+    const bookBased = sortBy === 'topRatings' || sortBy === 'newestYear';
+    bookStats = (bookBased || minBookYear > 0) ? loadAuthorBookStats(minBookYear, minRatings) : undefined;
+    effectiveSortBy = sortBy === 'topRatings' && minBookYear > 0 ? 'newestYear' : sortBy;
+    authors = selectMultiPageAuthors(authorCache, {
+      limit,
+      sortBy: effectiveSortBy,
+      minRatings,
+      maxRatings,
+      missingField: field,
+      ...(bookStats ? { bookStats } : {}),
+    });
+    const sortLabel =
+      effectiveSortBy === 'topRatings' ? 'top book ratings' :
+      effectiveSortBy === 'newestYear' ? 'newest qualifying book year' :
+      effectiveSortBy;
+    console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping authors missing ${field} (Top ${limit} by ${sortLabel})`));
   } else if (options.multiPage) {
     // Select authors with null or ≥2 catalog pages (skip single-page catalogs),
     // then apply the same --sortBy / --minRatings / --maxRatings filters.
     // With --onlyUntouched, restrict to authors that have never been
     // multi-page-crawled (no catalogPages recorded yet) so a first pass only
     // targets the not-yet-done tail instead of re-evaluating completed ones.
-    const sortBy = (options.sortBy || 'numRatings') as string;
+const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : 'numRatings')) as string;
     const minRatings = options.minRatings !== undefined ? parseNum(options.minRatings) : 0;
     const maxRatings = options.maxRatings !== undefined ? parseNum(options.maxRatings) : Infinity;
     const untouchedOnly = !!options.onlyUntouched;
@@ -308,6 +356,17 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
           }
         }
       } catch (error) {
+        // Network went down mid-run — aborts cleanly instead of black-marking
+        // every remaining author with a failure strike (the authors aren't at
+        // fault, the outage is). Progress is saved per-author, so a re-run
+        // resumes where this run stopped.
+        if (isConnectivityError(error)) {
+          console.error(chalk.red.bold(`\n🛑 Aborting author scan: network error (${(error as any).code} — ${(error as any).message}).`));
+          console.error(chalk.red.bold(`   Progress is saved to the DB; re-run when your connection is back.`));
+          const duration = ((Date.now() - start) / 1000).toFixed(1);
+          console.log(chalk.cyan.bold(`\n🏁 Aborted. Processed ${i} of ${toScrape.length} authors, updated ${updated} (${noStats} no stats line, ${failed} failures, ${minAgeSkipped} skipped by --minAge, ${duration}s).`));
+          return;
+        }
         failed++;
         console.error(chalk.red.bold(`   ❌ Failed for ${name}: ${(error as any).message}`));
       }

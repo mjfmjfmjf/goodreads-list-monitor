@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import chalk from 'chalk';
+import { constants } from 'node:fs';
 import { isDbLockError } from './utils.js';
 
 // Override point for tests: GOODREADS_DB_PATH redirects all storage to an
@@ -263,17 +264,89 @@ export function backupDb(): Promise<void> {
   const today = new Date().toISOString().slice(0, 10);
   const dest = path.join(BACKUP_DIR, `goodreads.db.${today}`);
 
-  // The SQLite backup API refuses to overwrite an existing destination, so
-  // clear any same-day file first (safe: a fresh snapshot replaces it).
+  // The snapshot APIs refuse to overwrite an existing destination, so clear
+  // any same-day file first (safe: a fresh snapshot replaces it). Also drop a
+  // stale rollback journal from an interrupted prior attempt — leaving an
+  // orphaned -journal would make the next open run a hot-journal recovery
+  // against the fresh destination.
   fs.removeSync(dest);
   fs.removeSync(dest + '-wal');
   fs.removeSync(dest + '-shm');
+  fs.removeSync(dest + '-journal');
 
-  // Use SQLite's backup API for a consistent snapshot (safe during writes,
-  // replays WAL state; the resulting file is self-contained, no -wal/-shm).
-  return db.backup(dest).then(() => {
+  console.log(chalk.gray('   Backing up database...'));
+  const started = Date.now();
+  lastCloneMs = null;
+
+  // Fast path: fold the WAL into the main file (wal_checkpoint(TRUNCATE)) and
+  // copy-on-write clone the result. This turns the multi-GB snapshot into a
+  // near-instant APFS clone (same trick PostgreSQL uses for file snapshots)
+  // instead of SQLite re-reading the whole file under live crawler I/O.
+  // TRUNCATE can't complete while another connection holds a read mark, so
+  // fall back to the consistent backup API in that case.
+  return tryCheckpointAndClone(db, dest).then((cloned) => {
+    if (cloned) return;
+    // Use SQLite's backup API for a consistent snapshot (safe during writes,
+    // replays WAL state; the resulting file is self-contained, no -wal/-shm).
+    // A copy of the whole (several-GB) DB takes real time; report progress so
+    // a running backup is never mistaken for a hang.
+    let lastDecile = -1;
+    return db.backup(dest, {
+      progress: (info) => {
+        const pct = info.totalPages === 0 ? 100 : Math.floor(((info.totalPages - info.remainingPages) / info.totalPages) * 100);
+        const decile = Math.floor(pct / 10) * 10;
+        if (decile > lastDecile) {
+          lastDecile = decile;
+          console.log(chalk.gray(`   Backup in progress: ${decile}%...`));
+        }
+        return 100;
+      }
+    });
+  }).then(() => {
     rotateBackups();
+    const how = lastCloneMs !== null ? 'cloned' : 'backed up';
+    console.log(chalk.gray(`   Snapshot ${how} in ${((Date.now() - started) / 1000).toFixed(1)}s.`));
   });
+}
+
+let lastCloneMs: number | null = null;
+
+export interface CheckpointRow {
+  busy: number;
+  log: number;
+  checkpointed: number;
+}
+
+// A TRUNCATE checkpoint counts as complete when nothing resisted the reclaim
+// (busy === 0) and every WAL frame made it into the main file.
+export function checkpointCompleted(row: CheckpointRow): boolean {
+  return row.busy === 0 && (row.log === 0 || row.checkpointed === row.log);
+}
+
+// Returns true when a clean TRUNCATE checkpoint + CoW clone produced the
+// snapshot; false means the caller should fall back to the backup API.
+function tryCheckpointAndClone(db: Database.Database, dest: string): Promise<boolean> {
+  try {
+    const rows = db.pragma('wal_checkpoint(TRUNCATE)') as unknown as CheckpointRow[];
+    const row = rows[0];
+    if (!row || !checkpointCompleted(row)) {
+      console.log(chalk.gray(`   WAL busy (${row?.busy ?? 'unknown'} unreclaimable pages); using backup API...`));
+      return Promise.resolve(false);
+    }
+    try {
+      // COPYFILE_FICLONE = clonefile(2): copy-on-write, instant.
+      fs.copyFileSync(DB_PATH, dest, constants.COPYFILE_FICLONE);
+    } catch {
+      // APFS clone unavailable (e.g. non-macOS); a plain copy is still
+      // consistent because the WAL is empty at this instant.
+      fs.copyFileSync(DB_PATH, dest);
+    }
+    lastCloneMs = Date.now();
+    return Promise.resolve(true);
+  } catch (err) {
+    console.log(chalk.gray('   Checkpoint failed; using backup API...'));
+    return Promise.resolve(false);
+  }
 }
 
 function rotateBackups(): void {
@@ -452,6 +525,7 @@ function initSchema(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_books_ratings ON books(ratings DESC);
     CREATE INDEX IF NOT EXISTS idx_books_author ON books(author);
     CREATE INDEX IF NOT EXISTS idx_books_first_seen ON books(first_seen);
+    CREATE INDEX IF NOT EXISTS idx_books_work_id ON books(work_id);
     CREATE INDEX IF NOT EXISTS idx_authors_num_ratings ON authors(num_ratings DESC);
     CREATE INDEX IF NOT EXISTS idx_authors_num_shelves ON authors(num_shelves DESC);
   `);
@@ -496,6 +570,15 @@ function initSchema(db: Database.Database) {
       WHERE first_seen IS NULL AND last_updated IS NOT NULL
     `);
   }
+  const repCols = db.prepare('PRAGMA table_info(books)').all() as any[];
+  if (!repCols.some((c: any) => c.name === 'is_work_rep')) {
+    // Materialize the de-duplicated "representative edition" of each work: one
+    // row per distinct work_id (the highest-ratings edition, lowest id on ties)
+    // so queries can count each work exactly once without DISTINCT work_id.
+    db.exec('ALTER TABLE books ADD COLUMN is_work_rep INTEGER NOT NULL DEFAULT 0');
+    recomputeWorkReps(db);
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_books_is_work_rep ON books(is_work_rep) WHERE is_work_rep = 1');
 
   // One-time backfill: probable page counts for tags that were scraped before
   // scrapeShelfBooks began persisting the shelf's real last page.
@@ -503,6 +586,51 @@ function initSchema(db: Database.Database) {
   if (tagStatsEmpty) {
     db.exec(TAG_PAGE_ESTIMATE_BACKFILL_SQL);
   }
+}
+
+// ── Work-representative de-dup (books.is_work_rep) ──────────────────
+// books has one row per edition; editions share work_id. is_work_rep marks the
+// single "representative" row of each distinct work (highest ratings, lowest
+// id on tie) so consumers can count each work exactly once. Rows without a
+// work_id never become representatives. Derived data: a full recompute is
+// cheap (one UPDATE over the table), and the single-work variant keeps the
+// live upsert paths fresh without touching other works' rows.
+
+// Recompute is_work_rep for the whole table (migration backfill, offline
+// imports). Single UPDATE, no transaction.
+export function recomputeWorkReps(db: Database.Database = getDb()): void {
+  db.prepare(`
+    UPDATE books
+    SET is_work_rep = CASE WHEN id IN (
+      SELECT id FROM (
+        SELECT id, ROW_NUMBER() OVER (
+          PARTITION BY work_id
+          ORDER BY ratings DESC, CAST(id AS INTEGER) ASC
+        ) AS rn
+        FROM books
+        WHERE work_id IS NOT NULL AND work_id != ''
+      )
+      WHERE rn = 1
+    ) THEN 1 ELSE 0 END
+  `).run();
+}
+
+const REFRESH_WORK_REP_SQL = `
+  UPDATE books
+  SET is_work_rep = (id = (
+    SELECT b2.id FROM books b2
+    WHERE b2.work_id = @workId
+    ORDER BY b2.ratings DESC, CAST(b2.id AS INTEGER) ASC
+    LIMIT 1
+  ))
+  WHERE work_id = @workId AND work_id IS NOT NULL AND work_id != ''
+`;
+
+// Keep one work's representative flag current after a book row for that work
+// is inserted or updated. Idempotent, indexed by work_id, single statement.
+export function refreshWorkRep(db: Database.Database = getDb(), workId: string): void {
+  if (!workId) return;
+  db.prepare(REFRESH_WORK_REP_SQL).run({ workId });
 }
 
 export function closeDb() {
