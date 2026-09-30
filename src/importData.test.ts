@@ -34,15 +34,15 @@ describe('decodeBookRow', () => {
   });
 });
 
-const authorHeaders = ['name', 'id', 'slug', 'last_seen', 'first_seen', 'average_rating', 'num_ratings', 'num_reviews', 'num_shelves', 'catalog_pages', 'fail_count', 'last_error'];
+const authorHeaders = ['name', 'id', 'slug', 'last_seen', 'first_seen', 'average_rating', 'num_ratings', 'num_reviews', 'num_shelves', 'catalog_pages', 'fail_count', 'last_error', 'ratings_rate'];
 
 describe('decodeAuthorRow', () => {
   it('decodes typed author fields', () => {
-    const row = decodeAuthorRow(authorHeaders, ['George Orwell', '3706', '3706.George_Orwell', '2026-08-28', '2026-08-01', '4.13', '11249733', '365731', '19310363', '46', '2', null]);
+    const row = decodeAuthorRow(authorHeaders, ['George Orwell', '3706', '3706.George_Orwell', '2026-08-28', '2026-08-01', '4.13', '11249733', '365731', '19310363', '46', '2', null, '312.5']);
     expect(row).toEqual({
       name: 'George Orwell', id: '3706', slug: '3706.George_Orwell', lastSeen: '2026-08-28', firstSeen: '2026-08-01',
       averageRating: 4.13, numRatings: 11249733, numReviews: 365731, numShelves: 19310363,
-      catalogPages: 46, failCount: 2, lastError: undefined,
+      catalogPages: 46, failCount: 2, lastError: undefined, ratingsRate: 312.5,
     });
   });
 });

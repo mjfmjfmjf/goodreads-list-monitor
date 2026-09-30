@@ -69,15 +69,20 @@
   are given. Both keys share `loadAuthorBookStats`, whose SQL drops years above
   `currentYear+5` (Goodreads encodes some BCE works as positive years, e.g.
   2600, which would otherwise outrank genuinely recent books).
-- **Author crawls abort on connectivity errors** (2026-09-25 fix). Previously
-  `scrapeAuthorStats` swallowed ENOTFOUND/ECONNRESET/etc. and returned
-  `undefined`, so author-rescan/orphans/top-books treated an outage as
-  author-level failures — bumping the author's persistent `failCount` strikes
-  AND grinding through the whole doomed candidate list. Now `scrapeAuthorStats`
-  rethrows `isConnectivityError` errors (both the outer fetch and the inner
-  multiPage page loop), and the author loops abort with a "network error —
-  progress saved" message without recording failure strikes (mirrors the
-  walkers). Do not remove this — a lost connection is not an author defect.
+- **Connectivity errors get a probation window, not an instant abort**
+  (2026-09-25 fix + 2026-09-26 follow-up). `scrapeAuthorStats` rethrows
+  `isConnectivityError` errors (both the outer fetch and the inner multiPage
+  page loop) so an outage is never recorded as an author-level failure strike
+  (a lost connection is not an author defect). On top of that, every author
+  crawl and tag/list walker runs its network ops through `withConnectivityProbe`
+  (utils.ts): a connectivity blip is logged, waited out (~60s), and the same
+  scrape is retried — up to `GOODREADS_CONNECTIVITY_PROBES` probes by default.
+  Only after the connection stays down does the run abort with the usual
+  "network error — progress saved" message. The popular-by-date page walker
+  does the same inline via `connectivityProbeDefaults()`. Defaults: wait 60s
+  (`GOODREADS_CONNECTIVITY_WAIT_MS`), 3 probes
+  (`GOODREADS_CONNECTIVITY_PROBES`). This survives Wi-Fi/modern blips without
+  hammering; probes still respect the per-request pacing between scrape calls.
 - **Integration suite runs in STRICT throttle mode**
   (`GOODREADS_STRICT_THROTTLE=1`): on a 202/403/429 it gives up immediately
   (no retry/backoff) so a throttled run fails fast with a clear message.

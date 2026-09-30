@@ -7,6 +7,7 @@ import path from 'path';
 import { delay, fetchWithRetry, formatDate, httpCallInfo, isConnectivityError, isDbLockError, parseDelayRange } from './utils.js';
 import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_SCRAPE_FAIL_LIMIT, persistShelfPageCount } from './storage.js';
 import type { AuthorStats } from './storage.js';
+import type { AxiosResponse } from 'axios';
 
 let structuralWarningIssued = false;
 
@@ -98,6 +99,61 @@ export function extractWorkId(html: string): string | undefined {
 export const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 const TIMEOUT = 30000; // 30 seconds
 
+// --- Discovery page fetching -------------------------------------
+// The discovery walker (scrapeAllUserLists) used to run the default 5x30s
+// fetchWithRetry loop: a Goodreads page hang meant ~3 minutes of silent dead
+// air before a fatal banner — indistinguishable from a hang that a user (or the
+// OS) eventually kills. Mirror the list walker's patience instead: a per-attempt
+// timeout with a heartbeat line so slow pages stay visible, and ONE patient hang
+// retry before aborting with a clear message. GOODREADS_HANG_RETRY_MS is the
+// same env var listWalker.ts honors (default 60s).
+const DISCOVERY_TIMEOUT_MS = 45_000; // patient, like listWalker's NAV_TIMEOUT_MS
+const DISCOVERY_HANG_RETRY_MS = Math.max(1000, parseInt(process.env.GOODREADS_HANG_RETRY_MS ?? '60000', 10) || 60_000);
+const DISCOVERY_HEARTBEAT_MS = 15_000;
+
+async function fetchDiscoveryPage(url: string, headers: Record<string, string>, pageNum: number): Promise<AxiosResponse> {
+  const call = (): Promise<AxiosResponse> => {
+    const start = Date.now();
+    let heartbeat: ReturnType<typeof setTimeout> | undefined;
+    const tick = (): void => {
+      heartbeat = setTimeout(() => {
+        console.log(chalk.gray(`      …still waiting on discovery page ${pageNum} (${((Date.now() - start) / 1000).toFixed(0)}s)…`));
+        tick();
+      }, DISCOVERY_HEARTBEAT_MS);
+    };
+    tick();
+    const fetchP = fetchWithRetry(url, { headers, timeout: DISCOVERY_TIMEOUT_MS }, 2);
+    // If the hang-guard timer wins the race the underlying request is left
+    // running; swallow its eventual settle so it can't crash the process later.
+    fetchP.catch(() => {});
+    // The hang-guard MUST be cleared on a normal settle too: an armed timer
+    // keeps the Node event loop alive ~45s after the crawl ends, so the run
+    // would look finished but the shell wouldn't return until it fired.
+    let guard: ReturnType<typeof setTimeout> | undefined;
+    const hang = new Promise<AxiosResponse>((_, reject) => {
+      guard = setTimeout(() => {
+        reject(new Error(`discovery page ${pageNum} hung > ${DISCOVERY_TIMEOUT_MS / 1000}s (Goodreads page hang)`));
+      }, DISCOVERY_TIMEOUT_MS);
+    });
+    return Promise.race<AxiosResponse>([fetchP, hang]).finally(() => {
+      if (heartbeat) clearTimeout(heartbeat);
+      if (guard) clearTimeout(guard);
+    });
+  };
+
+  try {
+    return await call();
+  } catch (error) {
+    const msg = String((error as any)?.message || error);
+    // Non-hang failures (throttling, redirect loops, 404...) pass through to
+    // the walker's fatal banner unchanged — only a hang is worth retrying.
+    if (!/hung >|ECONNABORTED|timeout/i.test(msg)) throw error;
+    console.log(chalk.yellow(`   ⏳ discovery page ${pageNum} hung or timed out — one patient ${(DISCOVERY_HANG_RETRY_MS / 1000).toFixed(0)}s retry, then aborting...`));
+    await new Promise(resolve => setTimeout(resolve, DISCOVERY_HANG_RETRY_MS));
+    return await call();
+  }
+}
+
 export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]> {
   const configData = await loadConfig();
   let allLists: ListMetadata[] = [];
@@ -113,10 +169,7 @@ export async function scrapeAllUserLists(userId: string): Promise<ListMetadata[]
       if (configData.cookie) headers['Cookie'] = configData.cookie;
 
       const start = Date.now();
-      const response = await fetchWithRetry(url, {
-        headers,
-        timeout: TIMEOUT
-      });
+      const response = await fetchDiscoveryPage(url, headers, page);
       const duration = Date.now() - start;
       const bodyLen = typeof response.data === 'string' ? response.data.length : 0;
 
@@ -634,6 +687,12 @@ export interface TagListEntry {
   id: string;
   slug: string;
   url: string;
+  // Which Listopia by-tag directory page this list was enumerated on and its
+  // 1-based position within that page (set by scrapeListsByTag). Lets walkers
+  // report "tag page 3 · list 17/100" progress instead of a single flat index.
+  page?: number;
+  pagePos?: number;
+  pageTotal?: number;
 }
 
 // Parse one page of the Listopia by-tag index (e.g. https://www.goodreads.com/list/tag/2024).
@@ -700,13 +759,14 @@ export async function scrapeListsByTag(tag: string, options: ListsByTagOptions =
       const $ = cheerio.load(response.data);
       const parsed = parseTagListPage($, tag);
       let added = 0;
-      for (const l of parsed.lists) {
+      const pageTotal = parsed.lists.length;
+      parsed.lists.forEach((l, idx) => {
         if (!seenIds.has(l.id)) {
           seenIds.add(l.id);
-          all.push(l);
+          all.push({ ...l, page, pagePos: idx + 1, pageTotal });
           added++;
         }
-      }
+      });
       console.log(chalk.cyan.bold(`🔖 ${httpCallInfo(response.status, String(response.data).length, Date.now() - start, ['tag', tag])} page=${page}: ${parsed.lists.length} lists (${added} new)${parsed.nextPage !== null ? ` · next → page ${parsed.nextPage}` : ' · last page'}. Cumulative: ${all.length} unique lists.`));
 
       if (parsed.nextPage === null || (maxPages !== Infinity && page >= maxPages)) break;

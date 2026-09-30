@@ -15,6 +15,8 @@ vi.mock('./utils.js', () => ({
   delay: vi.fn(async () => {}),
   isConnectivityError: vi.fn(() => false),
   isDbLockError: vi.fn(() => false),
+  withConnectivityProbe: vi.fn(async (fn: any) => fn()),
+  connectivityProbeDefaults: vi.fn(() => ({ waitMs: 1, probes: 1 })),
 }));
 
 import { closeDb, getDb } from './db.js';

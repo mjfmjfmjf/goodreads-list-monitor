@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { loadAuthorCache, iterateBooks, findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, AUTHOR_FAIL_LIMIT, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures, AUTHOR_SCRAPE_FAIL_LIMIT } from './storage.js';
 import type { CachedBook, AuthorCache, AuthorCacheEntry } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
-import { delay, isConnectivityError, parseDelayRange } from './utils.js';
+import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.js';
 
 
 export interface AuthorOrphan {
@@ -240,7 +240,10 @@ export async function runOrphanScrape(
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${orphan.normalizedName} (${authorId})`) + chalk.gray(` · sort key: ${formatNum(orphan.topRatings)} ratings on top cached book`));
       let failReason = 'no_stats_line';
-      const result = await scrapeAuthorStats(authorId, (r) => { failReason = r; }, crawlAllPages, undefined, !!options.withCookie);
+      const result = await withConnectivityProbe(
+        () => scrapeAuthorStats(authorId, (r) => { failReason = r; }, crawlAllPages, undefined, !!options.withCookie),
+        { label: `orphan sweep "${orphan.normalizedName}"` }
+      );
       if (!result) {
         noStats++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${orphan.normalizedName}`));

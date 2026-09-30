@@ -182,6 +182,7 @@ export interface AuthorImportRow {
   catalogPages?: number | null;
   failCount?: number | null;
   lastError?: string;
+  ratingsRate?: number | null;
 }
 
 export function decodeAuthorRow(headers: string[], fields: (string | null)[]): AuthorImportRow | null {
@@ -204,6 +205,7 @@ export function decodeAuthorRow(headers: string[], fields: (string | null)[]): A
     catalogPages: toInt(get('catalog_pages')),
     failCount: toInt(get('fail_count')),
     lastError: get('last_error') ?? undefined,
+    ratingsRate: toFloat(get('ratings_rate')),
   };
 }
 
@@ -403,15 +405,16 @@ export async function importAuthorsFile(
 ): Promise<{ total: number }> {
   const upsertStmt = db.prepare(`
     INSERT INTO authors
-      (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, fail_count, last_error)
+      (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, fail_count, last_error, ratings_rate)
     VALUES
-      (@name, @id, @slug, @lastSeen, @firstSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @failCount, @lastError)
+      (@name, @id, @slug, @lastSeen, @firstSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @failCount, @lastError, @ratingsRate)
     ON CONFLICT(name) DO UPDATE SET
       id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
       first_seen=COALESCE(authors.first_seen, excluded.first_seen),
       average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
       num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
-      catalog_pages=excluded.catalog_pages, fail_count=excluded.fail_count, last_error=excluded.last_error
+      catalog_pages=excluded.catalog_pages, fail_count=excluded.fail_count, last_error=excluded.last_error,
+      ratings_rate=excluded.ratings_rate
   `);
 
   const find = db.prepare('SELECT * FROM authors WHERE name = ?');
@@ -436,6 +439,7 @@ export async function importAuthorsFile(
       catalogPages: mergedAuthor.catalogPages,
       failCount: mergedAuthor.failCount ?? 0,
       lastError: mergedAuthor.lastError ?? null,
+      ratingsRate: mergedAuthor.ratingsRate ?? null,
       isNew: !existing,
     });
   });
@@ -948,7 +952,7 @@ export async function importXrefFile(
 // Fill-blank-only for authors (status fields like last_seen are always updated).
 export interface ExistingAuthor {
   id?: string; slug?: string; lastSeen?: string; firstSeen?: string; averageRating?: number | null; numRatings?: number | null;
-  numReviews?: number | null; numShelves?: number | null; catalogPages?: number | null; failCount?: number | null; lastError?: string;
+  numReviews?: number | null; numShelves?: number | null; catalogPages?: number | null; failCount?: number | null; lastError?: string; ratingsRate?: number | null;
 }
 export function mergeAuthor(existing: ExistingAuthor | undefined, inc: AuthorImportRow): ExistingAuthor {
   const pickStr = (e: string | undefined, i: string | undefined, fb: string) => !isBlank(e) ? e! : (!isBlank(i) ? i! : fb);
@@ -965,6 +969,7 @@ export function mergeAuthor(existing: ExistingAuthor | undefined, inc: AuthorImp
     catalogPages: pickNum2(existing?.catalogPages ?? null, inc.catalogPages ?? null),
     failCount: pickNum2(existing?.failCount ?? null, inc.failCount ?? null),
     lastError: existing?.lastError ?? inc.lastError,
+    ratingsRate: pickNum2(existing?.ratingsRate ?? null, inc.ratingsRate ?? null),
   };
 }
 

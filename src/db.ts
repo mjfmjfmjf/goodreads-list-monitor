@@ -492,6 +492,19 @@ function initSchema(db: Database.Database) {
       last_scraped TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS popular_by_date_book (
+      page_key TEXT NOT NULL,
+      book_id TEXT NOT NULL,
+      rank INTEGER,
+      title TEXT,
+      work_id TEXT,
+      stats_ratings INTEGER,
+      stats_reviews INTEGER,
+      stats_avg REAL,
+      scraped_at TEXT NOT NULL,
+      PRIMARY KEY (page_key, book_id)
+    );
+
     CREATE TABLE IF NOT EXISTS browser_scrape (
       book_id TEXT PRIMARY KEY,
       status TEXT NOT NULL,
@@ -554,6 +567,12 @@ function initSchema(db: Database.Database) {
       SET first_seen = strftime('%Y-%m-%dT%H:%M:%S', datetime(last_seen, '-1 day'))
       WHERE first_seen IS NULL AND last_seen IS NOT NULL
     `);
+  }
+  if (!authorCols.some((c: any) => c.name === 'ratings_rate')) {
+    // Per-day ratings growth, computed when a stats scrape sees ratings
+    // increase. NULL until an author has TWO stats observations (a minted
+    // author's first scrape only establishes a baseline).
+    db.exec('ALTER TABLE authors ADD COLUMN ratings_rate REAL');
   }
   const tagCols = db.prepare('PRAGMA table_info(tag_books)').all() as any[];
   if (!tagCols.some((c: any) => c.name === 'shelved')) {

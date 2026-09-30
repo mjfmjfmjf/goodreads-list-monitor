@@ -4,7 +4,7 @@ import { selectAuthors } from './authorTopStats.js';
 import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { getDb } from './db.js';
-import { delay, isConnectivityError, parseDelayRange } from './utils.js';
+import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.js';
 
 export interface AuthorRescanOptions extends AuthorTopStatsOptions {
   minAge?: string;
@@ -102,6 +102,7 @@ export function selectMultiPageAuthors(
     if (opts.sortBy === 'topRatings') return opts.bookStats?.[entry.id]?.topRatings ?? 0;
     if (opts.sortBy === 'newestYear') return opts.bookStats?.[entry.id]?.newestYear ?? 0;
     if (opts.sortBy === 'averageRating') return parseFloat(entry.averageRating || '0');
+    if (opts.sortBy === 'ratingsRate') return entry.ratingsRate ?? 0;
     return parseNum((entry as any)[opts.sortBy]);
   };
   const bookBased = opts.sortBy === 'topRatings' || opts.sortBy === 'newestYear';
@@ -192,6 +193,7 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
     const sortLabel =
       effectiveSortBy === 'topRatings' ? 'top book ratings' :
       effectiveSortBy === 'newestYear' ? 'newest qualifying book year' :
+      effectiveSortBy === 'ratingsRate' ? 'ratings growth / day' :
       effectiveSortBy;
     console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping authors missing ${field} (Top ${limit} by ${sortLabel})`));
   } else if (options.multiPage) {
@@ -222,6 +224,7 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
     const sortLabel =
       effectiveSortBy === 'topRatings' ? 'top book ratings' :
       effectiveSortBy === 'newestYear' ? 'newest qualifying book year' :
+      effectiveSortBy === 'ratingsRate' ? 'ratings growth / day' :
       effectiveSortBy;
     console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping multi-page authors${untouchedOnly ? ' (never crawled)' : ''} (Top ${limit} by ${sortLabel}, ≥${minRatings.toLocaleString()} ratings${minBookYear > 0 ? `, books from ${minBookYear}+` : ''})`));
   } else {
@@ -278,7 +281,11 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
       try {
         // Show the value this author was sorted on (e.g. topRatings=N,
         // numRatings=N, averageRating=X) so the ordering isn't a guessing game.
-        const sortSuffix = options.rescanMissing ? '' : ` ${effectiveSortBy}=${value.toLocaleString('en-US')}`;
+        const sortSuffix = options.rescanMissing
+          ? ''
+          : effectiveSortBy === 'ratingsRate'
+            ? ` ${effectiveSortBy}=${value.toLocaleString('en-US')}/day`
+            : ` ${effectiveSortBy}=${value.toLocaleString('en-US')}`;
         // Book-stats-backed sorts: surface the author's qualifying-book aggregate
         // (newest year + top rating + book count) so recency sorting doesn't hide
         // popularity. In newestYear mode the sort value already IS newestYear, so
@@ -295,7 +302,10 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
         const failSuffix = failCount > 0 ? ` failCount=${failCount}` : '';
         console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${snapshotEntry.slug})${sortSuffix}${bookSuffix}${failSuffix}`));
         let failReason = 'no_stats_line';
-        const result = await scrapeAuthorStats(snapshotEntry.slug, (r) => { failReason = r; }, crawlAllPages, listSort, !!options.withCookie);
+        const result = await withConnectivityProbe(
+          () => scrapeAuthorStats(snapshotEntry.slug, (r) => { failReason = r; }, crawlAllPages, listSort, !!options.withCookie),
+          { label: `author scan "${name}"` }
+        );
         if (!result) {
           noStats++;
           console.log(chalk.yellow(`   ⚠️ No stats line found for ${name}`));

@@ -3,7 +3,7 @@ import { loadAuthorCache } from './storage.js';
 import type { AuthorCache } from './storage.js';
 import type { AuthorCacheEntry } from './storage.js';
 
-export type AuthorSortField = 'numRatings' | 'averageRating' | 'numReviews' | 'numShelves' | 'catalogPages';
+export type AuthorSortField = 'numRatings' | 'averageRating' | 'numReviews' | 'numShelves' | 'catalogPages' | 'ratingsRate';
 
 export interface AuthorTopStatsOptions {
   limit?: string;
@@ -18,14 +18,15 @@ export interface SelectedAuthor {
   value: number;
 }
 
-const SORT_FIELDS: AuthorSortField[] = ['numRatings', 'averageRating', 'numReviews', 'numShelves', 'catalogPages'];
+const SORT_FIELDS: AuthorSortField[] = ['numRatings', 'averageRating', 'numReviews', 'numShelves', 'catalogPages', 'ratingsRate'];
 
 const SORT_LABELS: Record<AuthorSortField, string> = {
   numRatings: 'Number of Ratings',
   averageRating: 'Average Rating',
   numReviews: 'Number of Reviews',
   numShelves: 'Number of Shelves',
-  catalogPages: 'Catalog Pages'
+  catalogPages: 'Catalog Pages',
+  ratingsRate: 'Ratings growth / day',
 };
 
 const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
@@ -45,6 +46,7 @@ export function selectAuthors(authorCache: AuthorCache, options: AuthorTopStatsO
   const valueOf = (entry: AuthorCacheEntry): number =>
     sortBy === 'averageRating' ? parseAvg(entry.averageRating) :
     sortBy === 'catalogPages' ? (entry.catalogPages ?? 0) :
+    sortBy === 'ratingsRate' ? (entry.ratingsRate ?? 0) :
     parseNum(entry[sortBy]);
 
   const authors: SelectedAuthor[] = [];

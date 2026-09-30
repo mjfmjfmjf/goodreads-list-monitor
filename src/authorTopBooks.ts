@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { loadAuthorCache, iterateBooks, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT } from './storage.js';
 import type { CachedBook } from './storage.js';
 import { scrapeAuthorStats } from './scraper.js';
-import { delay, isConnectivityError, parseDelayRange } from './utils.js';
+import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.js';
 
 export interface AuthorTopBooksOptions {
   minRatings?: string;
@@ -112,7 +112,10 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
     try {
       console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${author.name} (${author.slug})`));
       let failReason = 'no_stats_line';
-      const result = await scrapeAuthorStats(author.slug, (r) => { failReason = r; }, false, undefined, !!options.withCookie);
+      const result = await withConnectivityProbe(
+        () => scrapeAuthorStats(author.slug, (r) => { failReason = r; }, false, undefined, !!options.withCookie),
+        { label: `author top-books scan "${author.name}"` }
+      );
       if (!result) {
         failed++;
         console.log(chalk.yellow(`   ⚠️ No stats line found for ${author.name}`));

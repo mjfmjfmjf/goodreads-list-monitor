@@ -27,6 +27,7 @@ export function computeTagCoverage(
   rows: TagBookRow[],
   limit: number,
   ratingsByBook?: Map<string, number>,
+  onPick?: (row: TagCoverageRow, index: number) => void,
 ): TagCoverageResult {
   const tagBooks = new Map<string, Set<string>>();
   const bookTagCount = new Map<string, number>();
@@ -72,15 +73,27 @@ export function computeTagCoverage(
     }
   }
 
+  // Incremental greedy set-cover: keep a running count of not-yet-covered books
+  // per tag and a reverse book->tags index, so each pick only touches the chosen
+  // tag's books (and the tags losing a covered book) instead of rescanning every
+  // tag's full list. Same pick order as a full rescan; ~6,000× fewer reads.
+  const pendingCount = new Map<string, number>();
+  const bookTags = new Map<string, string[]>();
+  for (const [tag, books] of tagBooks) {
+    pendingCount.set(tag, books.size);
+    for (const b of books) {
+      const tags = bookTags.get(b);
+      if (tags) tags.push(tag);
+      else bookTags.set(b, [tag]);
+    }
+  }
+
   while (covered.size < totalBooks && chosen.length < limit) {
     let bestTag: string | null = null;
     let bestNew = -1;
-    for (const [tag, books] of tagBooks) {
+    for (const [tag] of tagBooks) {
       if (used.has(tag)) continue;
-      let newCount = 0;
-      for (const b of books) {
-        if (!covered.has(b)) newCount++;
-      }
+      const newCount = pendingCount.get(tag) ?? 0;
       if (
         newCount > bestNew ||
         (newCount === bestNew && bestTag !== null && tieBreakWins(tag, bestTag, tagBooks, tagAvgRatings))
@@ -97,16 +110,23 @@ export function computeTagCoverage(
       if (!covered.has(b)) {
         covered.add(b);
         newBooks++;
+        // Book b is now covered — every other tag holding it has one fewer
+        // uncoverable book, so decrement their pending counts.
+        for (const otherTag of bookTags.get(b) ?? []) {
+          if (otherTag !== bestTag) pendingCount.set(otherTag, (pendingCount.get(otherTag) ?? 1) - 1);
+        }
       }
     }
-    chosen.push({
+    const row: TagCoverageRow = {
       tag: bestTag,
       tagBooks: singleCount.get(bestTag) ?? 0,
       newBooks,
       cumulative: covered.size,
       pct: (covered.size / totalBooks) * 100,
       avgRatings: tagAvgRatings.get(bestTag),
-    });
+    };
+    chosen.push(row);
+    if (onPick) onPick(row, chosen.length - 1);
   }
 
   return { rows: chosen, totalBooks, totalTags: tagBooks.size };
@@ -131,29 +151,31 @@ function tieBreakWins(
 export async function runTagCoverage(options: { limit?: string | number } = {}): Promise<void> {
   const limit = parseInt(String(options.limit ?? '20'), 10) || 20;
 
+  console.log(chalk.gray('   Loading tag_books...'));
   const rows = await loadTagBooks();
   const db = getDb();
   const genreSet = new Set<string>((db.prepare('SELECT name FROM genres').all() as any[]).map(r => r.name));
-  const ids = [...new Set(rows.map(r => r.bookId))];
+  const allTags = [...new Set(rows.map(r => r.tagName))];
+  const totalBooks = new Set(rows.map(r => r.bookId)).size;
+
+  console.log(chalk.gray(`   Loading ratings for ${totalBooks} books (single batched join)...`));
+  // One batched join instead of one query per book (the old per-book loop issued
+  // ~754k statements single-threaded — the bulk of the silent wait).
   const ratingsByBook = new Map<string, number>();
-  for (const id of ids) {
-    const row = db.prepare('SELECT ratings FROM books WHERE id = ?').get(id) as any;
-    if (row && row.ratings != null) ratingsByBook.set(id, Number(row.ratings));
-  }
-  const { rows: chosen, totalBooks, totalTags } = computeTagCoverage(rows, limit, ratingsByBook);
-
-  console.log(chalk.cyan.bold('\n🏷️  Tag coverage — least number of tags that cover the most books'));
-  console.log(chalk.gray('   Greedy set-cover: each row is the tag that adds the most new (uncovered) books.'));
-  console.log(chalk.gray(`   ${totalBooks.toLocaleString()} unique books across ${totalTags.toLocaleString()} tags`));
-  console.log(chalk.gray(`   Showing up to ${limit} tags (or until 100% coverage)`));
-  console.log(chalk.gray('------------------------------------------'));
-  console.log('');
-
-  if (chosen.length === 0) {
-    console.log(chalk.yellow('   (no tag books loaded)'));
-    return;
+  const ratingRows = db.prepare(`
+    SELECT DISTINCT t.book_id AS id, b.ratings AS ratings
+    FROM tag_books t JOIN books b ON b.id = t.book_id
+    WHERE b.ratings IS NOT NULL
+  `).all() as { id: string; ratings?: number | null }[];
+  for (const r of ratingRows) {
+    if (r.ratings != null) ratingsByBook.set(r.id, Number(r.ratings));
   }
 
+  // Approximate terminal display width: CJK and fullwidth chars occupy 2 columns.
+  const charWidth = (ch: string): number =>
+    /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE1F\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/.test(ch) ? 2 : 1;
+  const displayWidth = (s: string): number =>
+    [...s].reduce((w, ch) => w + charWidth(ch), 0);
   const RANK_W = 3;
   const TAG_W = 14;
   const BOOKS_W = 10;
@@ -162,11 +184,10 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
   const RATING_W = 12;
   const PCT_W = 8;
   const COL_SP = 3;
-  // Approximate terminal display width: CJK and fullwidth chars occupy 2 columns.
-  const charWidth = (ch: string): number =>
-    /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE10-\uFE1F\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/.test(ch) ? 2 : 1;
-  const displayWidth = (s: string): number =>
-    [...s].reduce((w, ch) => w + charWidth(ch), 0);
+  const divCols = 8;
+  // Column width is fixed up front from ALL tags (not the chosen subset), so
+  // rows can stream out as they are picked instead of buffering until 100%.
+  const maxLen = Math.max(...allTags.map(t => displayWidth(t) + (genreSet.has(t) ? 8 : 0)), 'tag'.length);
   const padTag = (t: string) => t + ' '.repeat(Math.max(0, maxLen - displayWidth(t)));
   const padCell = (s: string, w: number) => s.padStart(w, ' ');
   const formatCompact = (n?: number): string => {
@@ -174,7 +195,12 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
     return Math.round(n).toLocaleString('en-US');
   };
 
-  const maxLen = Math.max(...chosen.map(r => displayWidth(r.tag) + (genreSet.has(r.tag) ? 8 : 0)), 'tag'.length);
+  console.log(chalk.cyan.bold('\n🏷️  Tag coverage — least number of tags that cover the most books'));
+  console.log(chalk.gray('   Greedy set-cover: each row is the tag that adds the most new (uncovered) books.'));
+  console.log(chalk.gray(`   ${totalBooks.toLocaleString()} unique books across ${allTags.length.toLocaleString()} tags`));
+  console.log(chalk.gray(`   Showing up to ${limit} tags (or until 100% coverage)`));
+  console.log(chalk.gray('------------------------------------------'));
+  console.log('');
 
   const headerCells = [
     padCell('#', RANK_W),
@@ -187,18 +213,19 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
     padCell('coverage %', PCT_W),
   ].join(' '.repeat(COL_SP));
   const header = `   ${headerCells}`;
-  const divCols = 8;
   const divider = chalk.gray('   ' + '-'.repeat(headerCells.length + COL_SP * (divCols - 1)));
   console.log(chalk.gray(header));
   console.log(divider);
 
-  // Mark rows that cross notable coverage thresholds (50/75/90/95/99%).
+  // Each row is printed the moment the greedy loop picks it, so with a big
+  // --limit you see output streaming instead of one silent wait for the end.
   const thresholds = [50, 75, 90, 95, 99, 100];
-  let nextThreshold = 0;
   const crossed = new Set<number>();
+  let scanStart = Date.now();
+  let lastProgress = Date.now();
 
-  for (let idx = 0; idx < chosen.length; idx++) {
-    const row = chosen[idx];
+  console.log(chalk.gray('   Computing greedy set-cover (rows stream as they are picked)...'));
+  const { rows: chosen, totalTags } = computeTagCoverage(rows, limit, ratingsByBook, (row, idx) => {
     const rank = String(idx + 1).padStart(RANK_W);
     const tagBooks = row.tagBooks.toLocaleString();
     const avgRatings = padCell(formatCompact(row.avgRatings), RATING_W);
@@ -206,18 +233,14 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
     const missing = Math.max(0, totalBooks - row.cumulative).toLocaleString();
 
     let pctColored: string;
-    if (row.pct >= 99) pctColored = chalk.green(padCell(row.pct.toFixed(1) + '%', PCT_W));
-    else if (row.pct >= 90) pctColored = chalk.green(padCell(row.pct.toFixed(1) + '%', PCT_W));
+    if (row.pct >= 90) pctColored = chalk.green(padCell(row.pct.toFixed(1) + '%', PCT_W));
     else if (row.pct >= 70) pctColored = chalk.yellow(padCell(row.pct.toFixed(1) + '%', PCT_W));
     else pctColored = chalk.white(padCell(row.pct.toFixed(1) + '%', PCT_W));
 
     let marker = '';
-    while (nextThreshold < thresholds.length && row.pct >= thresholds[nextThreshold]) {
-      if (!crossed.has(thresholds[nextThreshold])) {
-        crossed.add(thresholds[nextThreshold]);
-        marker = `  🎯 ${thresholds[nextThreshold]}%`;
-      }
-      nextThreshold++;
+    if (crossed.size < thresholds.length && row.pct >= thresholds[crossed.size]) {
+      crossed.add(thresholds[crossed.size]);
+      marker = `  🎯 ${thresholds[crossed.size]}%`;
     }
 
     const line = [
@@ -231,13 +254,29 @@ export async function runTagCoverage(options: { limit?: string | number } = {}):
       pctColored,
     ].join(' '.repeat(COL_SP));
     console.log(`   ${line}${marker}`);
-  }
+    // Heartbeat: re-print the progress line once a minute so long runs show
+    // they are alive even while the next rank takes a while to compute.
+    if (Date.now() - lastProgress > 60_000) {
+      lastProgress = Date.now();
+      console.log(chalk.gray(`      … still scanning: ${idx + 1}/${Math.min(limit, allTags.length)} tags picked, ${row.cumulative.toLocaleString()} (${row.pct.toFixed(1)}%) covered…`));
+    }
+  });
+  const mins = ((Date.now() - scanStart) / 1000).toFixed(1);
 
+  console.log('');
   console.log(divider);
   console.log(chalk.gray('   books unique = number of books on that tag that appear in exactly one tag (tag-histogram "single")'));
   console.log(chalk.gray('   avg ratings = average rating count across the tag\'s books (tie-breaker when tags add the same new books)'));
   console.log(chalk.gray('   added = new (uncovered) books this tag adds beyond all prior tags'));
   console.log(chalk.gray('   combined = unique books covered after including this tag · coverage % = combined / all unique books'));
   console.log(chalk.gray('   missing = unique books still not covered after this tag (total unique books − combined)'));
+  console.log(chalk.gray(`   ${totalBooks.toLocaleString()} unique books across ${totalTags.toLocaleString()} tags · set-cover picked ${chosen.length} tags in ${mins}s (incremental, streamed)`));
+  const notPicked = Math.max(0, totalTags - chosen.length);
+  const pct = chosen.length ? chosen[chosen.length - 1].pct : 0;
+  if (pct >= 100) {
+    console.log(chalk.gray(`   ${chosen.length.toLocaleString()} of ${totalTags.toLocaleString()} tags were needed to reach 100% coverage — ${notPicked.toLocaleString()} tags were never read.`));
+  } else if (chosen.length >= limit) {
+    console.log(chalk.gray(`   Stopped at the ${limit.toLocaleString()}-tag cap (--limit) with ${pct.toFixed(1)}% coverage — raise --limit to see more; the remaining ${notPicked.toLocaleString()} tags were not examined.`));
+  }
   console.log();
 }

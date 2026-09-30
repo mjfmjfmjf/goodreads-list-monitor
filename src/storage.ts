@@ -61,9 +61,15 @@ export interface AuthorCacheEntry {
   catalogPages?: number;
   failCount?: number;
   lastError?: string;
+  ratingsRate?: number;
 }
 
 export const AUTHOR_FAIL_LIMIT = 5;
+
+// Minimum time between two stats observations before a per-day ratings-growth
+// rate is recorded, so a back-to-back scrape (or an unlucky same-day update)
+// can't blow up Δ/day into an astronomical ranking.
+export const GROWTH_RATE_MIN_DAYS = 1;
 
 export interface AuthorCache {
   [authorName: string]: AuthorCacheEntry;
@@ -88,6 +94,12 @@ export function updateAuthorStats(entry: AuthorCacheEntry, stats: AuthorStats): 
 
   if (newRatings < existingRatings || newReviews < existingReviews) return false;
 
+  // Was this author already stats-captured? A minted author (created by a
+  // book/list walk, numRatings undefined) has no baseline, so the first scrape
+  // only establishes one — the growth rate needs a second observation.
+  const hadPriorCapture = entry.numRatings !== undefined;
+  const priorSeenMs = hadPriorCapture ? Date.parse(entry.lastSeen ?? '') : Number.NaN;
+
   let changed = false;
   if (stats.averageRating !== undefined && entry.averageRating !== stats.averageRating) {
     entry.averageRating = stats.averageRating;
@@ -104,6 +116,16 @@ export function updateAuthorStats(entry: AuthorCacheEntry, stats: AuthorStats): 
   if (stats.numShelves !== undefined && entry.numShelves !== stats.numShelves) {
     entry.numShelves = stats.numShelves;
     changed = true;
+  }
+
+  // Ratings-growth rate: Δratings / days since the previous stats observation
+  // (last_seen was stamped at that scrape). Only updated when ratings actually
+  // grew and the window is meaningful; otherwise the previous rate is kept.
+  if (changed && newRatings > existingRatings && hadPriorCapture && Number.isFinite(priorSeenMs) && priorSeenMs > 0) {
+    const elapsedDays = (Date.now() - priorSeenMs) / 86400000;
+    if (elapsedDays >= GROWTH_RATE_MIN_DAYS) {
+      entry.ratingsRate = Math.round(((newRatings - existingRatings) / elapsedDays) * 100) / 100;
+    }
   }
 
   if (changed) entry.lastSeen = new Date().toISOString();
@@ -551,6 +573,7 @@ function rowToAuthor(row: any): AuthorCacheEntry & { name: string } {
     catalogPages: row.catalog_pages ?? undefined,
     failCount: row.fail_count ?? undefined,
     lastError: row.last_error ?? undefined,
+    ratingsRate: row.ratings_rate ?? undefined,
   };
 }
 
@@ -591,12 +614,13 @@ function bindAuthor(name: string, e: AuthorCacheEntry) {
     catalogPages: e.catalogPages ?? null,
     failCount: e.failCount ?? null,
     lastError: e.lastError ?? null,
+    ratingsRate: e.ratingsRate ?? null,
   };
 }
 
 const AUTHOR_UPSERT_SQL = `
-  INSERT INTO authors (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, fail_count, last_error)
-  VALUES (@name, @id, @slug, @lastSeen, COALESCE(@firstSeen, @lastSeen), @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @failCount, @lastError)
+  INSERT INTO authors (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, fail_count, last_error, ratings_rate)
+  VALUES (@name, @id, @slug, @lastSeen, COALESCE(@firstSeen, @lastSeen), @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @failCount, @lastError, @ratingsRate)
   ON CONFLICT(name) DO UPDATE SET
     id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
     first_seen=COALESCE(authors.first_seen, excluded.first_seen),
@@ -604,7 +628,8 @@ const AUTHOR_UPSERT_SQL = `
     num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
     catalog_pages=COALESCE(excluded.catalog_pages, catalog_pages),
     fail_count=COALESCE(excluded.fail_count, fail_count),
-    last_error=COALESCE(excluded.last_error, last_error)
+    last_error=COALESCE(excluded.last_error, last_error),
+    ratings_rate=excluded.ratings_rate
 `;
 
 export function upsertAuthor(name: string, entry: AuthorCacheEntry): void {

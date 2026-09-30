@@ -46,6 +46,18 @@ const APOLLO_STATE: Record<string, any> = {
     },
     work: { __ref: 'Work:kca://work/test' },
     bookSeries: [{ __typename: 'BookSeries', series: { __ref: 'Series:1' }, position: 1 }],
+    primaryContributorEdge: {
+      __typename: 'BookContributorEdge',
+      role: 'Author',
+      node: { __ref: 'Contributor:kca://author/test' },
+    },
+  },
+  'Contributor:kca://author/test': {
+    __typename: 'Contributor',
+    id: 'kca://author/test',
+    legacyId: 1043638,
+    name: 'Harper Lee',
+    webUrl: 'https://www.goodreads.com/author/show/1043638.Harper_Lee',
   },
   'Work:kca://work/test': {
     __typename: 'Work',
@@ -80,6 +92,7 @@ describe('parseBookPageFromHtml', () => {
     const out: BookPageDetails = parseBookPageFromHtml(html, BOOK_ID);
 
     // NAV_GENRES entries (History) filtered out; genre names as Author on page
+    expect(out.title).toBe('To Kill a Mockingbird');
     expect(out.genres).toEqual(['Fiction', 'classics']);
     expect(out.ratings).toBe('1,343,421');
     expect(out.avgRating).toBe('4.28');
@@ -97,6 +110,9 @@ describe('parseBookPageFromHtml', () => {
     expect(out.description).toBe('A lawyer in the Depression-era South defends a black man.');
     expect(out.series).toEqual([{ title: 'To Kill a Mockingbird', position: '1' }]);
     expect(out.workId).toBe('3275794');
+    expect(out.author).toBe('Harper Lee');
+    expect(out.authorId).toBe('1043638');
+    expect(out.authorSlug).toBe('1043638.Harper_Lee');
   });
 
   it('returns empty on junk / missing apollo state', () => {
@@ -112,6 +128,13 @@ describe('parseBookPageFromHtml', () => {
     state['Genre:9'] = { __typename: 'Genre', name: 'Mystery' };
     const out = parseBookPageFromHtml(nextDataHtml(state), BOOK_ID);
     expect(out.genres).toEqual(['Mystery']);
+  });
+
+  it('falls back to the DOM h1 when Apollo carries no title', () => {
+    const state = JSON.parse(JSON.stringify(APOLLO_STATE)) as Record<string, any>;
+    delete state['Book:kca://book/test'].title;
+    const html = nextDataHtml(state, '<h1 id="bookTitle" data-testid="bookTitle"><span itemprop="name">Mockingbird</span></h1>');
+    expect(parseBookPageFromHtml(html, BOOK_ID).title).toBe('Mockingbird');
   });
 
   it('matches book by legacyId string or number', () => {

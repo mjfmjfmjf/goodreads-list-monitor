@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { getDb } from './db.js';
 import { runTagDiscovery } from './discovery.js';
 import { getKnownShelfPages } from './storage.js';
-import { delay, isConnectivityError } from './utils.js';
+import { delay, isConnectivityError, withConnectivityProbe } from './utils.js';
 
 export interface GapGenreDiscoveryOptions {
   count?: string;
@@ -78,12 +78,15 @@ export async function runGapGenreTagDiscovery(options: GapGenreDiscoveryOptions 
     console.log(chalk.yellow.bold(`==================================================`));
     console.log(chalk.gray(`   Index says ${formatNum(g.memberCount)} books; probable shelf pages: ${getKnownShelfPages(g.name) ?? '?'} (crawl cap ${shelfPageEnd}).`));
     try {
-      await runTagDiscovery(g.name, {
-        cacheOnly: true,
-        minTags: options.minTags,
-        shelfPageStart,
-        shelfPageEnd,
-      });
+      await withConnectivityProbe(
+        () => runTagDiscovery(g.name, {
+          cacheOnly: true,
+          minTags: options.minTags,
+          shelfPageStart,
+          shelfPageEnd,
+        }),
+        { label: `gap genre scrape "${g.name}"` }
+      );
     } catch (err: any) {
       if (isConnectivityError(err)) {
         console.log(chalk.red.bold(`\n🛑 Aborting gap scrape: network error (${err.code} — ${err.message}).`));

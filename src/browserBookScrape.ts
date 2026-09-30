@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { BrowserContext } from 'playwright';
 import { getDb } from './db.js';
-import { getBook, loadConfig, upsertBook, CachedBook } from './storage.js';
+import { getBook, loadConfig, upsertBook, upsertAuthor, CachedBook, countBooks, countAuthors } from './storage.js';
 import { fetchWithRetry, httpCallInfo, isConnectivityError, withDbLockRetry } from './utils.js';
 import { USER_AGENT } from './scraper.js';
 import { BROWSER_PROFILE_DIR, checkBrowserLogin, launchBrowserProfile } from './browserSession.js';
@@ -32,6 +32,13 @@ export interface BrowserBookScrapeOptions {
   cooldownMs?: number;
   maxConsecutiveThrottles?: number;
   helpText?: string;
+  candidateBookIds?: string[];
+  // Fallback metadata for candidate ids not yet in the books table (e.g. fresh
+  // popular-by-date listings), so the run output shows the real title/ratings
+  // instead of "book <id>" / ratings=0.
+  candidateTitleByBook?: Map<string, string>;
+  candidateRatingsByBook?: Map<string, number>;
+  closeContext?: boolean;
 }
 
 export interface ScrapeRunSummary {
@@ -43,6 +50,8 @@ export interface ScrapeRunSummary {
   error: number;
   skipped: number;
   elapsedMs: number;
+  booksAdded?: number;
+  authorsAdded?: number;
 }
 
 interface FetchResult {
@@ -175,9 +184,9 @@ function buildCachedBook(existing: CachedBook | null | undefined, parsed: BookPa
   const hasRatings = !!parsed.ratings && parsed.ratings !== '0';
   return {
     id: existing?.id ?? bookId,
-    title: existing?.title || 'Unknown Title',
-    author: existing?.author || 'Unknown Author',
-    authorId: existing?.authorId,
+    title: existing?.title || parsed.title || 'Unknown Title',
+    author: (existing?.author && existing.author !== 'Unknown Author') ? existing.author : (parsed.author || existing?.author || 'Unknown Author'),
+    authorId: parsed.authorId || existing?.authorId,
     ratings: hasRatings ? parsed.ratings! : (existing?.ratings || '0'),
     avgRating: parsed.avgRating || existing?.avgRating,
     published: parsed.published && parsed.published !== 'Unknown' ? parsed.published : (existing?.published || 'Unknown'),
@@ -241,33 +250,48 @@ export async function getBrowserContext(): Promise<BrowserContext> {
   return browserContext;
 }
 
+// Goodreads rarely serves a mid-page navigation race ("Execution context was
+// destroyed, most likely because of a navigation") right after domcontentloaded
+// — the site soft-navigates while our evaluate is reading. Chromium also flakes
+// wifi/IO with net::ERR_NETWORK_IO_SUSPENDED when the browser window is
+// backgrounded mid-goto. Both are transient ambient issues, NOT book defects,
+// so give them exactly ONE patient retry before reporting (bounded; the run's
+// checkpoint re-tries them next run either way).
+const BROWSER_TRANSIENT_MSG = /execution context was destroyed|most likely because of a navigation|net::ERR_NETWORK_IO_SUSPENDED/i;
+
 async function fetchBrowser(bookId: string): Promise<FetchResult> {
   const context = await getBrowserContext();
-  const page = await context.newPage();
-  try {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const page = await context.newPage();
     page.setDefaultTimeout(30000);
-    const response = await page.goto(`https://www.goodreads.com/book/show/${bookId}`, {
-      waitUntil: 'domcontentloaded',
-    });
-    await page.waitForTimeout(1200);
-    const clicked = await page.evaluate(() => {
-      const btn = [...document.querySelectorAll('button')].find(
-        b => (b.getAttribute('aria-label') || '') === 'Book details and editions'
-      );
-      if (btn) {
-        btn.click();
-        return true;
-      }
-      return false;
-    });
-    if (clicked) await page.waitForTimeout(400);
-    const body = await page.content();
-    return { status: response?.status(), body };
-  } catch (error: any) {
-    return { body: '', error: String(error?.message || error) };
-  } finally {
-    await page.close().catch(() => {});
+    try {
+      const response = await page.goto(`https://www.goodreads.com/book/show/${bookId}`, {
+        waitUntil: 'domcontentloaded',
+      });
+      await page.waitForTimeout(1200);
+      const clicked = await page.evaluate(() => {
+        const btn = [...document.querySelectorAll('button')].find(
+          b => (b.getAttribute('aria-label') || '') === 'Book details and editions'
+        );
+        if (btn) {
+          btn.click();
+          return true;
+        }
+        return false;
+      });
+      if (clicked) await page.waitForTimeout(400);
+      const body = await page.content();
+      await page.close().catch(() => {});
+      return { status: response?.status(), body };
+    } catch (error: any) {
+      const msg = String(error?.message || error);
+      const transient = BROWSER_TRANSIENT_MSG.test(msg);
+      await page.close().catch(() => {});
+      if (transient && attempt === 1) continue;
+      return { body: '', error: msg };
+    }
   }
+  return { body: '', error: 'fetchBrowser retries exhausted' };
 }
 
 export async function processBook(
@@ -301,6 +325,18 @@ export async function processBook(
     const existing = getBook(bookId);
     withDbLockRetry(() => upsertBook(buildCachedBook(existing, parsed!, bookId)));
     saveBookPage(bookId, parsed, socials, editions);
+    // Sync the primary author into the authors table so author counts and
+    // later author-scrapes see this run's new authors (single-idempotent
+    // upsert; slug taken from the page's own /author/show/<slug> webUrl).
+    const authorName = parsed.author;
+    const authorId = parsed.authorId;
+    if (authorName && authorId) {
+      const ts = new Date().toISOString();
+      const slug = parsed.authorSlug || `${authorId}.${authorName.replace(/[^\w]/g, '').trim().replace(/\s+/g, '_')}`;
+      withDbLockRetry(() =>
+        upsertAuthor(authorName, { id: authorId, slug, lastSeen: ts, firstSeen: ts })
+      );
+    }
   }
   setCheckpoint(checkpoint);
   return { checkpoint, parsed };
@@ -312,6 +348,19 @@ const STATUS_COLOR: Record<FetchClass, (s: string) => string> = {
   missing: chalk.magenta,
   error: chalk.red,
 };
+
+// Re-scrape budget for books persisted as the unknown-title placeholder: allow
+// ONE re-fetch once the ok checkpoint is at least this old, so the current
+// title parser can recover a real title without hammering pages that genuinely
+// never expose a structured title.
+export const UNKNOWN_TITLE_RESCAN_DAYS = 7;
+
+export function shouldRescrapeUnknownTitle(prior: CheckpointRow | undefined, candidateTitle: string, now = Date.now()): boolean {
+  if (!prior || prior.status !== 'ok') return false;
+  if (candidateTitle !== 'Unknown Title' && candidateTitle !== 'Unknown') return false;
+  const staleMs = now - new Date(prior.scraped_at).getTime();
+  return staleMs >= UNKNOWN_TITLE_RESCAN_DAYS * 86400000;
+}
 
 export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): Promise<ScrapeRunSummary> {
   const strict = process.env.GOODREADS_STRICT_THROTTLE === '1';
@@ -329,7 +378,22 @@ export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): P
   });
 
   const db = getDb();
-  const candidates = db.prepare(sql).all(...params) as { id: string; title: string; ratings: number }[];
+  let candidates: { id: string; title: string; ratings: number }[];
+  if (options.candidateBookIds && options.candidateBookIds.length) {
+    const ids = options.candidateBookIds.slice(0, options.limit);
+    const placeholders = ids.map(() => '?').join(',');
+    candidates = db
+      .prepare(`SELECT id, title, ratings FROM books WHERE id IN (${placeholders})`)
+      .all(...ids) as { id: string; title: string; ratings: number }[];
+    const byId = new Map(candidates.map(c => [c.id, c]));
+    candidates = ids.map(id => byId.get(id) ?? {
+      id,
+      title: options.candidateTitleByBook?.get(id) ?? `book ${id}`,
+      ratings: options.candidateRatingsByBook?.get(id) ?? 0,
+    });
+  } else {
+    candidates = db.prepare(sql).all(...params) as { id: string; title: string; ratings: number }[];
+  }
   console.log(chalk.gray(`   Backlog: ${candidates.length} candidate(s) matching criteria`));
 
   if (options.dryRun) {
@@ -349,17 +413,27 @@ export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): P
 
   const runStart = Date.now();
   const maxThrottles = Math.max(0, options.maxConsecutiveThrottles ?? 2);
-  const summary: ScrapeRunSummary = { total: candidates.length, processed: 0, ok: 0, throttled: 0, missing: 0, error: 0, skipped: 0, elapsedMs: 0 };
+  const summary: ScrapeRunSummary = { total: candidates.length, processed: 0, ok: 0, throttled: 0, missing: 0, error: 0, skipped: 0, elapsedMs: 0, booksAdded: 0, authorsAdded: 0 };
+  const booksBefore = countBooks();
+  const authorsBefore = countAuthors();
   let consecutiveThrottles = 0;
 
   for (const [index, candidate] of candidates.entries()) {
     const num = index + 1;
     if (!options.force) {
       const prior = getCheckpoint(candidate.id);
-      if (prior?.status === 'ok') {
+      // Re-scrape books persisted as the unknown-title placeholder (older
+      // parser versions wrote it for brand-new books) so the current title
+      // parser can fix them — but only once the ok checkpoint goes stale, to
+      // avoid hammering pages that genuinely never expose a structured title.
+      const rescrapeTitle = shouldRescrapeUnknownTitle(prior, candidate.title);
+      if (prior?.status === 'ok' && !rescrapeTitle) {
         summary.skipped++;
         console.log(chalk.gray(`   #${num}/${candidates.length} [skip] id=${candidate.id} "${candidate.title}" (already scraped; use --force to re-scrape)`));
         continue;
+      }
+      if (rescrapeTitle) {
+        console.log(chalk.gray(`   #${num}/${candidates.length} id=${candidate.id} "${candidate.title}" — stale unknown-title checkpoint; re-scraping to recover the real title`));
       }
     }
 
@@ -399,9 +473,11 @@ export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): P
   }
 
   summary.elapsedMs = Date.now() - runStart;
+  summary.booksAdded = countBooks() - booksBefore;
+  summary.authorsAdded = countAuthors() - authorsBefore;
   const mins = (summary.elapsedMs / 60000).toFixed(1);
-  console.log(chalk.cyan.bold(`\n   Done: ${summary.ok} ok, ${summary.throttled} throttled, ${summary.missing} missing, ${summary.error} error, ${summary.skipped} skipped (${summary.processed} requests) in ${mins}m.`));
-  await closeBrowserContext();
+  console.log(chalk.cyan.bold(`\n   Done: ${summary.ok} ok, ${summary.throttled} throttled, ${summary.missing} missing, ${summary.error} error, ${summary.skipped} skipped (${summary.processed} requests) in ${mins}m · +${summary.booksAdded} books · +${summary.authorsAdded} authors`));
+  if (options.closeContext !== false) await closeBrowserContext();
   return summary;
 }
 

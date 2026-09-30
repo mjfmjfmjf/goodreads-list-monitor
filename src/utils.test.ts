@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { formatDuration, formatBookLink, httpCallInfo, httpStatusWord, fmtBytes, isConnectivityError, isDbLockError } from './utils.js';
+import { describe, expect, it, vi } from 'vitest';
+import { formatDuration, formatBookLink, httpCallInfo, httpStatusWord, fmtBytes, isConnectivityError, isDbLockError, withConnectivityProbe } from './utils.js';
 
 describe('isConnectivityError', () => {
   it('recognizes DNS / connection-level error codes', () => {
@@ -29,6 +29,39 @@ describe('isDbLockError', () => {
     expect(isDbLockError({ code: 'ENOTFOUND' })).toBe(false);
     expect(isDbLockError(new Error('Request failed with status code 403'))).toBe(false);
     expect(isDbLockError(undefined)).toBe(false);
+  });
+});
+
+describe('withConnectivityProbe', () => {
+  it('returns the result on a clean first try', async () => {
+    const fn = vi.fn(async () => 'ok');
+    const result = await withConnectivityProbe(fn, { waitMs: 1, label: 'test' });
+    expect(result).toBe('ok');
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits and probes again after a connectivity blip, resuming on recovery', async () => {
+    let calls = 0;
+    const fn = vi.fn(async () => {
+      calls++;
+      if (calls === 1) throw { code: 'ECONNRESET', message: 'read ECONNRESET' };
+      return 'recovered';
+    });
+    const result = await withConnectivityProbe(fn, { waitMs: 1, probes: 3, label: 'test' });
+    expect(result).toBe('recovered');
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
+  it('rethrows the last connectivity error after probes are exhausted', async () => {
+    const fn = vi.fn(async () => { throw { code: 'ECONNRESET', message: 'still down' }; });
+    await expect(withConnectivityProbe(fn, { waitMs: 1, probes: 2, label: 'test' })).rejects.toMatchObject({ code: 'ECONNRESET' });
+    expect(fn).toHaveBeenCalledTimes(3); // initial + 2 probes
+  });
+
+  it('passes non-connectivity failures straight through without waiting', async () => {
+    const fn = vi.fn(async () => { throw new Error('boom'); });
+    await expect(withConnectivityProbe(fn, { waitMs: 1, probes: 3 })).rejects.toThrow('boom');
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 });
 

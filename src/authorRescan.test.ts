@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { selectMultiPageAuthors } from './authorRescan.js';
+import { selectAuthors } from './authorTopStats.js';
 import type { AuthorCacheEntry } from './storage.js';
 
 const entry = (id: string, extra: Partial<AuthorCacheEntry> = {}): AuthorCacheEntry => ({
@@ -170,5 +171,32 @@ describe('selectMultiPageAuthors with missingField', () => {
     };
     const out = selectMultiPageAuthors(cache, { ...opts, sortBy: 'topRatings', bookStats, missingField: 'ratings' });
     expect(out.map((o) => o.name)).toEqual(['big', 'small']);
+  });
+
+  it('sorts by per-day ratings growth, NULL-rate authors last, minRatings filtering numRatings', () => {
+    const cache = {
+      fast: entry('1', { numRatings: '1,000', ratingsRate: 88.5 }),
+      mid: entry('2', { numRatings: '5,000', ratingsRate: 12.3 }),
+      noRate: entry('3', { numRatings: '9,000' }),
+    };
+    const all = selectMultiPageAuthors(cache, { ...base, sortBy: 'ratingsRate' });
+    expect(all.map((o) => o.name)).toEqual(['fast', 'mid', 'noRate']);
+    // --minRatings still filters on the author-page rating count, so a tiny
+    // but fast-growing author is excluded.
+    const filtered = selectMultiPageAuthors(cache, { ...base, sortBy: 'ratingsRate', minRatings: 5000 });
+    expect(filtered.map((o) => o.name)).toEqual(['mid', 'noRate']);
+  });
+});
+
+describe('selectAuthors (authorTopStats) — ratingsRate', () => {
+  it('sorts by per-day growth and excludes authors with no recorded rate', () => {
+    const cache = {
+      slow: entry('1', { numRatings: '100', ratingsRate: 0.5 }),
+      fast: entry('2', { numRatings: '10', ratingsRate: 40 }),
+      noRate: entry('3', { numRatings: '1,000' }),
+    };
+    const { authors, missingField } = selectAuthors(cache, { sortBy: 'ratingsRate', limit: '10' });
+    expect(authors.map((o) => o.name)).toEqual(['fast', 'slow']);
+    expect(missingField).toBe(1);
   });
 });

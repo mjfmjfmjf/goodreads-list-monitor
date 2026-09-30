@@ -85,6 +85,55 @@ export function isConnectivityError(err: any): boolean {
   return Boolean(err && typeof err.code === 'string' && CONNECTIVITY_ERROR_CODES.has(err.code));
 }
 
+// ---- connectivity blip probation ------------------------------------
+
+// A connectivity-level failure (ECONNRESET, DNS, etc.) is often a short-lived
+// blip (Wi-Fi drop, modem bounce, dead zone) rather than a real outage. Instead
+// of aborting the whole crawl on the first reset, log it, wait, and retry the
+// same operation a few times; only rethrow once the connection stays down, so
+// the caller's "progress saved" abort remains the last resort. Failures that
+// aren't connectivity pass straight through.
+export interface ConnectivityProbeOptions {
+  waitMs?: number; // pause before each probe (default GOODREADS_CONNECTIVITY_WAIT_MS or 60s)
+  probes?: number; // number of probes to try before giving up (default GOODREADS_CONNECTIVITY_PROBES or 3)
+  label?: string; // what's being scraped, shown in the log
+}
+
+const CONNECTIVITY_PROBE_WAIT_MS = (): number =>
+  parseInt(process.env.GOODREADS_CONNECTIVITY_WAIT_MS ?? '60000', 10) || 60000;
+const CONNECTIVITY_PROBE_COUNT = (): number => {
+  const v = parseInt(process.env.GOODREADS_CONNECTIVITY_PROBES ?? '3', 10);
+  return Number.isFinite(v) && v >= 1 ? v : 3;
+};
+
+export async function withConnectivityProbe<T>(fn: () => Promise<T>, opts: ConnectivityProbeOptions = {}): Promise<T> {
+  const waitMs = opts.waitMs ?? CONNECTIVITY_PROBE_WAIT_MS();
+  const probes = opts.probes ?? CONNECTIVITY_PROBE_COUNT();
+  const label = opts.label ?? 'scrape';
+  let lastErr: any;
+  for (let attempt = 0; attempt <= probes; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      if (!isConnectivityError(error)) throw error;
+      lastErr = error;
+      if (attempt < probes) {
+        console.log(chalk.yellow.bold(`\n⚠️ ${label} hit a connection error (${error.code ?? 'network error'}) — Goodreads unreachable, likely a temporary blip.`));
+        console.log(chalk.gray(`   Probe ${attempt + 1}/${probes}: waiting ${Math.round(waitMs / 1000)}s, then retrying the same scrape...`));
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+// Shared defaults for the object-returning walkers (popular-by-date) that
+// surface connectivity errors as a result.errorCode instead of a throw.
+export const connectivityProbeDefaults = (): { waitMs: number; probes: number } => ({
+  waitMs: CONNECTIVITY_PROBE_WAIT_MS(),
+  probes: CONNECTIVITY_PROBE_COUNT(),
+});
+
 // SQLite "database is locked" (SQLITE_BUSY) — another process holds the write
 // lock. Transient and worth retrying; it's not a network or content failure.
 export function isDbLockError(err: any): boolean {

@@ -56,6 +56,58 @@ it; use author slug and title only to derive ids or for display.
   way, `scraper.ts:1169-1173`). Goodreads serves `/author/list/{id}` id-only
   (verified 2026/08/27, see PLAN-orphan-authors.md).
 
+## Cross-id same-human families (verified 2026/09/26)
+
+Beyond same-id name variants, Goodreads genuinely keeps **distinct author ids
+for the same human**. Fresh scan of the 489,133-row authors table,
+name-normalized (lowercase, non-alphanumerics stripped):
+
+- **624 groups hold ≥2 different ids that share an identical book title (578)
+  and/or a book `work_id` (123)** — the direct answer to "do the ids share books
+  with the same work id": **yes, 123 groups do** (78 of them also share a title).
+- **46 groups share a work_id but NO title** — the language/edition-profile
+  class (`Bob Goff` 52537053 ↔ `鮑伯．戈夫 (Bob Goff)` 45709377; slug-leak
+  profiles like `ed-mcbain` 35321735, `juliet-marillier` 30765616). These look
+  like deliberate per-language pages, not stray duplicates.
+- **234 of the 624 involve a mint on/after 2026-09-20** — the current
+  popular-by-date / author-rescan / list walks keep minting second profiles of
+  already-crawled humans. Today **1,209** untouched-rescan candidates are
+  dup-profiles of an already-scraped sibling, so the running grind double-crawls
+  ~1.2k same-humans.
+- Everything else in the 3,399 multi-id name groups is same-name-different-
+  people (David Scott, James Thomson, George Smith…) — name equality alone is
+  NOT proof; work_id/title equality is.
+- Caveat: `work_id` covers only ~25% of these ids' book rows, so the title-only
+  501 groups are the *floor* of confirmation-by-work; bookSweep's ongoing
+  work_id capture will keep raising the work-confirmed count.
+
+Canonical pick (offline, no network): the id that owns the shared works'
+`is_work_rep` rows (edition-clustering infra already exists). **115/123
+work-sharing groups resolve to a single rep owner** — Stephen King 3389 owns the
+shared *Full Dark No Stars* rep (vs 56783466: 15 books / 120k ratings);
+Chomsky 2476, Donald Miller 4829, Eric Carle 3362 — all the well-known profile.
+Only **8 groups split rep ownership** (e.g. Plato 879 ↔ 69581394) and need
+tie-breaks (majority rep ownership → higher total ratings → cleaner name).
+
+## Cross-id canonicalization (orthogonal to the re-key)
+
+The id-PK re-key cannot merge distinct ids (id stays unique per row), so
+same-human families need a second-layer mapping bridging the edition-clustering
+infra and PLAN-orphan-authors' `author_aliases`:
+
+- `author_aliases` table: `(author_id, canonical_id, kind ['dup'|'language'],
+  evidence ['work_id'|'title'], verified_at)`. Built offline by the same
+  iterateBooks sweep that owns `is_work_rep`; never written during crawls.
+- Writer-side resolution (`upsertAuthorById`, failure ledger, book-author
+  attribution) maps `author_id → canonical_id` at write time, so scraped stats
+  land on the canonical row and crawl loops skip alias ids outright — kills the
+  ~1,209 double-crawls without a destructive merge.
+- Optional hard merge (user sign-off only): rewrite `books.author_id`,
+  `popular_by_date_book` variants, and any stats rows to the canonical id, delete
+  the aliased row — a `db.transaction` op reserved for crawlers-stopped windows.
+- "Retire one" semantics: canonical = rep owner; the retiree is aliased, its
+  rows (if any) folded in, never deleted while writers are live.
+
 ## Target design
 
 1. **`authors` becomes id-keyed**: `id TEXT PRIMARY KEY`, plus `name`, `slug`
@@ -190,6 +242,15 @@ philosophy applies when edition-clustering work lands; not part of the author fi
    into `author-rescan` + a dedicated `author-missing-ids` review command?
 5. `config.json` is retained as the token store (4b) — confirm the refresh path
    goes through `loadGoodreadsToken.sh` writing both the file and the DB.
+6. Cross-id same-human policy (new, verified 2026/09/26): do language/edition
+   profiles (`鲍伯．戈夫` Bob Goff, slug-leak profiles) merge into the canonical
+   id, or only alias for lookup/dedup while the row stays? Genuine dups (Stephen
+   King 3389 ↔ 56783466) are assumed merge-candidates.
+7. Canonical-id tie-break when `is_work_rep` ownership splits (8 of 123
+   work-sharing groups): majority rep ownership → higher total ratings → cleaner
+   name — confirm the order.
+8. Add the alias-based dup skip to `author-rescan` now (kills the ~1,209
+   double-crawls this session) or defer until the `author_aliases` table ships?
 
 ## Locked once the author-id work ships (non-negotiables from the audit)
 - `booksCache.json` / `authorsCache.json` / `state.json` are fully out: no

@@ -108,6 +108,41 @@ describe('updateAuthorStats (pure)', () => {
       averageRating: '4.50', numRatings: '1,000', numReviews: '100', numShelves: '2,000',
     })).toBe(false);
   });
+
+  it('computes per-day ratings growth on a later scrape', () => {
+    const entry = makeEntry();
+    const changed = updateAuthorStats(entry, { numRatings: '1,234', numReviews: '120' });
+    expect(changed).toBe(true);
+    // Made baseline on 2026-08-01 (a real prior capture), so the rate is
+    // Δratings / calendar days since lastSeen, rounded to 2 decimals.
+    const elapsedDays = (Date.now() - Date.parse('2026-08-01T00:00:00.000Z')) / 86400000;
+    expect(entry.ratingsRate).toBeCloseTo((1234 - 1000) / elapsedDays, 2);
+    expect(entry.lastSeen).not.toBe('2026-08-01T00:00:00.000Z');
+  });
+
+  it('first stats scrape of a minted author sets a baseline only (no rate)', () => {
+    // Minted by a book/list walk: no stats captured yet (numRatings undefined).
+    const entry = makeEntry({ numRatings: undefined, averageRating: undefined });
+    const changed = updateAuthorStats(entry, { averageRating: '4.2', numRatings: '5,000', numReviews: '500' });
+    expect(changed).toBe(true);
+    expect(entry.numRatings).toBe('5,000');
+    expect(entry.ratingsRate).toBeUndefined();
+  });
+
+  it('keeps the prior rate when the observation window is too short', () => {
+    const entry = makeEntry({ ratingsRate: 7.5, lastSeen: new Date().toISOString() });
+    const changed = updateAuthorStats(entry, { numRatings: '1,050', numReviews: '120' });
+    expect(changed).toBe(true);
+    expect(entry.ratingsRate).toBe(7.5);
+  });
+
+  it('a no-op scrape keeps the existing rate', () => {
+    const entry = makeEntry({ ratingsRate: 42.5 });
+    expect(updateAuthorStats(entry, {
+      averageRating: '4.50', numRatings: '1,000', numReviews: '100', numShelves: '2,000',
+    })).toBe(false);
+    expect(entry.ratingsRate).toBe(42.5);
+  });
 });
 
 describe('author rows', () => {

@@ -181,4 +181,27 @@ describe('writeSimilarityXref (tag-pairings --loadXref)', () => {
       console.log = orig;
     }
   });
+
+  it('--byGenre lists genres alphabetically with their similarity tags', () => {
+    upsertGenreTagXref('tbr', 'beans', 'similarity');
+    upsertGenreTagXref('tbr', 'apples', 'similarity');
+    upsertGenreTagXref('other', 'apples', 'similarity');
+    upsertGenreTagXref('zebra', 'apples', 'exact');
+    const out: string[] = [];
+    const orig = console.log;
+    const strip = (s: string) => String(s).replace(/\x1b\[[0-9;]*m/g, '');
+    console.log = (...args: any[]) => out.push(args.map(strip).join(' '));
+    try {
+      computeTagPairings({ byGenre: true });
+      const joined = out.join('\n');
+      const apples = joined.indexOf('apples');
+      const beans = joined.indexOf('beans');
+      expect(apples).toBeGreaterThan(0);
+      expect(beans).toBeGreaterThan(apples);
+      expect(joined).toContain(`${'apples'} (2): other, tbr`);
+      expect(joined).not.toContain('zebra');
+    } finally {
+      console.log = orig;
+    }
+  });
 });

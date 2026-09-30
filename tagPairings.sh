@@ -20,6 +20,13 @@
 #                                            #   below 50%, report each change,
 #                                            #   then exit; curated exact/cognate
 #                                            #   rows always preserved
+#   ./tagPairings.sh --loadXref 50           # (same) --listMax N caps how many
+#                      --listMax 1000        #   added/changed/removed rows are
+#                                            #   listed per section (default 1000)
+#   ./tagPairings.sh --byGenre               # terse READ of the committed xref:
+#                                            #   each genre (alphabetical) with
+#                                            #   the similarity tags that roll
+#                                            #   into it — no recompute
 #
 # Output: per non-genre tag, the top-K GENRE-tags by % Jaccard similarity
 # (overlap / union of book sets), with shared count and union size.

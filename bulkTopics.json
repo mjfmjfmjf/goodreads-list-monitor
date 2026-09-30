@@ -208,7 +208,9 @@
     "officialTitle": "Best Popular Anthropology Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/94625.Best_Popular_Anthropology_Books_on_Goodreads",
     "criteria": {
-      "min": 1000
+      "min": 1000,
+      "minTags": 30,
+      "tag": "anthropology"
     }
   },
   {
@@ -217,7 +219,9 @@
     "officialTitle": "Best Popular Astronomy Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/95752.Best_Popular_Astronomy_Books_on_Goodreads",
     "criteria": {
-      "min": 1000
+      "min": 1000,
+      "minTags": 10,
+      "tag": "astronomy"
      }
   },
   {
@@ -226,7 +230,9 @@
     "officialTitle": "Best Popular Autobiography Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/142405.Best_Popular_Autobiography_Books_on_Goodreads",
     "criteria": {
-      "min": 50000 
+      "min": 50000,
+      "minTags": 100,
+      "tag": "autobiography"
     }
   },
   {
@@ -235,7 +241,9 @@
     "officialTitle": "Best Popular Botany Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/142100.Best_Popular_Botany_Books_on_Goodreads",
     "criteria": {
-       "min": 100
+       "min": 100,
+       "minTags": 5,
+       "tag": "botany"
     }
   },
   {
@@ -244,7 +252,9 @@
     "officialTitle": "Best Popular Classics Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/107459.Best_Popular_Classics_Books_on_Goodreads",
     "criteria": {
-       "min": 100000
+       "min": 100000,
+       "minTags": 2000,
+       "tag": "classics"
     }
   },
   {
@@ -271,6 +281,8 @@
     "officialTitle": "Best Popular Economics Books on Goodreads",
     "url": "https://www.goodreads.com/list/show/131817.Best_Popular_Economics_Books_on_Goodreads",
     "criteria": {
+       "minTags": 200,
+       "tag": "economics",
        "min": 1000
     }
   },

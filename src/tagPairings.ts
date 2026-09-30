@@ -9,6 +9,8 @@ export interface TagPairingOptions {
   maxResults?: string;   // max non-genre tags to report (default all)
   minJaccard?: string;   // only show a tag whose best genre match is >= this %; list only matches at/above it
   loadXref?: string;     // REBUILD the tag→genre xref (kind=similarity) for matches >= this %, then exit
+  listMax?: string;      // max added/changed/removed rows to list per section (default 1000)
+  byGenre?: boolean;     // terse read of the committed xref: genres (alpha) with the tags that roll into them
 }
 
 export interface XrefChange {
@@ -114,6 +116,11 @@ export function computeTagPairings(options: TagPairingOptions = {}): void {
   const db = getDb();
   const { tagSets, nonGenreTags } = loadTagSets();
 
+  if (options.byGenre) {
+    listRollUp();
+    return;
+  }
+
   const topK = options.limit ? parseInt(options.limit, 10) : 5;
   const minBooks = options.minBooks ? parseInt(options.minBooks, 10) : 0;
   const maxResults = options.maxResults ? parseInt(options.maxResults, 10) : Infinity;
@@ -122,10 +129,11 @@ export function computeTagPairings(options: TagPairingOptions = {}): void {
   const loadPct = options.loadXref !== undefined ? parseFloat(options.loadXref) : NaN;
   if (!isNaN(loadPct)) {
     const res = writeSimilarityXref(loadPct);
+    const listMax = options.listMax !== undefined ? parseInt(options.listMax, 10) : 1000;
     const list = (title: string, items: XrefChange[], toGenre: boolean) => {
       if (items.length === 0) return;
       console.log(chalk.gray(`\n   ${chalk.white.bold(title)} (${items.length}):`));
-      const shown = items.slice(0, 25);
+      const shown = items.slice(0, listMax);
       for (const it of shown) {
         if (toGenre) {
           const from = it.oldGenre ? chalk.yellow(` ${it.oldGenre} → `) : '';
@@ -204,5 +212,29 @@ export function computeTagPairings(options: TagPairingOptions = {}): void {
   }
   if (slice.length < subjects.length) {
     console.log(chalk.gray(`\n   … ${subjects.length - slice.length} more non-genre tags (use --maxResults).`));
+  }
+}
+
+// Terse read of the committed xref: for each genre (alphabetical), the
+// similarity tags that roll into it (also alphabetical). Kind=exact/cognate
+// rows are ignored — those aren't similarity roll-ins.
+export function listRollUp(): void {
+  const db = getDb();
+  const byGenre = new Map<string, string[]>();
+  for (const r of db.prepare('SELECT genre_name, tag_name FROM genre_tag_xref WHERE kind = ?').all('similarity') as any[]) {
+    const list = byGenre.get(r.genre_name) ?? [];
+    list.push(r.tag_name);
+    byGenre.set(r.genre_name, list);
+  }
+  const genres = [...byGenre.keys()].sort();
+  if (genres.length === 0) {
+    console.log(chalk.gray('\n   No similarity xref rows yet — run ./tagPairings.sh --loadXref <pct> first.'));
+    return;
+  }
+  console.log(chalk.cyan.bold('\n🗂️  Genres + the tags that roll into them (kind=similarity, from committed xref)'));
+  console.log(chalk.gray(`   ${genres.length} genres · ${[...byGenre.values()].reduce((n, t) => n + t.length, 0)} tag(s)`));
+  for (const genre of genres) {
+    const tags = byGenre.get(genre)!.sort();
+    console.log(chalk.white(`${genre}`) + chalk.gray(` (${tags.length})`) + `: ${tags.join(', ')}`);
   }
 }

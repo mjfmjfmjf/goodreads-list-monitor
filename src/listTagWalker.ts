@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { scrapeListsByTag, scrapeListBooks, TagListEntry } from './scraper.js';
 import { countAuthors, loadListScrape, syncBooksToCache, upsertListScrape, type BookCache } from './storage.js';
-import { delay, isConnectivityError } from './utils.js';
+import { delay, isConnectivityError, withConnectivityProbe } from './utils.js';
 
 export interface ListTagWalkerOptions {
   tag: string;
@@ -94,7 +94,7 @@ export async function runListTagWalker(options: ListTagWalkerOptions): Promise<L
     console.log(chalk.gray(`\n   📖 [${i + 1}/${lists.length}] ${chalk.white.bold(label)} (${l.id}) — crawling...`));
     let books;
     try {
-      books = await scrapeListBooks(l.id, options.listMaxPages ?? Infinity);
+      books = await withConnectivityProbe(() => scrapeListBooks(l.id, options.listMaxPages ?? Infinity), { label: `list ${l.id}` });
     } catch (error: any) {
       if (isConnectivityError(error)) throw error;
       console.error(chalk.red.bold(`   ❌ List ${l.id} failed: ${error?.message}`));

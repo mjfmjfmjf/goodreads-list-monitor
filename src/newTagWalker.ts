@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { scrapeShelfBooks, scrapeTopShelves } from './scraper.js';
 import { getDb } from './db.js';
 import { getBook, getKnownShelfPages, loadAuthorCache, syncAuthorsToCache, syncBooksToCache, upsertBook } from './storage.js';
-import { delay, isConnectivityError } from './utils.js';
+import { delay, isConnectivityError, withConnectivityProbe } from './utils.js';
 
 export interface NewTagWalkerOptions {
   maxListPages?: string;
@@ -76,7 +76,7 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
   for (let page = startPage; page <= lastPage; page++) {
     let pageShelves: string[];
     try {
-      pageShelves = await scrapeTopShelves(page);
+      pageShelves = await withConnectivityProbe(() => scrapeTopShelves(page), { label: 'new-tag walker (shelf list)' });
     } catch (err: any) {
       if (isConnectivityError(err)) {
         console.log(chalk.red.bold(`\n🛑 Aborting walker: network error (${err.code} — ${err.message}).`));
@@ -138,7 +138,10 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
       console.log(chalk.gray(`      Scraping shelf "${tag}" (pages 1-${end})...`));
 
       try {
-        const shelfBooks = await scrapeShelfBooks(tag, minTags, end, 1, { skipAuthorSync: true });
+        const shelfBooks = await withConnectivityProbe(
+          () => scrapeShelfBooks(tag, minTags, end, 1, { skipAuthorSync: true }),
+          { label: `new-tag walker (shelf "${tag}")` }
+        );
 
         // Sync the scraped shelf into the book cache and mint its authors,
         // counting what was newly added this tag.

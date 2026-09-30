@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import { Page } from 'playwright';
 import { scrapeListsByTag } from './scraper.js';
-import { ListWalkerOptions, walkOneList, ensureListTables, listScrapeSkip, WalkerSummary } from './listWalker.js';
+import { ListWalkerOptions, walkOneList, ensureListTables, listScrapeSkip, setListWalkRow, WalkerSummary } from './listWalker.js';
 import { ensureScrapeTables, getBrowserContext, closeBrowserContext } from './browserBookScrape.js';
 import { delay } from './utils.js';
 
@@ -43,7 +43,14 @@ export async function runListTagHarvest(options: ListTagHarvestOptions): Promise
   const summary = emptySummary();
 
   if (options.dryRun) {
-    listEntries.forEach((l, i) => console.log(chalk.gray(`   ${i + 1}. ${l.id} · ${l.slug || l.url}`)));
+    let curPage = 0;
+    listEntries.forEach((l, i) => {
+      if (l.page && l.page !== curPage) {
+        curPage = l.page;
+        console.log(chalk.cyan(`\n   📄 tag-index page ${l.page}:`));
+      }
+      console.log(chalk.gray(`   ${i + 1}. ${l.id} · ${l.slug || l.url}${l.pagePos ? ` (list ${l.pagePos}/${l.pageTotal} on page)` : ''}`));
+    });
     console.log(chalk.yellow(`\n   Dry run — ${listEntries.length} lists would be crawled. Pass without --dry-run to harvest.`));
     return summary;
   }
@@ -69,6 +76,9 @@ export async function runListTagHarvest(options: ListTagHarvestOptions): Promise
   };
   const walkable = listEntries.filter((l) => !listScrapeSkip(String(l.id), listOptions));
   const skippedAll = listEntries.length - walkable.length;
+  // Last tag-index directory page actually enumerated (entries carry their
+  // source page), so progress can read "tag page 3/27" instead of a flat ratio.
+  const lastTagPage = Math.max(0, ...listEntries.map((l) => l.page ?? 0));
   if (skippedAll > 0) {
     const relistNote = (options.relistDays ?? 0) <= 0 ? 'all done lists' : `lists scraped within --relist-days ${options.relistDays}`;
     console.log(chalk.gray(`\n   ⏭  ${skippedAll} of ${listEntries.length} lists already scraped (${relistNote}) — skipping before opening the browser:`));
@@ -82,17 +92,56 @@ export async function runListTagHarvest(options: ListTagHarvestOptions): Promise
     return summary;
   }
 
-  const context = await getBrowserContext();
+  let context = await getBrowserContext();
   const started = Date.now();
 
   try {
+    let curPage = 0;
     for (let i = 0; i < walkable.length; i++) {
       if (summary.capped) break;
       const l = walkable[i];
-      console.log(chalk.gray(`\n   ── list ${i + 1}/${walkable.length} · ${l.slug || l.id} (${l.id}) ──`));
-      const page: Page = await context.newPage();
+      if (l.page && l.page !== curPage) {
+        curPage = l.page;
+        console.log(chalk.cyan(`\n   📄 tag-index page ${l.page}${lastTagPage > 0 ? `/${lastTagPage}` : ''} — starting list ${l.pagePos ?? '?'} of ${l.pageTotal ?? '?'} on this page.`));
+      }
+      const pageNote = l.page
+        ? ` · ${chalk.white(`tag page ${l.page}${lastTagPage > 0 ? `/${lastTagPage}` : ''}`)} · ${chalk.white(`list ${l.pagePos ?? '?'}/${l.pageTotal ?? '?'} on page`)}`
+        : '';
+      console.log(chalk.gray(`   ── list ${i + 1}/${walkable.length}${pageNote} · ${l.slug || l.id} (${l.id}) ──`));
+      let page: Page;
+      let pageOpenAttempts = 0;
+      while (true) {
+        try {
+          page = await context.newPage();
+          break;
+        } catch (err) {
+          pageOpenAttempts++;
+          if (pageOpenAttempts >= 3) {
+            summary.error++;
+            console.log(chalk.bold.red(`   💥 list ${i + 1}/${walkable.length} (${l.id}) — ${pageOpenAttempts} attempts to open a tab failed: ${String((err as any)?.message || err).slice(0, 160)}`));
+            console.log(chalk.bold.red('      The headed browser is not recoverable — ending the harvest here (progress checked-pointed; re-run to continue from the next list).'));
+            return summary;
+          }
+          // One dead tab shouldn't end the run: tear down the broken context and
+          // relaunch the headed window once/twice before giving up.
+          console.log(chalk.yellow(`   💥 list ${i + 1}/${walkable.length} (${l.id}) tab open failed (${String((err as any)?.message || err).slice(0, 120)}) — relaunching the browser context...`));
+          await closeBrowserContext();
+          await delay(3000, 6000);
+          context = await getBrowserContext();
+        }
+      }
       try {
         await walkOneList(page, String(l.id), listOptions, summary, strict, cooldownMs, maxThrottles);
+      } catch (err) {
+        // Any other throw from the walker (unhandled CRITICAL_NAVIGATION_ERROR,
+        // browser teardown race, DB throw...) — catch per-list so the run goes
+        // on and the failure is attributed to THIS list, not the whole tag.
+        if (!options.dryRun) {
+          try { setListWalkRow({ list_id: String(l.id), status: 'error' }); } catch { /* best-effort */ }
+        }
+        summary.error++;
+        console.log(chalk.bold.red(`   ❌ list ${i + 1}/${walkable.length} (${l.id}) crashed the walker: ${String((err as any)?.message || err).slice(0, 160)}`));
+        console.log(chalk.yellow('      Continuing with the next list.'));
       } finally {
         await page.close().catch(() => {});
       }

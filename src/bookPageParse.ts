@@ -63,6 +63,7 @@ export function extractEditionsCount(html: string): number | undefined {
 }
 
 export interface BookPageDetails {
+  title?: string;
   genres: string[];
   ratings?: string;
   avgRating?: string;
@@ -79,6 +80,9 @@ export interface BookPageDetails {
   description?: string;
   series: { title: string; position?: string }[];
   workId?: string;
+  author?: string;
+  authorId?: string;
+  authorSlug?: string;
 }
 
 function deref(apolloState: any, ref: any): any {
@@ -117,6 +121,17 @@ export function parseBookPageFromHtml(html: string, bookId: string): BookPageDet
   const bookData = bookKey ? apolloState[bookKey] : null;
   if (!bookData) return empty;
 
+  // Title lives on the Book node (structured, no markup); fall back to the DOM
+  // h1 when Apollo doesn't carry it, so new books persist a real title instead
+  // of 'Unknown Title'.
+  let title = typeof bookData.title === 'string' && bookData.title.trim() ? bookData.title.trim() : undefined;
+  if (!title) {
+    const h1 =
+      html.match(/<h1[^>]*data-testid="bookTitle"[^>]*>([\s\S]*?)<\/h1>/i) ??
+      html.match(/<h1[^>]*id="bookTitle"[^>]*>([\s\S]*?)<\/h1>/i);
+    if (h1) title = h1[1].replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  }
+
   const genres: string[] = [];
   if (Array.isArray(bookData.bookGenres)) {
     for (const bg of bookData.bookGenres) {
@@ -126,9 +141,29 @@ export function parseBookPageFromHtml(html: string, bookId: string): BookPageDet
     }
   }
   const out: BookPageDetails = {
+    title,
     genres: [...new Set(genres)].filter(g => !NAV_GENRES.has(g)),
     series: [],
   };
+
+  // Primary author lives at Book.primaryContributorEdge.node → Contributor:{...}
+  // (verified live 2026/09). The Contributor carries name, legacyId and the
+  // canonical /author/show/<slug> webUrl.
+  const contributor = bookData.primaryContributorEdge
+    ? (deref(apolloState, bookData.primaryContributorEdge.node) ?? bookData.primaryContributorEdge.node)
+    : null;
+  if (contributor) {
+    if (typeof contributor.name === 'string' && contributor.name.trim()) {
+      out.author = contributor.name.trim();
+      if (contributor.legacyId !== undefined && contributor.legacyId !== null) {
+        out.authorId = String(contributor.legacyId);
+      }
+    }
+    if (typeof contributor.webUrl === 'string') {
+      const slugMatch = contributor.webUrl.match(/\/author\/show\/([^/?#]+)/);
+      if (slugMatch) out.authorSlug = slugMatch[1];
+    }
+  }
 
   const stats = firstNonNull(
     deref(apolloState, bookData.stats),

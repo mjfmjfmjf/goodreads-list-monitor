@@ -47,9 +47,11 @@ import { runAuthorTopBooks } from './authorTopBooks.js';
 import { runAuthorTopStats } from './authorTopStats.js';
 import { runAuthorTopBookHistogram } from './authorTopBookHistogram.js';
 import { runAuthorNewestYearHistogram } from './authorNewestYearHistogram.js';
+import { runAuthorGapHistogram } from './authorGapHistogram.js';
 import { runAuthorOrphans } from './authorOrphans.js';
 import { runAuthorListDiff } from './authorListDiff.js';
 import { runAuthorRescan } from './authorRescan.js';
+import { runAuthorRecent } from './authorRecent.js';
 import { runAuthorOne } from './authorOne.js';
 import { runAuthorDedupe } from './authorDedupe.js';
 import { runBrowserBookScrape } from './browserBookScrape.js';
@@ -58,6 +60,7 @@ import { runListWalker } from './listWalker.js';
 import { runListTagWalker } from './listTagWalker.js';
 import { runListPopularWalker } from './listPopularWalker.js';
 import { runListTagHarvest } from './listTagHarvest.js';
+import { runPopularByDate } from './popularByDate.js';
 import { runTagWalkBooks } from './tagWalkBooks.js';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
 import { runBooks } from './books.js';
@@ -576,6 +579,21 @@ Examples:
   });
 
 program
+  .command('author-gap-histogram')
+  .description('For each author whose newest cached book is within the last 40 years, bin the largest gap in years between their consecutive publication years (gap 0 = all books in one year), with counts and percents')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-gap-histogram
+  $ ./authorGapHistogram.sh`)
+  .action(async () => {
+    try {
+      await runAuthorGapHistogram();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run author gap histogram:'), (error as any).message);
+    }
+  });
+
+program
   .command('author-orphans')
   .description('List authors that appear in the book cache but have no author-cache entry, ordered by their highest-rated book (by rating count). Read-only (no network) unless --scrape. Add --inspect to also print a per-orphan browser URL and bucket each as multi-author / no author id / genuinely missing. Add --scrape to ingest the "genuinely missing" orphans (those with an authorId) into the author cache; combine with --multiPage to crawl each author\'s full catalog.')
   .addHelpText('after', `
@@ -622,7 +640,7 @@ Examples:
   $ npm run author-rescan -- --minYear 2025 --limit 500
   $ ./authorRescan.sh --rescanMissing --minAge 30 --limit 500`)
   .option('--limit <number>', 'Number of authors to refresh (default 100)', '100')
-  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves, topRatings (max ratings of the author\'s top book, from the books table — best for --multiPage --onlyUntouched since never-scraped authors have no author-page stats yet; default numRatings), or newestYear (max publish year of the author\'s qualifying books — combine with --minBookYear to rank untouched authors with recent books first). With topRatings/newestYear, --minRatings/--maxRatings filter on that top-book rating too.', 'numRatings')
+  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves, ratingsRate (per-day growth in rating count, computed when a stats scrape sees ratings increase — first scrape of an author only sets a baseline; best combined with --multiPage to re-scrape the fastest-growing authors most often), topRatings (max ratings of the author\'s top book, from the books table — best for --multiPage --onlyUntouched since never-scraped authors have no author-page stats yet; default numRatings), or newestYear (max publish year of the author\'s qualifying books — combine with --minBookYear to rank untouched authors with recent books first). With topRatings/newestYear, --minRatings/--maxRatings filter on that top-book rating too.', 'numRatings')
   .option('--minRatings <number>', 'Only consider authors with at least this many ratings')
   .option('--maxRatings <number>', 'Only consider authors with at most this many ratings')
   .option('--minAge <days>', 'Skip authors whose stats were last updated within this many days (default 0 = scrape everything)')
@@ -639,6 +657,29 @@ Examples:
       await runAuthorRescan(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run author rescan:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-recent')
+  .description('Rescrape authors who have a book published within the last N years: page 1 of their works list, sorted by original_publication_year (newest first), so recent outputs refresh author stats and harvest their recent books. Candidates come from the books table (author has a qualifying recent book). Default order is most overall author-page ratings to least; --sortBy newestYear instead runs newest qualifying book first (upcoming/future years first and treated equally, then the current year, then back). Skips authors updated within --minAge days (default 14).')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-recent -- --limit 100
+  $ npm run author-recent -- --years 5 --limit 200
+  $ npm run author-recent -- --minAge 30 --limit 50
+  $ npm run author-recent -- --sortBy newestYear --years 10 --minAge 14
+  $ ./authorRecent.sh              # defaults: 10 years, 14-day minAge, limit 100`)
+  .option('--limit <number>', 'Number of authors to refresh (default 100)', '100')
+  .option('--years <number>', 'Recency window: rescrape authors with a book published within this many years (default 10)', '10')
+  .option('--minAge <days>', 'Skip authors whose stats were last updated within this many days (default 14)', '14')
+  .option('--sortBy <mode>', 'Candidate order: "ratings" (most author-page ratings first, default) or "newestYear" (newest qualifying book first; future years equal, then current year, then back, tie-broken by the highest-rated book and then name)', 'ratings')
+  .option('--withCookie', 'Send the login cookie on author-page requests. Author pages need no auth, so crawls are anonymous by default and run faster; use this to opt back into cookie-authenticated pacing (GR_AUTHOR_DELAY_MS/GR_PAGE_DELAY_MS override delays; GR_USE_COOKIE=1 works too).')
+  .action(async (options) => {
+    try {
+      await runAuthorRecent(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run author recent:'), (error as any).message);
     }
   });
 
@@ -961,7 +1002,7 @@ Examples:
   $ npm run author-top-stats -- --sortBy averageRating --minRatings 100000 --limit 10
   $ ./authorTopStats.sh --sortBy averageRating --minRatings 100000`)
   .option('--limit <number>', 'Number of authors to return (default 100)', '100')
-  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves (default numRatings)', 'numRatings')
+  .option('--sortBy <field>', 'Sort field: numRatings, averageRating, numReviews, numShelves, ratingsRate (per-day ratings growth — first-scrape/NULL authors sort last) (default numRatings)', 'numRatings')
   .option('--minRatings <number>', 'Only include authors with at least this many ratings')
   .option('--maxRatings <number>', 'Only include authors with at most this many ratings')
   .action(async (options) => {
@@ -1703,6 +1744,8 @@ program
   .option('--maxResults <number>', 'Max non-genre tags to report (default all)')
   .option('--minJaccard <percent>', 'Only show a tag whose best genre match is >= this %; list only matches at/above it (default 0 = show all tags)')
   .option('--loadXref <percent>', 'Incrementally sync the tag→genre xref rows (kind=similarity): insert new mappings, re-point changed ones, drop rows now below this % Jaccard — reporting each add/change/remove, then exit (curated exact/cognate mappings are preserved)')
+  .option('--listMax <number>', 'With --loadXref, max added/changed/removed rows to list per section (default 1000)')
+  .option('--byGenre', 'Terse read of the committed xref: for each genre (alphabetical), the similarity tags that roll into it — then exit')
   .action(async (options) => {
     try {
       computeTagPairings(options);
@@ -1803,6 +1846,64 @@ program
       runColorLegend();
     } catch (error) {
       console.error(chalk.red.bold('Failed to render color legend:'), (error as any).message);
+    }
+  });
+
+program
+  .command('popular-by-date')
+  .description('Walk the "Popular By Date" release feed (https://www.goodreads.com/book/popular_by_date): enumerate books ranked by release date for a year (YYYY) and/or month (YYYY/M) page, then interleave a book detail-scrape right after each page — walk a list, read its books, move to the next list (human-like browsing). Enumeration drives Goodreads\' own AppSync getTopList pagination inside the page (endpoint + API key captured from the site\'s traffic), one tab, sequential — a full page is ~200 books in 14 fetches. Month pages exist for roughly the last 2 years (runtime-probed, client-side 404s skipped); year pages go back to ~2012.')
+  .addHelpText('after', `
+Examples:
+  $ ./popularByDate.sh                          (current year + current month, then detail-scrape)
+  $ ./popularByDate.sh --year 2026 --month 9    (year page 2026 + month 2026/9 → details)
+  $ ./popularByDate.sh --year 2012              (year page 2012 → details)
+  $ ./popularByDate.sh --year 2026 --year-back 2    (year pages 2026, 2025, 2024 → details)
+  $ ./popularByDate.sh --month 9 --month-back 3     (year 2026 + months 2026-9, 2026-8, 2026-7 → details)
+  $ ./popularByDate.sh --dryRun --year 2026 --month 9   (enumerate only, print ranked ids, no writes)
+  $ ./popularByDate.sh --no-details --year 2012   (enumerate only, persist the listing table)
+  $ ./popularByDate.sh --skip-days 0 --force --year 2026  (re-walk regardless of freshness)
+  $ GOODREADS_STRICT_THROTTLE=1 ./popularByDate.sh --dryRun --year 2026 --month 9  (abort on 202/403)
+Skip: a page whose listing was scraped within the last --skip-days (default 7) is
+skipped unless --force. Each page\'s book detail-scrape reuses browser-book-scrape\'s
+candidate loop (checkpoint skip = never rescraps books already scraped, --skip-has,
+cooldown + 1 retry, 2-consecutive abort, pacing) while keeping the browser open
+across the whole run. --limit caps the detail-scrape per page (500000 = all).
+Throttling: same 60s cooldown + 1 retry + 2-consecutive abort behavior as browser-book-scrape.`)
+  .option('--year <year>', 'Anchor year (default: current year)')
+  .option('--year-back <number>', 'Also walk year pages going back this many years (default 0)', '0')
+  .option('--month <month>', 'Anchor month 1-12 (default: current month)')
+  .option('--month-back <number>', 'Also walk month pages going back this many months (default 1)', '1')
+  .option('--limit <number>', 'Per-page cap on book detail-scrapes (default 100; 500000 = all per page)', '100')
+  .option('--skip-has <criteria>', 'Only fetch details for books MISSING all of these: genres|work-id|tags (default genres)', 'genres')
+  .option('--pages <number>', 'Max getTopList fetches per page walk (default 30; a full page needs ~14)', '30')
+  .option('--skip-days <number>', 'Skip pages whose listing was scraped within this many days (default 7; 0 = never skip)', '7')
+  .option('--engine <engine>', 'Phase B fetch engine: browser (default) or axios', 'browser')
+  .option('--dryRun', 'Enumerate pages (AppSync pagination, network) but write nothing and skip Phase B')
+  .option('--no-details', 'Enumerate + persist the listing table but skip Phase B detail-scrape')
+  .option('--force', 'Re-walk pages listed within the skip window and re-fetch books with ok checkpoints')
+  .option('--cooldown-ms <number>', 'Cooldown sleep after a throttled response before the single retry (default 60000)')
+  .option('--maxConsecutiveThrottles <number>', 'Give up after this many consecutive throttled pages (default 2; 0 = keep going)', '2')
+  .action(async (options) => {
+    try {
+      const skipHas = String(options.skipHas).split(',').map((s: string) => s.trim()).filter(Boolean);
+      await runPopularByDate({
+        year: options.year !== undefined ? parseInt(options.year, 10) : undefined,
+        yearBack: parseInt(options.yearBack, 10),
+        month: options.month !== undefined ? parseInt(options.month, 10) : undefined,
+        monthBack: parseInt(options.monthBack, 10),
+        limit: parseInt(options.limit, 10),
+        skipHas,
+        pages: parseInt(options.pages, 10),
+        skipDays: parseInt(options.skipDays, 10),
+        engine: options.engine === 'axios' ? 'axios' : 'browser',
+        dryRun: !!options.dryRun,
+        noDetails: !!options.noDetails,
+        force: !!options.force,
+        cooldownMs: options.cooldownMs !== undefined ? parseInt(options.cooldownMs, 10) : undefined,
+        maxConsecutiveThrottles: parseInt(options.maxConsecutiveThrottles, 10),
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run popular-by-date:'), (error as any).message);
     }
   });
 

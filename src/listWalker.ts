@@ -175,6 +175,10 @@ interface ListFetch {
 
 const NAV_TIMEOUT_MS = 45_000;
 const HANG_RETRY_MS = Math.max(1000, parseInt(process.env.GOODREADS_HANG_RETRY_MS ?? '60000', 10) || 60_000);
+// Transient Chromium navigation aborts (net::ERR_ABORTED etc.) are blips, not
+// site defects — the headed browser tab can drop the request on its own. One
+// quick patient retry, like the hang path gets, is safer than killing the list.
+const NAV_ABORT_RETRY_MS = Math.max(1000, parseInt(process.env.GOODREADS_NAV_ABORT_RETRY_MS ?? '15000', 10) || 15_000);
 
 async function fetchListPage(page: Page, listId: string, pageNum: number): Promise<ListFetch> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -415,14 +419,20 @@ export async function walkOneList(
     }
     if (fetch.error && !fetch.html) {
       const isHang = /hung|Timeout \d+ms exceeded/i.test(fetch.error);
-      if (isHang && !strict) {
-        console.log(chalk.yellow(`   ⏳ list ${listId} page ${pageNum} fetch hung > ${NAV_TIMEOUT_MS / 1000}s — Goodreads pages famously hang on their own; one patient ${(HANG_RETRY_MS / 1000).toFixed(0)}s retry, then moving on...`));
-        await cooldown(HANG_RETRY_MS);
+      // Chromium drops the navigation on its own routinely (net::ERR_ABORTED,
+      // ERR_CONNECTION_RESET, ...) — a transient tab/network blip, NOT a
+      // Goodreads defect. Same single-patient-retry treatment as a hang.
+      const isNavAbort = !isHang && /net::ERR_|ERR_ABORTED|ERR_CONNECTION|ERR_NETWORK|ERR_NAME_NOT_RESOLVED|ERR_EMPTY_RESPONSE/i.test(fetch.error);
+      if ((isHang || isNavAbort) && !strict) {
+        const retryMs = isHang ? HANG_RETRY_MS : NAV_ABORT_RETRY_MS;
+        const what = isHang ? `hung > ${NAV_TIMEOUT_MS / 1000}s` : `navigation aborted (${(fetch.error.match(/net::ERR_\w+/)?.[0] || 'net::ERR_ABORTED')}) — transient blip`;
+        console.log(chalk.yellow(`   ⏳ list ${listId} page ${pageNum} ${what} — one patient ${(retryMs / 1000).toFixed(0)}s retry, then moving on...`));
+        await cooldown(retryMs);
         const retry = await fetchListPage(page, listId, pageNum);
         if (retry.html || retry.status) Object.assign(fetch, retry);
         if (!fetch.html && !fetch.status) {
           summary.error++;
-          console.log(chalk.red(`   ❌ list ${listId} page ${pageNum} still hung after a ${(HANG_RETRY_MS / 1000).toFixed(0)}s retry — marking [error] and aborting walk.`));
+          console.log(chalk.red(`   ❌ list ${listId} page ${pageNum} still failing after a ${(retryMs / 1000).toFixed(0)}s retry — marking [error] and aborting walk.`));
           if (!options.dryRun) setListWalkRow({ list_id: listId, status: 'error', current_page: pageNum });
           return { chainEnd: false };
         }
