@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as cheerio from 'cheerio';
-import { extractAuthorId, acceptAuthorListMatch, findOnAuthorPage, extractShelfPageLinks, isPermanentAuthorPageFailure, parseTagListPage, parseAuthorStats } from './scraper.js';
+import { extractAuthorId, acceptAuthorListMatch, findOnAuthorPage, extractShelfPageLinks, isPermanentAuthorPageFailure, parseTagListPage, parseAuthorStats, reanchorShelfPage } from './scraper.js';
 
 describe('extractAuthorId', () => {
   it('returns the bare id as-is', () => {
@@ -226,8 +226,48 @@ describe('parseAuthorStats', () => {
     expect(stats.numShelves).toBe('551');
   });
 
+  it('parses the new hreview-aggregate layout with itemprop counts', () => {
+    const stats = parseAuthorStats(cheerio.load(`
+      <link rel="canonical" href="https://www.goodreads.com/author/show/12603.Mollie_Hunter" />
+      <div class="hreview-aggregate" itemprop="aggregateRating" itemscope itemtype="https://schema.org/AggregateRating">
+        <span class="item fn" hidden>Mollie Hunter</span>
+        <span class="rating">
+          Average rating:
+          <span class="average" itemprop="ratingValue">3.87</span>
+        </span>
+        <span class="votes"><span class="value-title" title="2390" itemprop="ratingCount" content="2390">2,390</span></span> ratings
+        <span class="count"><span class="value-title" title="306" itemprop="reviewCount" content="306">306</span></span> reviews
+      </div>`));
+    expect(stats.name).toBe('Mollie Hunter');
+    expect(stats.slug).toBe('12603.Mollie_Hunter');
+    expect(stats.averageRating).toBe('3.87');
+    expect(stats.numRatings).toBe('2390');
+    expect(stats.numReviews).toBe('306');
+  });
+
   it('returns just name/slug when the stats line is absent', () => {
     const stats = parseAuthorStats(cheerio.load(`<div class="leftContainer"><a class="authorName" href="/author/show/1.A">A</a></div>`));
     expect(stats).toEqual({ name: 'A', slug: '1.A' });
+  });
+});
+
+describe('reanchorShelfPage', () => {
+  it('re-anchors a tail read aimed past a shelf that has since shrunk', () => {
+    // asked for page 11, the footer admits 10 exist (stale xref max position)
+    expect(reanchorShelfPage(11, 10, false)).toBe(10);
+  });
+
+  it('does nothing when the requested page exists (normal tail read)', () => {
+    expect(reanchorShelfPage(10, 10, false)).toBeNull();
+    expect(reanchorShelfPage(10, 25, false)).toBeNull();
+  });
+
+  it('does nothing without a footer page count (nothing to trust yet)', () => {
+    expect(reanchorShelfPage(11, null, false)).toBeNull();
+  });
+
+  it('re-anchors at most once — a second refusal means the footers disagree, so bail', () => {
+    expect(reanchorShelfPage(11, 9, true)).toBeNull();
+    expect(reanchorShelfPage(11, 0, false)).toBeNull(); // nonsense footer
   });
 });

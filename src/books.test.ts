@@ -8,7 +8,7 @@ vi.hoisted(() => {
 });
 
 import { closeDb, getDb } from './db.js';
-import { runBooks } from './books.js';
+import { runBooks, resetBooksCaches } from './books.js';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 
@@ -39,19 +39,21 @@ function insertBook(book: {
   });
 }
 
-function insertPage(bookId: string, stats: { reviews?: number; currentlyReading?: number; toRead?: number; editions?: number }) {
+function insertPage(bookId: string, stats: { reviews?: number; currentlyReading?: number; toRead?: number; editions?: number; language?: string }) {
   getDb().prepare(`
-    INSERT INTO book_page (book_id, reviews_count, currently_reading, to_read, editions_count, scraped_at)
-    VALUES (@bookId, @reviews, @cr, @toRead, @editions, @scrapedAt)
+    INSERT INTO book_page (book_id, reviews_count, currently_reading, to_read, editions_count, language, scraped_at)
+    VALUES (@bookId, @reviews, @cr, @toRead, @editions, @language, @scrapedAt)
     ON CONFLICT(book_id) DO UPDATE SET
       reviews_count = excluded.reviews_count, currently_reading = excluded.currently_reading,
-      to_read = excluded.to_read, editions_count = excluded.editions_count
+      to_read = excluded.to_read, editions_count = excluded.editions_count,
+      language = excluded.language
   `).run({
     bookId,
     reviews: String(stats.reviews ?? 0),
     cr: stats.currentlyReading ?? 0,
     toRead: stats.toRead ?? 0,
     editions: stats.editions ?? null,
+    language: stats.language ?? null,
     scrapedAt: new Date().toISOString(),
   });
 }
@@ -88,6 +90,7 @@ afterAll(() => {
 
 describe('runBooks', () => {
   beforeEach(() => {
+    resetBooksCaches();
     const db = getDb();
     db.prepare('DELETE FROM books').run();
     db.prepare('DELETE FROM book_page').run();
@@ -139,29 +142,33 @@ describe('runBooks', () => {
     // Delta 9000, Alpha 500, then Beta/Gamma (no page row -> 0).
     expect(logs.indexOf('Delta')).toBeLessThan(logs.indexOf('Alpha'));
     expect(logs.indexOf('Alpha')).toBeLessThan(logs.indexOf('Beta'));
+    // numReviews lines now also carry the reviews/ratings ratio.
+    expect(logs).toContain('reviews=9,000');
+    expect(logs).toContain('rev/rat=1.125');
   });
 
   it('sorts by numShelves using tag_books aggregates', async () => {
     await runBooks({ sort: 'numShelves', limit: '3' });
     // Delta 700, Alpha 150 (100+50), then others 0.
-    const shelvedBooks = logs.split('\n').filter(l => l.includes('Shelves:'));
-    expect(shelvedBooks[0]).toContain('Ross Pam'); // Delta
-    expect(shelvedBooks[1]).toContain('Smith John'); // Alpha
+    const shelvedBooks = logs.split('\n').filter(l => l.includes('shelves='));
+    expect(shelvedBooks[0]).toContain('shelves=700'); // Delta
+    expect(shelvedBooks[1]).toContain('shelves=150'); // Alpha
   });
 
   it('sorts by numTags using tag_books count', async () => {
     await runBooks({ sort: 'numTags', limit: '3' });
     // Alpha has 2 tags; Delta has 1.
-    const tagBooks = logs.split('\n').filter(l => l.includes('Tags:'));
-    expect(tagBooks[0]).toContain('Smith John'); // Alpha
-    expect(tagBooks[1]).toContain('Ross Pam'); // Delta
+    const tagBooks = logs.split('\n').filter(l => l.includes('tags='));
+    expect(tagBooks[0]).toContain('tags=2'); // Alpha
+    expect(tagBooks[1]).toContain('tags=1'); // Delta
   });
 
   it('sorts by reviewRatio (reviews / ratings)', async () => {
     await runBooks({ sort: 'reviewRatio', limit: '3' });
     // Alpha 500/1000 = 0.5; Delta 9000/8000 = 1.125 should be first.
     expect(logs.indexOf('Delta')).toBeLessThan(logs.indexOf('Alpha'));
-    expect(logs).toContain('Reviews/Ratings: 1.125');
+    expect(logs).toContain('reviews=9,000');
+    expect(logs).toContain('rev/rat=1.125');
   });
 
   it('dedupes works: keeps work representatives + un-clustered books', async () => {
@@ -172,6 +179,22 @@ describe('runBooks', () => {
     expect(logs).toContain('Gamma'); // no work_id -> stands alone
     expect(logs).not.toContain('Beta'); // non-rep edition collapsed away
     expect(logs).toContain('Deduplicated works: 1');
+  });
+
+  it('dedupe prefers a known English edition over the ratings rep', async () => {
+    // w-1's ratings rep is id=1 (Alpha), but id=2 (Beta) is known English.
+    insertPage('2', { reviews: 1, language: 'English' });
+    await runBooks({ sort: 'numReviews', dedupe: true, limit: '10' });
+    expect(logs).toContain('Beta'); // English edition kept
+    expect(logs).not.toContain('Alpha'); // non-English ratings rep collapsed away
+  });
+
+  it('dedupe falls back to the ratings rep when no language is known', async () => {
+    insertPage('1', { reviews: 500 });
+    insertPage('2', { reviews: 1, language: 'Spanish; Castilian' });
+    await runBooks({ sort: 'numReviews', dedupe: true, limit: '10' });
+    expect(logs).toContain('Alpha'); // is_work_rep kept
+    expect(logs).not.toContain('Beta'); // translation collapsed away
   });
 
   it('sorts by toRead and currentlyReading', async () => {
@@ -188,7 +211,7 @@ describe('runBooks', () => {
     await runBooks({ sort: 'editionCount', limit: '3' });
     // Delta 12, Alpha 3.
     expect(logs.indexOf('Delta')).toBeLessThan(logs.indexOf('Alpha'));
-    expect(logs).toContain('Editions: 12');
+    expect(logs).toContain('editions=12');
   });
 
   it('aggregates editionCount across the work when deduping', async () => {
@@ -205,7 +228,7 @@ describe('runBooks', () => {
     // Alpha's work shows the max across editions (27), not 0 and not the
     // rep's own null row.
     expect(logs.indexOf('Alpha')).toBeLessThan(logs.indexOf('Gamma'));
-    expect(logs).toContain('Editions: 27');
-    expect(logs).not.toContain('Editions: 0');
+    expect(logs).toContain('editions=27');
+    expect(logs).not.toContain('editions=0');
   });
 });

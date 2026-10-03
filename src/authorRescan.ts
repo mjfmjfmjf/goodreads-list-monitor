@@ -1,6 +1,6 @@
 import chalk from 'chalk';
 import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT, type AuthorCacheEntry } from './storage.js';
-import { selectAuthors } from './authorTopStats.js';
+import { selectAuthors, wasAuthorPageScraped } from './authorTopStats.js';
 import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { getDb } from './db.js';
@@ -245,18 +245,18 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
       return;
     }
   
-    // Filter out authors updated within minAge days (but always keep authors with no stats)
+    // Filter out authors updated within minAge days (but always keep authors with no stats
+    // and no catalog-pages proof of a prior scrape)
     const cutoff = minAgeDays > 0 ? Date.now() - minAgeDays * 24 * 60 * 60 * 1000 : 0;
     const toScrape: SelectedAuthor[] = [];
     let minAgeSkipped = 0;
     let failSkipped = 0;
     for (const a of authors) {
-      const hasStats = a.entry.numRatings || a.entry.averageRating || a.entry.numReviews || a.entry.numShelves;
       if ((a.entry.failCount ?? 0) >= AUTHOR_FAIL_LIMIT) {
         failSkipped++;
         continue;
       }
-      if (hasStats && a.entry.lastSeen && cutoff > 0 && new Date(a.entry.lastSeen).getTime() >= cutoff) {
+      if (wasAuthorPageScraped(a.entry) && a.entry.lastSeen && cutoff > 0 && new Date(a.entry.lastSeen).getTime() >= cutoff) {
         minAgeSkipped++;
         continue;
       }
@@ -338,6 +338,10 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
           if (result.catalogPages) entry.catalogPages = result.catalogPages;
           entry.failCount = 0;
           entry.lastError = undefined;
+          // Every successful scrape (stats moved, catalog was extended, or the
+          // page was identical) = "seen recently", so the other scrapers' --minAge
+          // gate can skip it for the cooldown window.
+          entry.lastSeen = new Date().toISOString();
           const prev = {
             averageRating: entry.averageRating,
             numRatings: entry.numRatings,
@@ -358,11 +362,8 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
             upsertAuthor(name, entry);
             console.log(chalk.green.bold(`   ✅ Author cache updated`));
           } else {
-            // Values already current — a no-op scrape. Still stamp last_seen so the
-            // author is not immediately re-crawled by --minAge on the next run.
-            entry.lastSeen = new Date().toISOString();
             upsertAuthor(name, entry);
-            console.log(chalk.gray(`   (No change - values already current or not greater; refreshed last_seen)`));
+            console.log(chalk.gray(`   (No change - values already current or not greater)`));
           }
         }
       } catch (error) {

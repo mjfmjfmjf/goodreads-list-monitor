@@ -10,7 +10,7 @@ vi.hoisted(() => {
 });
 
 import { closeDb, getDb } from './db.js';
-import { exportBooksAndAuthors } from './exportData.js';
+import { exportBooksAndAuthors, EXPORT_TABLES, EXCLUDED_TABLES } from './exportData.js';
 import { importData } from './importData.js';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
@@ -52,6 +52,12 @@ describe('exportBooksAndAuthors', () => {
         VALUES ('science-fiction', 10, 25, 'histogram-ratio', '2026-09-01T00:00:00Z')`).run();
       db.prepare(`INSERT INTO lists (list_id, title, last_count, seen_book_ids, ingested, discovery_page, url)
         VALUES ('best-of-fantasy', 'Best Fantasy', 500, '["1","2"]', 1, 3, 'https://www.goodreads.com/list/show/1')`).run();
+      db.prepare(`INSERT INTO popular_by_date_book (page_key, book_id, rank, title, work_id, stats_ratings, stats_reviews, stats_avg, scraped_at)
+        VALUES ('2026-08', '170448', 3, 'Animal Farm', 'w1', 100, 10, 4.1, '2026-09-01T00:00:00Z')`).run();
+      db.prepare(`INSERT INTO tag_tail_scrapes (tag_name, last_scraped, last_page_seen, books_added, authors_added)
+        VALUES ('to-read', '2026-09-01T00:00:00Z', 10, 5, 2)`).run();
+      db.prepare(`INSERT INTO tag_tail_monitor_state (id, run_started_at, run_completed)
+        VALUES ('run-1', '2026-09-01T00:00:00Z', 0)`).run();
 
       const res = await exportBooksAndAuthors(db, { basename: 'mjf', outDir });
       expect(path.basename(res.booksFile)).toMatch(/^mjf_books_\d{8}-\d{6}\.csv\.gz$/);
@@ -59,7 +65,7 @@ describe('exportBooksAndAuthors', () => {
       expect(res.bookCount).toBe(1);
       expect(res.authorCount).toBe(1);
 
-      // All eight shareable tables are exported (config/browser_scrape/failures/list bookkeeping excluded).
+      // All eleven shareable tables are exported (config/browser_scrape/failures/list bookkeeping excluded).
       const byTable = new Map(res.files.map(f => [f.table, f]));
       expect(byTable.get('tag_books')!.count).toBe(1);
       expect(byTable.get('genres')!.count).toBe(1);
@@ -67,6 +73,9 @@ describe('exportBooksAndAuthors', () => {
       expect(byTable.get('book_page')!.count).toBe(1);
       expect(byTable.get('tag_stats')!.count).toBe(1);
       expect(byTable.get('lists')!.count).toBe(1);
+      expect(byTable.get('popular_by_date_book')!.count).toBe(1);
+      expect(byTable.get('tag_tail_scrapes')!.count).toBe(1);
+      expect(byTable.get('tag_tail_monitor_state')!.count).toBe(1);
 
       const booksCsv = parseGz(res.booksFile);
       expect(booksCsv.split('\n')[0]).toBe('id,title,author,author_id,ratings,avg_rating,published,pages,series_pos,genres,last_updated,tags,requires_auth,is_bad,fail_count,work_id,first_seen,is_work_rep');
@@ -93,6 +102,15 @@ describe('exportBooksAndAuthors', () => {
       const listsCsv = parseGz(byTable.get('lists')!.path);
       expect(listsCsv.split('\n')[0]).toBe('list_id,title,last_count,seen_book_ids,ingested,discovery_page,url');
       expect(listsCsv).toContain('best-of-fantasy,Best Fantasy');
+      const popCsv = parseGz(byTable.get('popular_by_date_book')!.path);
+      expect(popCsv.split('\n')[0]).toBe('page_key,book_id,rank,title,work_id,stats_ratings,stats_reviews,stats_avg,scraped_at');
+      expect(popCsv).toContain('2026-08,170448');
+      const tailCsv = parseGz(byTable.get('tag_tail_scrapes')!.path);
+      expect(tailCsv.split('\n')[0]).toBe('tag_name,last_scraped,last_page_seen,books_added,authors_added');
+      expect(tailCsv).toContain('to-read,2026-09-01');
+      const stateCsv = parseGz(byTable.get('tag_tail_monitor_state')!.path);
+      expect(stateCsv.split('\n')[0]).toBe('id,run_started_at,run_completed');
+      expect(stateCsv).toContain('run-1,2026-09-01');
     } finally {
       fs.removeSync(outDir);
     }
@@ -237,6 +255,7 @@ describe('export → import round-trip preserves new tables and columns', () => 
 
       const book = db.prepare('SELECT * FROM books WHERE id=?').get('rt1') as any;
       expect(book.first_seen).toBe('2026-01-01'); // preserved, not re-stamped to import time
+      expect(book.last_updated).toBe('2026-08-01'); // imported stamp preserved, not re-stamped
       expect(book.requires_auth).toBe(1);
       expect(book.fail_count).toBe(4);
       expect(book.work_id).toBe('w1');
@@ -290,5 +309,74 @@ describe('export → import round-trip preserves new tables and columns', () => 
     } finally {
       fs.removeSync(dir);
     }
+  });
+});
+
+describe('CSV round-trip with embedded newlines and the new tables', () => {
+  it('round-trips a book_page.description containing newlines', async () => {
+    const db = getDb();
+    const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'grdxml-'));
+    try {
+      const desc = 'Line one\nLine two, with comma\n"quoted"';
+      db.prepare(`INSERT INTO book_page (book_id, publisher, description, scraped_at) VALUES ('ml1', 'Pub', ?, '2026-09-09T00:00:00Z')`).run(desc);
+
+      const res = await exportBooksAndAuthors(db, { basename: 'ml', outDir: dir });
+      db.exec('DELETE FROM book_page;');
+
+      const byTable = new Map(res.files.map(f => [f.table, f.path]));
+      await importData(db, { bookPageFile: byTable.get('book_page')! });
+
+      const row = db.prepare('SELECT * FROM book_page WHERE book_id=?').get('ml1') as any;
+      expect(row.description).toBe(desc);
+      expect(row.publisher).toBe('Pub');
+    } finally {
+      fs.removeSync(dir);
+    }
+  });
+
+  it('round-trips popular_by_date_book, tag_tail_scrapes, and tag_tail_monitor_state', async () => {
+    const db = getDb();
+    const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'grdxrt3-'));
+    try {
+      db.prepare(`INSERT INTO popular_by_date_book (page_key, book_id, rank, title, work_id, stats_ratings, stats_reviews, stats_avg, scraped_at)
+        VALUES ('f:2026-08', 'pop1', 3, 'Popular One', 'w9', 100, 10, 4.1, '2026-09-01T00:00:00Z')`).run();
+      db.prepare(`INSERT INTO tag_tail_scrapes (tag_name, last_scraped, last_page_seen, books_added, authors_added)
+        VALUES ('hist-rt', '2026-09-01T00:00:00Z', 12, 5, 3)`).run();
+      db.prepare(`INSERT INTO tag_tail_monitor_state (id, run_started_at, run_completed)
+        VALUES ('run-rt', '2026-09-01T00:00:00Z', 1)`).run();
+
+      const res = await exportBooksAndAuthors(db, { basename: 'rt3', outDir: dir });
+      db.exec('DELETE FROM popular_by_date_book; DELETE FROM tag_tail_scrapes; DELETE FROM tag_tail_monitor_state;');
+
+      const byTable = new Map(res.files.map(f => [f.table, f.path]));
+      const counts = await importData(db, {
+        popularByDateFile: byTable.get('popular_by_date_book')!,
+        tagTailsFile: byTable.get('tag_tail_scrapes')!,
+        tagTailStateFile: byTable.get('tag_tail_monitor_state')!,
+      });
+      expect(counts.popularByDateInserted).toBeGreaterThanOrEqual(1);
+      expect(counts.tagTailsInserted).toBeGreaterThanOrEqual(1);
+      expect(counts.tagTailStateInserted).toBeGreaterThanOrEqual(1);
+
+      const pop = db.prepare('SELECT * FROM popular_by_date_book WHERE book_id=?').get('pop1') as any;
+      expect(pop.rank).toBe(3);
+      expect(pop.title).toBe('Popular One');
+      expect(pop.stats_avg).toBe(4.1);
+      const tail = db.prepare('SELECT * FROM tag_tail_scrapes WHERE tag_name=?').get('hist-rt') as any;
+      expect(tail.last_page_seen).toBe(12);
+      expect(tail.books_added).toBe(5);
+      const st = db.prepare('SELECT * FROM tag_tail_monitor_state WHERE id=?').get('run-rt') as any;
+      expect(st.run_completed).toBe(1);
+    } finally {
+      fs.removeSync(dir);
+    }
+  });
+
+  it('accounts for every schema table in EXPORT_TABLES or EXCLUDED_TABLES', () => {
+    const db = getDb();
+    const schemaTables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map(r => r.name);
+    const covered = new Set<string>([...EXPORT_TABLES, ...EXCLUDED_TABLES]);
+    expect(schemaTables.filter(t => !covered.has(t))).toEqual([]);
+    for (const t of EXPORT_TABLES) expect([...EXCLUDED_TABLES]).not.toContain(t);
   });
 });

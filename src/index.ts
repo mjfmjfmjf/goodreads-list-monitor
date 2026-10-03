@@ -39,6 +39,7 @@ import { runTitleCharHistogram } from './titleCharHistogram.js';
 import { runTitleFirstWordHistogram } from './titleFirstWordHistogram.js';
 import { runTagHistogram } from './tagHistogram.js';
 import { runTagCoverage } from './tagCoverage.js';
+import { runTagRecentMonitor } from './tagRecentMonitor.js';
 import { runTagFirstPagePicks } from './tagFirstPagePicks.js';
 import { runBackfillSeriesPos } from './backfillSeriesPos.js';
 import { runBackfillPages } from './backfillPages.js';
@@ -52,7 +53,7 @@ import { runAuthorOrphans } from './authorOrphans.js';
 import { runAuthorListDiff } from './authorListDiff.js';
 import { runAuthorRescan } from './authorRescan.js';
 import { runAuthorRecent } from './authorRecent.js';
-import { runAuthorOne } from './authorOne.js';
+import { runAuthorOne, runAuthorOneFile } from './authorOne.js';
 import { runAuthorDedupe } from './authorDedupe.js';
 import { runBrowserBookScrape } from './browserBookScrape.js';
 import { runBrowserLogin } from './browserSession.js';
@@ -684,22 +685,32 @@ Examples:
   });
 
 program
-  .command('author-one <urlOrSlug>')
-  .description('Scrape the overall stats (avg rating, ratings, reviews, shelves) for a single author page and update the author cache. Accepts a full author URL, a slug like 14018357.Steve_the_Noob, or a numeric author ID. Add --multiPage to also crawl the author\'s full back catalog (all pages of their works list).')
+  .command('author-one [urlOrSlug]')
+  .description('Scrape the overall stats (avg rating, ratings, reviews, shelves) for a single author page and update the author cache. Accepts a full author URL, a slug like 14018357.Steve_the_Noob, or a numeric author ID. Add --multiPage to also crawl the author\'s full back catalog (all pages of their works list). Or pass --file <path> to scrape a whole list of author IDs/URLs/slugs (one per line), skipping any already in the cache.')
   .option('--multiPage', 'Crawl the author\'s entire catalog (all pages of their works list) instead of the first page only')
   .option('--withCookie', 'Send the login cookie on author-page requests. Author pages need no auth, so crawls are anonymous by default and run faster; use this to opt back into cookie-authenticated pacing.')
+  .option('--file <path>', 'Scrape every author in <path> (one ID, URL, or slug per line; blank lines and # comments ignored). Authors already in the cache are skipped. Pair with --multiPage for a full back-catalog crawl.')
   .addHelpText('after', `
 Examples:
   $ npm run author-one -- 14018357.Steve_the_Noob
   $ npm run author-one -- https://www.goodreads.com/author/show/14018357.Steve_the_Noob
   $ npm run author-one -- 8777 --multiPage
   $ ./authorOne.sh 14018357.Steve_the_Noob
-  $ ./authorOne.sh 8777 --multiPage`)
+  $ ./authorOne.sh 8777 --multiPage
+  # Batch: scrape a list of author IDs, full back catalog, skipping cached ones
+  $ ./authorOne.sh --file missed-author-ids.txt --multiPage`)
   .action(async (urlOrSlug, options) => {
     try {
-      await runAuthorOne(urlOrSlug, { multiPage: !!options.multiPage, withCookie: !!options.withCookie });
+      if (options.file) {
+        await runAuthorOneFile(options.file, { multiPage: !!options.multiPage, withCookie: !!options.withCookie });
+      } else if (urlOrSlug) {
+        await runAuthorOne(urlOrSlug, { multiPage: !!options.multiPage, withCookie: !!options.withCookie });
+      } else {
+        console.error(chalk.red.bold('Error: pass an author URL/slug/id, or --file <path> for a batch.'));
+        process.exitCode = 1;
+      }
     } catch (error) {
-      console.error(chalk.red.bold('Failed to update single author:'), (error as any).message);
+      console.error(chalk.red.bold('Failed to update author(s):'), (error as any).message);
     }
   });
 
@@ -1391,7 +1402,7 @@ Examples:
 
 program
   .command('export-data <basename>')
-  .description('Export the library-data tables (books, authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists) as timestamped, gzipped CSV files for sharing. Sanitized: config (live session cookies), browser_scrape / author_scrape_failures checkpoints, and list_scrapes / list_walk bookkeeping are EXCLUDED. basename is a mandatory identifier, e.g. mjf. Writes to the current directory by default.')
+  .description('Export the library-data tables (books, authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state) as timestamped, gzipped CSV files for sharing. Sanitized: config (live session cookies), browser_scrape / author_scrape_failures checkpoints, and list_scrapes / list_walk bookkeeping are EXCLUDED. basename is a mandatory identifier, e.g. mjf. Writes to the current directory by default.')
   .option('--out <dir>', 'Output directory (default: current directory)', '')
   .addHelpText('after', `
 Examples:
@@ -1402,7 +1413,7 @@ Examples:
   .action(async (basename, options) => {
     try {
       const outDir = options.out || process.cwd();
-      const result = await exportBooksAndAuthors(getDb(), { basename: String(basename), outDir });
+      const result = await exportBooksAndAuthors(getDb(), { basename: String(basename), outDir, verbose: true });
       printExportResult(result, outDir);
       for (const f of result.files) {
         printAnalysis(await analyzeCsv(f.path));
@@ -1415,7 +1426,7 @@ Examples:
 
 program
   .command('import-data')
-  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad (book_page keeps the newest scrape per book; lists seen_book_ids are union-merged). Config, browser_scrape, author_scrape_failures, list_scrapes, and list_walk are not exported and not imported. Updates the schema automatically (current spec).')
+  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad (book_page and popular_by_date_book keep the newest scrape per row; lists seen_book_ids are union-merged). Config, browser_scrape, author_scrape_failures, list_scrapes, and list_walk are not exported and not imported. Updates the schema automatically (current spec).')
   .option('--books <file>', 'Path to the books .csv.gz file')
   .option('--authors <file>', 'Path to the authors .csv.gz file')
   .option('--tagBooks <file>', 'Path to the tag_books .csv.gz file')
@@ -1424,6 +1435,9 @@ program
   .option('--bookPage <file>', 'Path to the book_page .csv.gz file (browser-scraped page details; newest scraped_at wins)')
   .option('--tagStats <file>', 'Path to the tag_stats .csv.gz file (shelf crawl state)')
   .option('--lists <file>', 'Path to the lists .csv.gz file (list discovery/ingest state; seen_book_ids unioned)')
+  .option('--popularByDate <file>', 'Path to the popular_by_date_book .csv.gz file (rank snapshots; newest scraped_at wins)')
+  .option('--tagTails <file>', 'Path to the tag_tail_scrapes .csv.gz file (tag-recent-monitor progress; newest last_scraped wins)')
+  .option('--tagTailState <file>', 'Path to the tag_tail_monitor_state .csv.gz file (in-flight monitor run state)')
   .option('--ratingPolicy <policy>', 'How to handle avg_rating on existing books: "keep" (fill-blank-only, default) or "update" (overwrite with imported value)', 'keep')
   .addHelpText('after', `
 Examples:
@@ -1435,7 +1449,7 @@ Examples:
   .action(async (options) => {
     try {
       const policy = options.ratingPolicy === 'update' ? 'update' : 'keep';
-      const files = [options.books, options.authors, options.tagBooks, options.genres, options.xref, options.bookPage, options.tagStats, options.lists].filter(Boolean);
+      const files = [options.books, options.authors, options.tagBooks, options.genres, options.xref, options.bookPage, options.tagStats, options.lists, options.popularByDate, options.tagTails, options.tagTailState].filter(Boolean);
       for (const f of files) {
         printAnalysis(await analyzeCsv(f));
       }
@@ -1448,6 +1462,9 @@ Examples:
         bookPageFile: options.bookPage,
         tagStatsFile: options.tagStats,
         listsFile: options.lists,
+        popularByDateFile: options.popularByDate,
+        tagTailsFile: options.tagTails,
+        tagTailStateFile: options.tagTailState,
         ratingPolicy: policy,
       });
       printImportResult(counts, policy);
@@ -1717,6 +1734,23 @@ program
       await runGapGenreTagDiscovery(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run gap genre tag discovery:'), (error as any).message);
+    }
+  });
+
+program
+  .command('tag-recent-monitor')
+  .description('Tail-scrape every tag needed for 100% tag_books coverage (greedy set-cover order) to discover NEW books/authors. Anchors each read on the last page we actually harvested for that tag (the tag_books xref max position); stable shelves cost ~1 fetch, growing shelves ~2. Resumes interrupted passes; marks pass complete to re-check everything next run.')
+  .option('--limit <number>', 'max covered tags to process this run (default 20000 — cover 100%)', '20000')
+  .option('--shelfPages <number>', 'outer cap on pages to read per tag (default 25; live pagination footer overrides)', '25')
+  .option('--resumeHorizonHours <number>', 'resume if the previous incomplete pass started within this many hours (default 36)', '36')
+  .option('--minAgeHours <number>', 'skip a tag whose tail was read within this many hours (default 0 = check every covered tag; e.g. 168 for a weekly sweep)', '0')
+  .option('--fresh', 'start a new pass even if the previous incomplete pass is recent')
+  .option('--dryRun', 'preview which tags would be tail-scraped, without touching the network')
+  .action(async (options) => {
+    try {
+      await runTagRecentMonitor(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run tag recent monitor:'), (error as any).message);
     }
   });
 

@@ -2,6 +2,18 @@ import chalk from 'chalk';
 import { getDb } from './db.js';
 import { loadTagBooks, TagBookRow } from './storage.js';
 
+// Every tag harvest stops at the shelf cap (25 pages x 50 books = 1,250), so a
+// tag's xref row count ABOVE that is harvest drift — extra (tag, position) rows
+// left behind when an earlier harvest saw a different book set on the same page
+// — not extra real coverage. Score every tag as if it held at most this many
+// books, so a tag with 1,271 drift rows isn't ranked above a clean 1,250 harvest
+// for drift alone. Scoring only: picking a tag still contributes ALL of its
+// uncovered books, so the 100% coverage guarantee is untouched.
+// (If the tag-recent-monitor is ever run with --shelfPages > 25, raise this.)
+const BOOKS_PER_SHELF_PAGE = 50;
+const MAX_PAGES_PER_HARVEST = 25;
+export const SHELF_HARVEST_BOOK_CAP = BOOKS_PER_SHELF_PAGE * MAX_PAGES_PER_HARVEST; // 1,250
+
 export interface TagCoverageRow {
   tag: string;
   tagBooks: number; // number of books in this tag that appear in exactly one tag (single-tag count)
@@ -15,6 +27,29 @@ export interface TagCoverageResult {
   rows: TagCoverageRow[];
   totalBooks: number; // unique books across all tags
   totalTags: number;
+}
+
+// Shared loader for both the `tag-coverage` report and the tag-recent-monitor
+// (which needs the same set-cover order to decide which tags to tail-scrape).
+// Materializes tag_books (1.55M rows) + one batched ratings join.
+export interface TagCoverageInputs {
+  rows: TagBookRow[];
+  ratingsByBook: Map<string, number>;
+}
+
+export function loadTagCoverageInputs(): TagCoverageInputs {
+  const rows = loadTagBooks();
+  const db = getDb();
+  const ratingsByBook = new Map<string, number>();
+  const ratingRows = db.prepare(`
+    SELECT DISTINCT t.book_id AS id, b.ratings AS ratings
+    FROM tag_books t JOIN books b ON b.id = t.book_id
+    WHERE b.ratings IS NOT NULL
+  `).all() as { id: string; ratings?: number | null }[];
+  for (const r of ratingRows) {
+    if (r.ratings != null) ratingsByBook.set(r.id, Number(r.ratings));
+  }
+  return { rows, ratingsByBook };
 }
 
 // Greedy approximate set-cover: repeatedly pick the tag that adds the most NEW
@@ -80,6 +115,10 @@ export function computeTagCoverage(
   const pendingCount = new Map<string, number>();
   const bookTags = new Map<string, string[]>();
   for (const [tag, books] of tagBooks) {
+    // EXACT, never capped: this is a countdown of still-uncovered books, so
+    // capping it here would drive it to 0 while uncovered books remain and stop
+    // the greedy short of 100%. The harvest ceiling is applied to the SCORE
+    // below instead.
     pendingCount.set(tag, books.size);
     for (const b of books) {
       const tags = bookTags.get(b);
@@ -93,7 +132,12 @@ export function computeTagCoverage(
     let bestNew = -1;
     for (const [tag] of tagBooks) {
       if (used.has(tag)) continue;
-      const newCount = pendingCount.get(tag) ?? 0;
+      // Score is capped at the harvest ceiling (SHELF_HARVEST_BOOK_CAP) so
+      // (tag, position) drift rows can't make a tag look more important than a
+      // clean harvest. Only the RANKING is capped: the pick itself still
+      // contributes every uncovered book, so `newBooks` can exceed the score
+      // and total coverage still reaches 100%.
+      const newCount = Math.min(pendingCount.get(tag) ?? 0, SHELF_HARVEST_BOOK_CAP);
       if (
         newCount > bestNew ||
         (newCount === bestNew && bestTag !== null && tieBreakWins(tag, bestTag, tagBooks, tagAvgRatings))
@@ -140,8 +184,8 @@ function tieBreakWins(
   tagBooks: Map<string, Set<string>>,
   tagAvgRatings: Map<string, number>,
 ): boolean {
-  const candSize = tagBooks.get(candidate)!.size;
-  const curSize = tagBooks.get(current)!.size;
+  const candSize = Math.min(tagBooks.get(candidate)!.size, SHELF_HARVEST_BOOK_CAP);
+  const curSize = Math.min(tagBooks.get(current)!.size, SHELF_HARVEST_BOOK_CAP);
   if (candSize !== curSize) return candSize > curSize;
   const candR = tagAvgRatings.get(candidate) ?? 0;
   const curR = tagAvgRatings.get(current) ?? 0;
@@ -151,25 +195,12 @@ function tieBreakWins(
 export async function runTagCoverage(options: { limit?: string | number } = {}): Promise<void> {
   const limit = parseInt(String(options.limit ?? '20'), 10) || 20;
 
-  console.log(chalk.gray('   Loading tag_books...'));
-  const rows = await loadTagBooks();
+  console.log(chalk.gray('   Loading tag_books + ratings (single batched join)...'));
   const db = getDb();
+  const { rows, ratingsByBook } = loadTagCoverageInputs();
   const genreSet = new Set<string>((db.prepare('SELECT name FROM genres').all() as any[]).map(r => r.name));
   const allTags = [...new Set(rows.map(r => r.tagName))];
   const totalBooks = new Set(rows.map(r => r.bookId)).size;
-
-  console.log(chalk.gray(`   Loading ratings for ${totalBooks} books (single batched join)...`));
-  // One batched join instead of one query per book (the old per-book loop issued
-  // ~754k statements single-threaded — the bulk of the silent wait).
-  const ratingsByBook = new Map<string, number>();
-  const ratingRows = db.prepare(`
-    SELECT DISTINCT t.book_id AS id, b.ratings AS ratings
-    FROM tag_books t JOIN books b ON b.id = t.book_id
-    WHERE b.ratings IS NOT NULL
-  `).all() as { id: string; ratings?: number | null }[];
-  for (const r of ratingRows) {
-    if (r.ratings != null) ratingsByBook.set(r.id, Number(r.ratings));
-  }
 
   // Approximate terminal display width: CJK and fullwidth chars occupy 2 columns.
   const charWidth = (ch: string): number =>

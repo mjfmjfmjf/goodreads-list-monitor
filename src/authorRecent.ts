@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT, type AuthorCacheEntry } from './storage.js';
 import { loadAuthorBookStats } from './authorRescan.js';
 import type { AuthorBookStats } from './authorRescan.js';
-import type { SelectedAuthor } from './authorTopStats.js';
+import { wasAuthorPageScraped, type SelectedAuthor } from './authorTopStats.js';
 import { scrapeAuthorStats } from './scraper.js';
 import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.js';
 
@@ -115,12 +115,11 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
   let minAgeSkipped = 0;
   let failSkipped = 0;
   for (const a of authors) {
-    const hasStats = a.entry.numRatings || a.entry.averageRating || a.entry.numReviews || a.entry.numShelves;
     if ((a.entry.failCount ?? 0) >= AUTHOR_FAIL_LIMIT) {
       failSkipped++;
       continue;
     }
-    if (hasStats && a.entry.lastSeen && cutoff > 0 && new Date(a.entry.lastSeen).getTime() >= cutoff) {
+    if (wasAuthorPageScraped(a.entry) && a.entry.lastSeen && cutoff > 0 && new Date(a.entry.lastSeen).getTime() >= cutoff) {
       minAgeSkipped++;
       continue;
     }
@@ -184,6 +183,10 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
         if (result.catalogPages) entry.catalogPages = result.catalogPages;
         entry.failCount = 0;
         entry.lastError = undefined;
+        // Every successful scrape (stats moved, catalog was extended, or the
+        // page was identical) = "seen recently", so the other scrapers' --minAge
+        // gate can skip it for the cooldown window.
+        entry.lastSeen = new Date().toISOString();
         const prev = {
           averageRating: entry.averageRating,
           numRatings: entry.numRatings,
@@ -204,9 +207,8 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
           upsertAuthor(name, entry);
           console.log(chalk.green.bold(`   ✅ Author cache updated`));
         } else {
-          entry.lastSeen = new Date().toISOString();
           upsertAuthor(name, entry);
-          console.log(chalk.gray(`   (No change - values already current or not greater; refreshed last_seen)`));
+          console.log(chalk.gray(`   (No change - values already current or not greater)`));
         }
       }
     } catch (error) {

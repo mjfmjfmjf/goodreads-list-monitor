@@ -1,7 +1,6 @@
-import { createReadStream, statSync } from 'node:fs';
-import { createInterface } from 'node:readline';
+import { statSync } from 'node:fs';
 import chalk from 'chalk';
-import { splitCsvLine, openCsvStream } from './importData.js';
+import { CsvRecordParser, openCsvStream } from './importData.js';
 
 // Field-level analysis for a CSV (plain or gzipped) file. Single streaming pass,
 // memory-safe for large files. Reports population, non-blank %, type guess,
@@ -29,7 +28,9 @@ const BLANKISH = new Set(['', 'unknown', 'null', 'n/a', '{}', '[]']);
 
 export async function analyzeCsv(file: string): Promise<CsvAnalysis> {
   const gzBytes = statSync(file).size;
-  const rl = createInterface({ input: openCsvStream(file), crlfDelay: Infinity });
+  const stream = openCsvStream(file);
+  stream.setEncoding('utf8');
+  const parser = new CsvRecordParser();
 
   let headers: string[] | null = null;
   let rowCount = 0;
@@ -41,43 +42,47 @@ export async function analyzeCsv(file: string): Promise<CsvAnalysis> {
   const samples = new Map<number, Set<string>>();
   const SAMPLE_CAP = 5;
 
-  for await (const line of rl) {
-    const fields = splitCsvLine(line);
-    if (!headers) {
-      headers = fields.map(f => f ?? '');
-      cols = headers;
-      continue;
-    }
-    rowCount++;
-    for (let i = 0; i < cols.length; i++) {
-      const raw = fields[i] ?? '';
-      const v = raw.trim();
-      if (v !== '') {
-        populated.set(i, (populated.get(i) || 0) + 1);
-        // type classification
-        const cur = types.get(i);
-        if (/^-?\d+([.,]\d+)?$/.test(v)) {
-          const n = parseFloat(v.replace(/,/g, ''));
-          const m = nums.get(i) || { min: Infinity, max: -Infinity };
-          m.min = Math.min(m.min, n); m.max = Math.max(m.max, n);
-          nums.set(i, m);
-          if (cur && cur !== 'number') types.set(i, cur === 'json' ? 'mixed' : cur);
-          else types.set(i, 'number');
-        } else if ((v.startsWith('[') && v.endsWith(']')) || (v.startsWith('{') && v.endsWith('}'))) {
-          if (cur && cur !== 'json') types.set(i, 'mixed');
-          else types.set(i, 'json');
-        } else {
-          if (cur === 'number' || cur === 'json') types.set(i, 'mixed');
-          else types.set(i, 'text');
-        }
-        // sample distinct values
-        if (!BLANKISH.has(v.toLowerCase()) && (samples.get(i)?.size || 0) < SAMPLE_CAP) {
-          const s = samples.get(i) || new Set<string>();
-          if (s.size < SAMPLE_CAP) { s.add(v.slice(0, 30)); samples.set(i, s); }
+  const handle = (records: (string | null)[][]) => {
+    for (const fields of records) {
+      if (!headers) {
+        headers = fields.map(f => f ?? '');
+        cols = headers;
+        continue;
+      }
+      rowCount++;
+      for (let i = 0; i < cols.length; i++) {
+        const raw = fields[i] ?? '';
+        const v = raw.trim();
+        if (v !== '') {
+          populated.set(i, (populated.get(i) || 0) + 1);
+          // type classification
+          const cur = types.get(i);
+          if (/^-?\d+([.,]\d+)?$/.test(v)) {
+            const n = parseFloat(v.replace(/,/g, ''));
+            const m = nums.get(i) || { min: Infinity, max: -Infinity };
+            m.min = Math.min(m.min, n); m.max = Math.max(m.max, n);
+            nums.set(i, m);
+            if (cur && cur !== 'number') types.set(i, cur === 'json' ? 'mixed' : cur);
+            else types.set(i, 'number');
+          } else if ((v.startsWith('[') && v.endsWith(']')) || (v.startsWith('{') && v.endsWith('}'))) {
+            if (cur && cur !== 'json') types.set(i, 'mixed');
+            else types.set(i, 'json');
+          } else {
+            if (cur === 'number' || cur === 'json') types.set(i, 'mixed');
+            else types.set(i, 'text');
+          }
+          // sample distinct values
+          if (!BLANKISH.has(v.toLowerCase()) && (samples.get(i)?.size || 0) < SAMPLE_CAP) {
+            const s = samples.get(i) || new Set<string>();
+            if (s.size < SAMPLE_CAP) { s.add(v.slice(0, 30)); samples.set(i, s); }
+          }
         }
       }
     }
-  }
+  };
+
+  for await (const chunk of stream) handle(parser.write(chunk as string));
+  handle(parser.end());
 
   const fields: FieldStat[] = cols.map((name, i) => {
     const pop = populated.get(i) || 0;

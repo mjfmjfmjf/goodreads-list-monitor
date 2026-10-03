@@ -318,11 +318,23 @@ export function extractShelfPageLinks($: cheerio.CheerioAPI, tag: string): numbe
   return [...new Set(pages)].sort((a, b) => a - b);
 }
 
+// A tail read aimed past a shelf that has since SHRUNK (our xref's max position
+// is stale, e.g. books were removed from the tag) must not simply bail: the
+// shelf's real last page is exactly where new books show up. So fall back to the
+// last page the footer admits exists. One shot only — if THAT page is refused
+// too, the footers disagree with each other and the caller should bail.
+export function reanchorShelfPage(startPage: number, totalPages: number | null, alreadyReanchored: boolean): number | null {
+  if (totalPages === null || startPage <= totalPages) return null;
+  if (alreadyReanchored || totalPages < 1) return null;
+  return totalPages;
+}
+
 export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, startPage = 1, opts?: { skipAuthorSync?: boolean }): Promise<BookMetadata[]> {
   const configData = await loadConfig();
   let allBooks: BookMetadata[] = [];
   let thresholdReached = false;
   let lastPageFirstId = '';
+  let reanchored = false;
   // Position is 1-based global shelf order. When reading a partial shelf that
   // doesn't start at page 1, assume 50 books per unread preceding page.
   let bookPos = Math.max(0, (startPage - 1) * 50);
@@ -331,6 +343,10 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
   // advertised page tells us when to stop before hitting the roll-over pages.
   let totalPages: number | null = null;
   let nextHref: string | null = null;
+
+  const shelfPageDelay = async (): Promise<void> => {
+    await delay(configData.cookie ? 4000 : 2000, configData.cookie ? 10000 : 5000);
+  };
 
   for (let page = startPage; page <= maxPages; page++) {
     if (thresholdReached) break;
@@ -363,10 +379,19 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
       if (footerPages.length > 0) {
         const newTotal = footerPages[footerPages.length - 1];
         totalPages = Math.max(totalPages ?? 0, newTotal);
-        if (startPage > totalPages) {
-          console.log(chalk.yellow(`   ⚠️ Requested scan starts at page ${startPage}, but shelf "${tag}" only has ${totalPages} page(s). Nothing to scan.`));
-          break;
-        }
+      }
+      const reanchorTo = reanchorShelfPage(startPage, totalPages, reanchored);
+      if (reanchorTo !== null) {
+        console.log(chalk.yellow(`   ⚠️ Requested scan starts at page ${startPage}, but shelf "${tag}" advertises only ${totalPages} page(s) — re-anchoring the scan to its last page.`));
+        reanchored = true;
+        bookPos = (reanchorTo - 1) * 50; // positions are page-relative
+        page = reanchorTo - 1;           // the loop's page++ lands on reanchorTo
+        await shelfPageDelay();
+        continue;
+      }
+      if (totalPages !== null && startPage > totalPages) {
+        console.log(chalk.yellow(`   ⚠️ Requested scan starts at page ${startPage}, but shelf "${tag}" only has ${totalPages} page(s). Nothing to scan.`));
+        break;
       }
       const nextAnchor = $('a[rel="next"][href]').first();
       let relNext: string | null = nextAnchor.attr('href') ?? null;
@@ -380,9 +405,10 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
 
       const pageBooks: BookMetadata[] = [];
       const items = $('.elementList');
-      console.log(chalk.dim(`   📚 ${shelfPageCall} page=${page}: ${items.length} books on page${totalPages !== null ? ` · shelf spans ~${totalPages} page${totalPages === 1 ? '' : 's'}` : ''}`));
+      const spanNote = totalPages !== null ? ` · shelf spans ~${totalPages} page${totalPages === 1 ? '' : 's'}` : '';
 
       if (items.length === 0) {
+        console.log(chalk.dim(`   📚 ${shelfPageCall} page=${page}: no books on page${spanNote}`));
         if (page === 1) {
           console.log(chalk.red.bold(`   ⚠️  Shelf "${tag}" returned no books on page 1 — the tag shelf may not exist (check spelling), or the tag/listId arguments may be swapped.`));
         } else {
@@ -392,6 +418,11 @@ export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, 
       }
 
       let firstIdOnThisPage = '';
+      let parsedThisPage = 0;
+      let topTitle = '';
+      let topTagCount: number | null = null;
+      let bottomTitle = '';
+      let bottomTagCount: number | null = null;
 
       items.each((i, element) => {
         if (thresholdReached) return;
@@ -444,20 +475,29 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
           const tagMatch = fullText.match(/shelved ([\d,]+) times?/i);
           const tagCount = tagMatch ? parseInt(tagMatch[1].replace(/,/g, ''), 10) : null;
 
-          if (i === 0 || i === items.length - 1) {
-            console.log(chalk.gray(`      [${i === 0 ? 'Top' : 'Bottom'}] "${title.substring(0, 30)}..." has ${tagCount ?? '??'} tags.`));
-          }
-
           if (minTags > 0 && tagCount !== null && tagCount < minTags) {
             console.log(chalk.yellow.bold(`   🛑 Threshold reached at book "${title}": ${tagCount} tags < ${minTags}.`));
             thresholdReached = true;
             return;
           }
 
+          if (parsedThisPage === 0) {
+            topTitle = title;
+            topTagCount = tagCount;
+          }
+          bottomTitle = title;
+          bottomTagCount = tagCount;
+          parsedThisPage++;
           bookPos++;
           pageBooks.push({ id, title, author, authorId, authorSlug, position: bookPos, ratings, avgRating, published, tagCount: tagCount ?? 0 });
         }
       });
+
+      // A `.elementList` row is not always a book (ad/"read more" chrome), so
+      // report the parsed book count next to the raw row count.
+      console.log(chalk.dim(`   📚 ${shelfPageCall} page=${page}: ${parsedThisPage} book(s) from ${items.length} shelf row(s)${spanNote}`));
+      if (topTitle) console.log(chalk.gray(`      [Top] "${topTitle.substring(0, 30)}..." has ${topTagCount ?? '??'} tags.`));
+      if (bottomTitle) console.log(chalk.gray(`      [Bottom] "${bottomTitle.substring(0, 30)}..." has ${bottomTagCount ?? '??'} tags.`));
 
       if (page > 1 && firstIdOnThisPage === lastPageFirstId) {
         console.log(chalk.red.bold(`   ⚠️ Warning: Goodreads is returning Page 1 content for Page ${page}.`));
@@ -478,9 +518,7 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
       }
 
       if (!thresholdReached && page < maxPages) {
-        const waitMin = configData.cookie ? 4000 : 2000;
-        const waitMax = configData.cookie ? 10000 : 5000;
-        await delay(waitMin, waitMax);
+        await shelfPageDelay();
       }
     } catch (error) {
       console.error(chalk.red.bold(`   ❌ Error fetching shelf page ${page}:`), (error as any).message);
@@ -1187,13 +1225,22 @@ export interface AuthorListBook {
 }
 
 export function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
+  // New layout: the stats live in an aggregate block keyed by itemprop; the
+  // author's own name link is no longer rendered on the page.
+  const $aggregate = $('.hreview-aggregate').first();
+  const avgNew = $aggregate.find('span.average[itemprop="ratingValue"]').first().text().trim();
+  const ratingsNew = $aggregate.find('span.votes .value-title[itemprop="ratingCount"]').first().attr('title');
+  const reviewsNew = $aggregate.find('span.count .value-title[itemprop="reviewCount"]').first().attr('title');
+  // Old layout: the same numbers sat next to the author's name link. The new
+  // layout's slug comes from the canonical link instead.
   const $authorLink = $('a.authorName[href*="/author/show/"]').first();
-  const name = $authorLink.text().trim() || undefined;
+  const name = $authorLink.text().trim() || $aggregate.find('.item.fn').first().text().trim() || undefined;
   const href = $authorLink.attr('href') || '';
   const slugMatch = href.match(/\/author\/show\/([^?#\s/]+)/);
-  const slug = slugMatch ? slugMatch[1] : undefined;
+  const canonicalMatch = $('link[rel="canonical"]').attr('href')?.match(/\/author\/show\/([^?#\s/]+)/);
+  const slug = (slugMatch ? slugMatch[1] : undefined) || (canonicalMatch ? canonicalMatch[1] : undefined);
   const statsText = $('.leftContainer a.authorName[href*="/author/show/"]').first().parent().text();
-  if (!statsText.trim()) return { name, slug };
+  if (!statsText.trim() && !avgNew && !ratingsNew && !reviewsNew) return { name, slug };
   // Counts use plural-safe regexes: the list page writes "1 rating"/"1 review"
   // in the singular (Goodreads drops the 's' at exactly 1).
   const avgMatch = statsText.match(/Average rating:?\s+([\d.]+)/);
@@ -1201,9 +1248,9 @@ export function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
   const reviewsMatch = statsText.match(/([\d,]+)\s+reviews?/);
   const shelvesMatch = statsText.match(/shelved\s+([\d,]+)\s+times?/);
   return {
-    averageRating: avgMatch ? avgMatch[1] : undefined,
-    numRatings: ratingsMatch ? ratingsMatch[1] : undefined,
-    numReviews: reviewsMatch ? reviewsMatch[1] : undefined,
+    averageRating: avgNew || (avgMatch ? avgMatch[1] : undefined),
+    numRatings: ratingsNew || (ratingsMatch ? ratingsMatch[1] : undefined),
+    numReviews: reviewsNew || (reviewsMatch ? reviewsMatch[1] : undefined),
     numShelves: shelvesMatch ? shelvesMatch[1] : undefined,
     name,
     slug

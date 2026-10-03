@@ -18,6 +18,25 @@ export interface SelectedAuthor {
   value: number;
 }
 
+export type AuthorScrapeProof = boolean;
+
+// "Was this author's Goodreads author page ever scraped?" A scrape is proven by
+// either author-page stats having been captured (even if legitimately all-zero,
+// e.g. a brand-new author with 0 ratings) OR the catalog-page count having been
+// written (the multiPage crawl writes it on any successful first-page parse).
+// Used as the `--minAge` cooling trigger so a scraped-but-statless author (or a
+// genuinely zero-rated one) is never re-faced at the top of the pool just
+// because they lack stats to prove the prior scrape.
+export function wasAuthorPageScraped(entry: AuthorCacheEntry): AuthorScrapeProof {
+  return Boolean(
+    entry.numRatings ||
+    entry.averageRating ||
+    entry.numReviews ||
+    entry.numShelves ||
+    (entry.catalogPages ?? 0) >= 1
+  );
+}
+
 const SORT_FIELDS: AuthorSortField[] = ['numRatings', 'averageRating', 'numReviews', 'numShelves', 'catalogPages', 'ratingsRate'];
 
 const SORT_LABELS: Record<AuthorSortField, string> = {

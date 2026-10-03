@@ -274,6 +274,9 @@ export async function runOrphanScrape(
       };
       entry.failCount = 0;
       entry.lastError = undefined;
+      // Every successful scrape = "seen recently", so --minAge gates in the
+      // other scrapers can skip this author for the cooldown window.
+      entry.lastSeen = new Date().toISOString();
       const prevCatalogPages = entry.catalogPages;
       if (result.catalogPages) entry.catalogPages = result.catalogPages;
       const changed = updateAuthorStats(entry, stats) || entry.catalogPages !== prevCatalogPages;
@@ -292,9 +295,8 @@ export async function runOrphanScrape(
         upsertAuthor(key, entry);
         console.log(chalk.green.bold(`   ✅ Author cache updated (${key})`));
       } else {
-        entry.lastSeen = new Date().toISOString();
         upsertAuthor(key, entry);
-        console.log(chalk.gray(`   (No change - values already current; refreshed last_seen)`));
+        console.log(chalk.gray(`   (No change - values already current)`));
       }
     } catch (error) {
       // Network went down mid-run — aborts cleanly instead of black-marking

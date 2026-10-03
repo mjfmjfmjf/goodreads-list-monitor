@@ -492,6 +492,20 @@ function initSchema(db: Database.Database) {
       last_scraped TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS tag_tail_scrapes (
+      tag_name TEXT PRIMARY KEY,
+      last_scraped TEXT NOT NULL,
+      last_page_seen INTEGER,
+      books_added INTEGER,
+      authors_added INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS tag_tail_monitor_state (
+      id TEXT PRIMARY KEY,
+      run_started_at TEXT NOT NULL,
+      run_completed INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS popular_by_date_book (
       page_key TEXT NOT NULL,
       book_id TEXT NOT NULL,

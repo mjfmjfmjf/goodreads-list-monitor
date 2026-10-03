@@ -109,4 +109,25 @@ describe('runFieldCoverage', () => {
     const latest = lines.find((l) => l.includes('latest scrape'));
     expect(latest).toContain('09-12');
   });
+
+  it('shows distinct publisher/format/language counts in the book-page section', async () => {
+    const db = getDb();
+    const now = '2026-09-10T00:00:00Z';
+    const ins = db.prepare(
+      'INSERT INTO book_page (book_id, publisher, format, language, scraped_at) VALUES (?, ?, ?, ?, ?)'
+    );
+    ins.run('p1', 'Penguin', 'Hardcover', 'English', now);
+    ins.run('p2', 'Penguin', 'Paperback', 'English', now);
+    ins.run('p3', 'Harper', 'Paperback', 'Spanish; Castilian', now);
+
+    chalk.level = 0;
+    const out = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runFieldCoverage();
+    const lines = out.mock.calls.map((c) => c.join(' '));
+    out.mockRestore();
+
+    expect(lines.find((l) => l.startsWith('  publisher'))).toContain('2 distinct'); // Penguin, Harper
+    expect(lines.find((l) => l.startsWith('  format'))).toContain('2 distinct'); // Hardcover, Paperback
+    expect(lines.find((l) => l.startsWith('  language'))).toContain('2 distinct'); // English, Spanish
+  });
 });

@@ -76,4 +76,17 @@ describe('analyzeCsv', () => {
       fs.removeSync(outDir);
     }
   });
+
+  it('counts a row with an embedded newline as one row', async () => {
+    const f = path.join(process.env.TMPDIR || '/tmp', `anamulti-${Date.now()}.csv.gz`);
+    try {
+      gzWrite(f, 'id,description\n1,"line one\nline two"\n2,short\n');
+      const a = await analyzeCsv(f);
+      expect(a.rowCount).toBe(2);
+      expect(a.colCount).toBe(2);
+      expect(a.fields.find(x => x.name === 'description')!.populated).toBe(2);
+    } finally {
+      fs.removeSync(f);
+    }
+  });
 });

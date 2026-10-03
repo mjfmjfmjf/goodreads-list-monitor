@@ -74,7 +74,10 @@ interface TagStats {
   numShelves: number;
 }
 
-const parseNum = (s?: string | null): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
+const parseNum = (s?: string | number | null): number => {
+  const str = s === null || s === undefined ? '0' : String(s);
+  return parseInt(str.replace(/,/g, ''), 10) || 0;
+};
 
 const PAGE_SORTS: SortField[] = ['numReviews', 'currentlyReading', 'toRead', 'editionCount', 'reviewRatio'];
 const TAG_SORTS: SortField[] = ['numShelves', 'numTags'];
@@ -82,6 +85,18 @@ const TAG_SORTS: SortField[] = ['numShelves', 'numTags'];
 let pageStatsCache: Map<string, PageStats> | null = null;
 let tagStatsCache: Map<string, TagStats> | null = null;
 let workEditionsCache: Map<string, number> | null = null;
+let englishKeepersCache: Map<string, string> | null = null;
+let bookLanguagesCache: Map<string, string> | null = null;
+
+// Test seam: runBooks caches these maps at module scope, so a test that mutates
+// the DB between runBooks calls must drop the caches first.
+export function resetBooksCaches(): void {
+  pageStatsCache = null;
+  tagStatsCache = null;
+  workEditionsCache = null;
+  englishKeepersCache = null;
+  bookLanguagesCache = null;
+}
 
 interface PageRow {
   book_id: string;
@@ -123,6 +138,29 @@ function loadPageStats(): Map<string, PageStats> {
   return map;
 }
 
+interface LanguageRow {
+  book_id: string;
+  language: string | null;
+}
+
+// book_page.language is partial (~200k rows) but small, so a full load keeps the
+// per-row display lookup O(1) while streaming the 11M-row books table.
+function loadBookLanguages(): Map<string, string> {
+  if (bookLanguagesCache) return bookLanguagesCache;
+  const db = getDb();
+  const hasPage = !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='book_page'`).get();
+  const map = new Map<string, string>();
+  if (hasPage) {
+    for (const row of db.prepare(
+      `SELECT book_id, language FROM book_page WHERE language IS NOT NULL AND language <> ''`
+    ).iterate() as IterableIterator<LanguageRow>) {
+      map.set(row.book_id, row.language as string);
+    }
+  }
+  bookLanguagesCache = map;
+  return map;
+}
+
 function loadTagStats(): Map<string, TagStats> {
   if (tagStatsCache) return tagStatsCache;
   const db = getDb();
@@ -161,6 +199,47 @@ function loadWorkEditions(): Map<string, number> {
     }
   }
   workEditionsCache = map;
+  return map;
+}
+
+// ── English-edition preference for --dedupe ─────────────────────────
+// --dedupe normally keeps books.is_work_rep (highest ratings, lowest id). But a
+// work's ratings rep can be a translation, so a "most reviewed" listing can
+// surface e.g. "El dador de recuerdos" instead of "The Giver". When book_page
+// knows an edition's language, prefer an English edition as the keeper.
+// Language coverage is partial (~200k book_page rows), so works without it fall
+// back to is_work_rep unchanged — best-effort, never worse than today.
+function loadEnglishWorkKeepers(): Map<string, string> {
+  if (englishKeepersCache) return englishKeepersCache;
+  const db = getDb();
+  const map = new Map<string, string>();
+  const hasBooks = !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='books'`).get();
+  const hasPage = !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='book_page'`).get();
+  if (hasBooks && hasPage) {
+    // Best English edition per work: highest ratings, lowest id on ties. Driven
+    // from book_page (only rows with a language) so the 9M-row books table is
+    // never scanned.
+    const best = new Map<string, { id: string; ratings: number }>();
+    for (const row of db.prepare(
+      `SELECT b.work_id AS work_id, b.id AS id, b.ratings AS ratings
+       FROM book_page bp
+       JOIN books b ON b.id = bp.book_id
+       WHERE bp.language LIKE 'English%'
+         AND b.work_id IS NOT NULL AND b.work_id <> ''`
+    ).iterate() as IterableIterator<{ work_id: string; id: string; ratings: string | null }>) {
+      const ratings = parseNum(row.ratings);
+      const current = best.get(row.work_id);
+      if (
+        current === undefined ||
+        ratings > current.ratings ||
+        (ratings === current.ratings && parseInt(row.id, 10) < parseInt(current.id, 10))
+      ) {
+        best.set(row.work_id, { id: row.id, ratings });
+      }
+    }
+    for (const [workId, entry] of best) map.set(workId, entry.id);
+  }
+  englishKeepersCache = map;
   return map;
 }
 
@@ -214,6 +293,8 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
   const pageStats = PAGE_SORTS.includes(sortBy) ? loadPageStats() : null;
   const tagStats = TAG_SORTS.includes(sortBy) ? loadTagStats() : null;
   const workEditions = options.dedupe && sortBy === 'editionCount' ? loadWorkEditions() : null;
+  const englishKeepers = options.dedupe ? loadEnglishWorkKeepers() : null;
+  const bookLanguages = loadBookLanguages();
 
   const valueOf = (book: CachedBook): number | string => {
     switch (sortBy) {
@@ -267,9 +348,18 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
   for (const book of iterateBooks()) {
     if (book.isBad && !options.includeBad) continue;
     if (book.title === 'Unknown') continue;
-    if (options.dedupe && book.workId && !book.isWorkRep) {
-      dedupedExcluded++;
-      continue;
+    if (options.dedupe && book.workId) {
+      // A known English sibling wins outright; otherwise the ratings rep does.
+      const englishKeeper = englishKeepers?.get(book.workId);
+      if (englishKeeper !== undefined) {
+        if (book.id !== englishKeeper) {
+          dedupedExcluded++;
+          continue;
+        }
+      } else if (!book.isWorkRep) {
+        dedupedExcluded++;
+        continue;
+      }
     }
 
     const ratings = parseNum(book.ratings);
@@ -309,7 +399,7 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
   if (maxRatings < Infinity) criteriaMsg += `, Max Ratings: ${maxRatings.toLocaleString()}`;
   if (minYear > 0 || maxYear < Infinity) criteriaMsg += `, Year: ${minYear}-${maxYear === Infinity ? 'Any' : maxYear}`;
   console.log(chalk.gray(criteriaMsg));
-  if (options.dedupe) console.log(chalk.gray('   Dedupe works: yes (one row per distinct work)'));
+  if (options.dedupe) console.log(chalk.gray('   Dedupe works: yes (one row per distinct work; English edition preferred when known)'));
   if (library && options.excludeReviewed) {
     const source = library.cachedAt
       ? `cached: ${path.basename(library.sourcePath)} (imported ${library.cachedAt.slice(0, 10)})`
@@ -325,41 +415,46 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
 
   for (let i = 0; i < countToDisplay; i++) {
     const book = matched[i];
-    const ratings = book.ratings ? `Ratings: ${chalk.yellow(book.ratings)}` : 'Ratings: N/A';
-    const avg = book.avgRating ? `Avg: ${chalk.green.bold(book.avgRating)}` : 'Avg: N/A';
     const year = getYear(book.published);
-    const yearStr = year !== null ? `Year: ${year}` : 'Year: N/A';
+    // Compact "key=value; key=value" tail so more fields fit on the line.
+    const fields: string[] = [
+      year !== null ? `pub=${year}` : 'pub=N/A',
+      book.ratings ? `ratings=${chalk.yellow(parseNum(book.ratings).toLocaleString())}` : 'ratings=N/A',
+      book.avgRating ? `avg=${chalk.green.bold(book.avgRating)}` : 'avg=N/A',
+    ];
+    const reviewsField = (ps: PageStats) => {
+      const ratingsN = parseNum(book.ratings);
+      const ratio = ratingsN > 0 ? (ps.reviews / ratingsN) : 0;
+      fields.push(`reviews=${chalk.magenta(ps.reviews.toLocaleString())}`);
+      fields.push(`rev/rat=${chalk.magenta(ratio.toFixed(3))}`);
+    };
 
-    const statParts: string[] = [];
     if (sortBy === 'editionCount' && workEditions && book.workId && workEditions.has(book.workId)) {
-      statParts.push(`Editions: ${chalk.cyan(workEditions.get(book.workId)!.toLocaleString())}`);
+      fields.push(`editions=${chalk.cyan(workEditions.get(book.workId)!.toLocaleString())}`);
     }
     if (pageStats) {
       const ps = pageStats.get(book.id);
       if (ps) {
-        if (sortBy === 'numReviews' && ps.reviews > 0) statParts.push(`Reviews: ${chalk.magenta(ps.reviews.toLocaleString())}`);
-        if (sortBy === 'currentlyReading' || sortBy === 'reviewRatio') statParts.push(`Currently Reading: ${chalk.magenta(ps.currentlyReading.toLocaleString())}`);
-        if (sortBy === 'toRead') statParts.push(`To Read: ${chalk.magenta(ps.toRead.toLocaleString())}`);
-        if (sortBy === 'editionCount' && ps.editions !== undefined && statParts.length === 0) statParts.push(`Editions: ${chalk.cyan(ps.editions.toLocaleString())}`);
-        if (sortBy === 'reviewRatio') {
-          const ratingsN = parseNum(book.ratings);
-          const ratio = ratingsN > 0 ? (ps.reviews / ratingsN) : 0;
-          statParts.push(`Reviews/Ratings: ${chalk.magenta(ratio.toFixed(3))}`);
-        }
+        if (sortBy === 'numReviews' && ps.reviews > 0) reviewsField(ps);
+        if (sortBy === 'currentlyReading' || sortBy === 'reviewRatio') fields.push(`currently_reading=${chalk.magenta(ps.currentlyReading.toLocaleString())}`);
+        if (sortBy === 'toRead') fields.push(`to_read=${chalk.magenta(ps.toRead.toLocaleString())}`);
+        if (sortBy === 'editionCount' && ps.editions !== undefined && fields.length === 3) fields.push(`editions=${chalk.cyan(ps.editions.toLocaleString())}`);
+        if (sortBy === 'reviewRatio') reviewsField(ps);
       }
     }
     if (tagStats) {
       const ts = tagStats.get(book.id);
       if (ts) {
-        if (sortBy === 'numTags') statParts.push(`Tags: ${chalk.magenta(ts.numTags.toLocaleString())}`);
-        if (sortBy === 'numShelves' && ts.numShelves > 0) statParts.push(`Shelves: ${chalk.cyan(ts.numShelves.toLocaleString())}`);
+        if (sortBy === 'numTags') fields.push(`tags=${chalk.magenta(ts.numTags.toLocaleString())}`);
+        if (sortBy === 'numShelves' && ts.numShelves > 0) fields.push(`shelves=${chalk.cyan(ts.numShelves.toLocaleString())}`);
       }
     }
-    const statStr = statParts.length ? ` | ${statParts.join(', ')}` : '';
+    const language = bookLanguages.get(book.id);
+    if (language) fields.push(`language=${language.toLowerCase()}`);
 
     console.log(
-      `${(i + 1).toString().padStart(4, ' ')}. ${chalk.white(formatBookLink(book.title, book.id))}\n` +
-      `      by ${book.author} | ${yearStr}, ${ratings}, ${avg}${statStr}`
+      `${(i + 1).toString().padStart(4, ' ')}. ${chalk.white(formatBookLink(book.title, book.id))} by ${book.author}\n` +
+      `      ${fields.join('; ')}`
     );
   }
 

@@ -87,6 +87,13 @@
   (`GOODREADS_STRICT_THROTTLE=1`): on a 202/403/429 it gives up immediately
   (no retry/backoff) so a throttled run fails fast with a clear message.
   A failure with a throttle message means cooldown, NOT a parser change.
+  On a throttle failure, do NOT re-run the whole suite — re-run ONLY the failing
+  test (`GOODREADS_STRICT_THROTTLE=1 npx vitest run --config
+  vitest.config.integration.mjs src/integration/goodreads.integration.ts -t
+  "<test name>"`). If the failing test is the known-flaky `/book/show`
+  `browser-book-scrape` 202 case (GOODREADS_CHANGES.md 2026/09/25), don't re-run
+  even that one — it's the first URL to be throttled, and 14 green with only it
+  202'ing is the expected outcome.
 
 ## SQLite writes / database locking
 - **Do NOT call `loadBookCache()` — it materializes the whole `books` table
@@ -125,17 +132,44 @@
   idempotent upserts so replay-after-abort is safe.
 - Avoid running several heavy crawlers at once (e.g. gap-genre + author-rescan +
   list-tag-walk) — they serialize on the same writer lock either way.
-- **Daily DB backup runs on a schedule via `./backupDb.sh` (cron), NOT inside
+- **Daily DB backup runs on a schedule via `./backupDb.sh`, NOT inside
   `monitor.sh`** (a 2026/09/20 incident: the backup API snapshot took 57min
   under crawler load and looked hung — fast to ~60% while the OS-cache-warm
-  bulk copied, then ~200KB/s through the cold tail). Crawlers are always
-  running, so the backup never waits for idle time. Fast path in `backupDb()`
+  bulk copied, then ~200KB/s through the cold tail). **Scheduler (installed
+  2026/10/03): launchd agent `com.goodreads.backupdb` at
+  `~/Library/LaunchAgents/com.goodreads.backupdb.plist`, daily 08:00, output
+  to `backups/backup.log`.** History: the backup used to be a tail step of
+  `monitor.sh`; that was removed on 2026-09-20 (committed 1ef2273, 2026-09-25)
+  with a comment to "run it on its own schedule", but no cron/launchd job was
+  ever actually installed — so backups silently stopped 2026-09-20 → 2026-10-03.
+  If `backups/backup.log` goes stale, check the job with `launchctl print
+  gui/$(id -u)/com.goodreads.backupdb`. Crawlers are always running, so the
+  backup never waits for idle time. Fast path in `backupDb()`
   (src/db.ts): `PRAGMA wal_checkpoint(TRUNCATE)` then an APFS copy-on-write
-  clone (`COPYFILE_FICLONE`) — instant, point-in-time, consistency verified.
+  clone (`COPYFILE_FICLONE`) — instant, point-in-time, consistency verified
+  (re-verified 2026-10-03: 5.59GB cloned in 19.3s with 3 crawlers live).
   Falls back to the SQLite backup API when another connection holds a read
   mark and the WAL can't be reclaimed (`checkpointCompleted()` decides).
   Do not re-add the backup to monitor.sh; do not make it skip when crawlers
   are running.
+
+## Sanitized export / import (data sharing)
+- `export-data <basename>` writes gzipped CSVs for `EXPORT_TABLES`
+  (exportData.ts): books, authors, tag_books, genres, genre_tag_xref, book_page,
+  tag_stats, lists, popular_by_date_book, tag_tail_scrapes,
+  tag_tail_monitor_state. `EXCLUDED_TABLES` (config with live cookies,
+  author_scrape_failures, browser_scrape, list_scrapes, list_walk) are never
+  written. A unit test asserts every table in the live schema is in
+  EXPORT_TABLES ∪ EXCLUDED_TABLES, so a newly added table can't silently go
+  missing — add it to one of the two lists when you add a table.
+- `import-data` merges fill-blank-only (never replaces good data): genres/tags
+  union; book_page + popular_by_date_book keep the newest scraped_at;
+  lists.seen_book_ids union; tag_tail_scrapes / tag_tail_monitor_state keep the
+  newest run; books.last_updated keeps the newer stamp (first_seen is never
+  re-stamped).
+- CSV parsing is RFC 4180-correct across embedded newlines (`CsvRecordParser`
+  in importData.ts, shared by importData + csvAnalyze). Export escapes newlines
+  in `book_page.description` etc.; a line-oriented reader corrupts those rows.
 
 ## Goodreads page-change log
 - Whenever a Goodreads page change forces a code fix (selector updates, markup

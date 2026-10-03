@@ -1,6 +1,7 @@
 #!/bin/bash
 # Backup the Goodreads SQLite DB, keeping the last 7 daily snapshots.
-# Run on a schedule (cron / launchd). NOTE: crawlers are always running in this
+# Scheduled by launchd agent com.goodreads.backupdb (daily 08:00, see
+# ~/Library/LaunchAgents/com.goodreads.backupdb.plist). Crawlers are always running in this
 # environment, so this intentionally does NOT skip when they are active.
 #   Fast path: wal_checkpoint(TRUNCATE) then an APFS copy-on-write clone of the
 #   main file (seconds). If the WAL can't be reclaimed mid-crawl, it falls back

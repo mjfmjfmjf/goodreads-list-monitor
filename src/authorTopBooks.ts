@@ -144,6 +144,9 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
         if (result.catalogPages) entry.catalogPages = result.catalogPages;
         entry.failCount = 0;
         entry.lastError = undefined;
+        // Every successful scrape = "seen recently", so --minAge gates in the
+        // other scrapers can skip this author for the cooldown window.
+        entry.lastSeen = new Date().toISOString();
         const prev = {
           averageRating: entry.averageRating,
           numRatings: entry.numRatings,
@@ -164,11 +167,8 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
           upsertAuthor(key, entry);
           console.log(chalk.green.bold(`   ✅ Author cache updated`));
         } else {
-          // Values already current — a no-op scrape. Still stamp last_seen so
-          // the author is not immediately re-crawled by --minAge next run.
-          entry.lastSeen = new Date().toISOString();
           upsertAuthor(key, entry);
-          console.log(chalk.gray(`   (No change - values already current or not greater; refreshed last_seen)`));
+          console.log(chalk.gray(`   (No change - values already current or not greater)`));
         }
       }
     } catch (error) {

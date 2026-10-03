@@ -2,7 +2,27 @@ import { describe, expect, it } from 'vitest';
 import {
   splitCsvLine, decodeBookRow, decodeAuthorRow, mergeBook, mergeAuthor, mergeTags,
   decodeTagBookRow, decodeGenreRow, decodeXrefRow, decodeBookPageRow, decodeTagStatsRow, decodeListRow, mergeSeenIds,
+  parseCsvRecords, decodePopularByDateRow, decodeTagTailRow, decodeTagTailStateRow,
 } from './importData.js';
+
+describe('parseCsvRecords', () => {
+  it('keeps a quoted field with an embedded newline in one record', () => {
+    expect(parseCsvRecords('id,title\n1,"Line one\nLine two"\n2,Two\n'))
+      .toEqual([['id', 'title'], ['1', 'Line one\nLine two'], ['2', 'Two']]);
+  });
+  it('handles CRLF line endings', () => {
+    expect(parseCsvRecords('a,b\r\n1,2\r\n')).toEqual([['a', 'b'], ['1', '2']]);
+  });
+  it('unescapes doubled quotes and keeps commas inside quotes', () => {
+    expect(parseCsvRecords('x\n"a ""q"", b"\n')).toEqual([['x'], ['a "q", b']]);
+  });
+  it('flushes a final record that has no trailing newline', () => {
+    expect(parseCsvRecords('a,b\n1,2')).toEqual([['a', 'b'], ['1', '2']]);
+  });
+  it('returns null for empty fields', () => {
+    expect(parseCsvRecords('a,,c\n')[0]).toEqual(['a', null, 'c']);
+  });
+});
 
 describe('splitCsvLine', () => {
   it('splits plain fields', () => {
@@ -237,5 +257,66 @@ describe('mergeSeenIds', () => {
   });
   it('tolerates malformed JSON', () => {
     expect(JSON.parse(mergeSeenIds('not-json', '["3"]'))).toEqual(['3']);
+  });
+});
+
+describe('decodeBookRow last_updated', () => {
+  const headers = [...bookHeaders, 'last_updated'];
+  it('decodes last_updated when present', () => {
+    const row = decodeBookRow(headers, ['1', 'T', 'A', '9', '5', '4.0', '2000', '', '', '', 'w', '0', '0', '2026-01-01', '2026-08-28']);
+    expect(row!.lastUpdated).toBe('2026-08-28');
+  });
+});
+
+describe('mergeBook last_updated', () => {
+  it('keeps the newer of the two timestamps', () => {
+    expect(mergeBook({ title: 'T', author: 'A', lastUpdated: '2026-08-20' }, { id: '1', lastUpdated: '2026-08-28' }).merged.lastUpdated).toBe('2026-08-28');
+    expect(mergeBook({ title: 'T', author: 'A', lastUpdated: '2026-08-28' }, { id: '1', lastUpdated: '2026-08-20' }).merged.lastUpdated).toBe('2026-08-28');
+  });
+  it('adopts the imported last_updated when the DB row has none', () => {
+    expect(mergeBook(undefined, { id: '1', lastUpdated: '2026-08-28' }).merged.lastUpdated).toBe('2026-08-28');
+  });
+});
+
+const popHeaders = ['page_key', 'book_id', 'rank', 'title', 'work_id', 'stats_ratings', 'stats_reviews', 'stats_avg', 'scraped_at'];
+
+describe('decodePopularByDateRow', () => {
+  it('decodes typed fields', () => {
+    expect(decodePopularByDateRow(popHeaders, ['f:2026-08', '170448', '3', 'Animal Farm', 'w1', '100', '10', '4.1', '2026-09-01T00:00:00Z'])).toEqual({
+      pageKey: 'f:2026-08', bookId: '170448', rank: 3, title: 'Animal Farm', workId: 'w1',
+      statsRatings: 100, statsReviews: 10, statsAvg: 4.1, scrapedAt: '2026-09-01T00:00:00Z',
+    });
+  });
+  it('returns null when the primary key is incomplete', () => {
+    expect(decodePopularByDateRow(popHeaders, [null, '170448'])).toBeNull();
+    expect(decodePopularByDateRow(popHeaders, ['f:2026-08', null])).toBeNull();
+  });
+});
+
+const tagTailHeaders = ['tag_name', 'last_scraped', 'last_page_seen', 'books_added', 'authors_added'];
+
+describe('decodeTagTailRow', () => {
+  it('decodes typed fields', () => {
+    expect(decodeTagTailRow(tagTailHeaders, ['to-read', '2026-09-01', '12', '5', '3'])).toEqual({
+      tagName: 'to-read', lastScraped: '2026-09-01', lastPageSeen: 12, booksAdded: 5, authorsAdded: 3,
+    });
+  });
+  it('returns null when tag_name or last_scraped is missing', () => {
+    expect(decodeTagTailRow(tagTailHeaders, [null, '2026-09-01', '1', '1', '1'])).toBeNull();
+    expect(decodeTagTailRow(tagTailHeaders, ['to-read', null, '1', '1', '1'])).toBeNull();
+  });
+});
+
+const tagStateHeaders = ['id', 'run_started_at', 'run_completed'];
+
+describe('decodeTagTailStateRow', () => {
+  it('decodes typed fields', () => {
+    expect(decodeTagTailStateRow(tagStateHeaders, ['run1', '2026-09-01T00:00:00Z', '1'])).toEqual({
+      id: 'run1', runStartedAt: '2026-09-01T00:00:00Z', runCompleted: 1,
+    });
+  });
+  it('returns null when id or run_started_at is missing', () => {
+    expect(decodeTagTailStateRow(tagStateHeaders, [null, '2026-09-01', '1'])).toBeNull();
+    expect(decodeTagTailStateRow(tagStateHeaders, ['run1', null, '1'])).toBeNull();
   });
 });

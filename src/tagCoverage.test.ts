@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeTagCoverage } from './tagCoverage.js';
+import { computeTagCoverage, SHELF_HARVEST_BOOK_CAP } from './tagCoverage.js';
 import type { TagBookRow } from './storage.js';
 
 const row = (tag: string, book: string): TagBookRow => ({
@@ -87,5 +87,40 @@ describe('computeTagCoverage', () => {
     expect(hist.rows[0].tag).toBe('b');
     expect(hist.rows[0].avgRatings).toBe(900);
     expect(hist.rows[1].tag).toBe('a');
+  });
+});
+
+describe('harvest-ceiling score cap', () => {
+  it('SHELF_HARVEST_BOOK_CAP is the 25-page x 50-book harvest ceiling', () => {
+    expect(SHELF_HARVEST_BOOK_CAP).toBe(1250);
+  });
+
+  it('scores (tag, position) drift rows like a clean harvest and still reaches 100%', () => {
+    // Both tags hold the same 1,250 real books; 'drifty' also carries 10 stale
+    // xref rows from an earlier harvest that saw a different book set on the
+    // same page. The cap keeps that drift out of the RANKING, while a pick still
+    // contributes every uncovered book — so the cap must never shorten the
+    // countdown, or the last 10 books get stranded below full coverage.
+    const shared = Array.from({ length: 1250 }, (_, i) => `${i}`);
+    const hist = computeTagCoverage([
+      ...shared.map(b => row('clean', b)),
+      ...shared.map(b => row('drifty', b)),
+      ...Array.from({ length: 10 }, (_, i) => row('drifty', `x${i}`)),
+      ...Array.from({ length: 5 }, (_, i) => row('small', `s${i}`)),
+    ], 100);
+
+    expect(hist.totalBooks).toBe(1265);
+    expect(hist.rows[0].newBooks).toBeLessThanOrEqual(SHELF_HARVEST_BOOK_CAP);
+    // drifty is still worth picking — it holds 10 books nobody else covers.
+    expect(hist.rows.some(r => r.tag === 'drifty')).toBe(true);
+    expect(hist.rows[hist.rows.length - 1].pct).toBe(100);
+  });
+
+  it('still prefers more real books when both tags are under the cap', () => {
+    const hist = computeTagCoverage([
+      ...Array.from({ length: 5 }, (_, i) => row('five', `f${i}`)),
+      ...Array.from({ length: 9 }, (_, i) => row('nine', `n${i}`)),
+    ], 10);
+    expect(hist.rows[0].tag).toBe('nine');
   });
 });

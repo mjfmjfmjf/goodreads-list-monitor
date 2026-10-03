@@ -63,6 +63,18 @@ export async function runFieldCoverage(): Promise<void> {
   `).get() as any)
     : null;
 
+  // Distinct publisher/format/language labels, mirroring the book-cache
+  // report — exposes how much these low-cardinality columns repeat.
+  const bookPageDistinct = hasTable('book_page')
+    ? (db.prepare(`
+    SELECT
+      COUNT(DISTINCT publisher) AS 'publisher',
+      COUNT(DISTINCT format) AS 'format',
+      COUNT(DISTINCT language) AS 'language'
+    FROM book_page
+  `).get() as Record<string, number>)
+    : undefined;
+
   const browserScrapeTotals = hasTable('browser_scrape')
     ? (db.prepare(`
     SELECT
@@ -221,7 +233,7 @@ export async function runFieldCoverage(): Promise<void> {
   if (bookPageTotals && Number(bookPageTotals.total) > 0) {
     console.log(chalk.cyan.bold(`\n📊 Browser book-page field coverage:`));
     console.log(chalk.gray('----------------------------------------------------------------------'));
-    for (const stat of computeFieldStats(bookPageTotals, Number(bookPageTotals.total))) {
+    for (const stat of computeFieldStats(bookPageTotals, Number(bookPageTotals.total), bookPageDistinct)) {
       console.log('  ' + formatCoverageLine(stat));
     }
   }

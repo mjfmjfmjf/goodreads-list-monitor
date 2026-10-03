@@ -1,6 +1,6 @@
 import { createGunzip } from 'node:zlib';
 import { createReadStream, openSync, readSync, closeSync } from 'node:fs';
-import { createInterface } from 'node:readline';
+import { Readable } from 'node:stream';
 import chalk from 'chalk';
 import { recomputeWorkReps } from './db.js';
 
@@ -58,26 +58,99 @@ function isGzip(file: string): boolean {
 
 // Open a CSV source (plain .csv or .csv.gz), automatically decompressing when
 // the content is gzipped so callers don't need to care about the wrapping.
-export function openCsvStream(file: string): NodeJS.ReadableStream {
+export function openCsvStream(file: string): Readable {
   const raw = createReadStream(file);
   return isGzip(file) ? raw.pipe(createGunzip()) : raw;
 }
 
-// Streaming line-parsed CSV (plain or gzipped) using RFC4180 quoting.
-export async function readCsvGz(file: string, onRow: (headers: string[], fields: (string | null)[]) => void): Promise<number> {
-  const rl = createInterface({ input: openCsvStream(file), crlfDelay: Infinity });
+type CsvField = string | null;
+type CsvRecord = CsvField[];
 
+// True RFC 4180 record parser, quote-aware across embedded newlines. Export
+// writes quoted fields that contain newlines (e.g. book_page.description), so a
+// line-oriented reader corrupts those rows; this consumes raw character chunks
+// and only emits a record at an *unquoted* newline. Feed chunks with write();
+// call end() to flush a trailing record when the source lacks a final newline.
+// Empty fields are returned as null (matching splitCsvLine).
+export class CsvRecordParser {
+  private fields: CsvField[] = [];
+  private cur = '';
+  private inQuote = false;
+  private started = false;
+  private skipLf = false;
+  private out: CsvRecord[] = [];
+
+  write(chunk: string): CsvRecord[] {
+    for (let i = 0; i < chunk.length; i++) {
+      const ch = chunk[i];
+      if (this.inQuote) {
+        if (ch === '"') {
+          if (chunk[i + 1] === '"') { this.cur += '"'; i++; }
+          else this.inQuote = false;
+        } else {
+          this.cur += ch;
+        }
+        continue;
+      }
+      if (this.skipLf) {
+        this.skipLf = false;
+        if (ch === '\n') continue;
+      }
+      if (ch === '"') { this.inQuote = true; this.started = true; }
+      else if (ch === ',') { this.fields.push(this.blank(this.cur)); this.cur = ''; this.started = true; }
+      else if (ch === '\n') { this.endRecord(); }
+      else if (ch === '\r') { this.endRecord(); this.skipLf = true; }
+      else { this.cur += ch; this.started = true; }
+    }
+    const out = this.out;
+    this.out = [];
+    return out;
+  }
+
+  end(): CsvRecord[] {
+    // Flush a record that wasn't newline-terminated (also covers an unbalanced
+    // quoted field at EOF) so no data is silently dropped.
+    if (this.started || this.cur.length || this.fields.length) this.endRecord();
+    const out = this.out;
+    this.out = [];
+    return out;
+  }
+
+  private blank(s: string): CsvField { return s.length ? s : null; }
+
+  private endRecord(): void {
+    this.fields.push(this.blank(this.cur));
+    this.cur = '';
+    this.out.push(this.fields);
+    this.fields = [];
+    this.started = false;
+  }
+}
+
+// Convenience for tests / small inputs: parse a whole CSV string into records.
+export function parseCsvRecords(text: string): CsvRecord[] {
+  const p = new CsvRecordParser();
+  return [...p.write(text), ...p.end()];
+}
+
+// Streaming CSV reader (plain or gzipped) that is RFC 4180-correct: quoted
+// fields may contain commas, doubled quotes, and embedded newlines. Invokes
+// onRow for each record after the header; returns the data-row count.
+export async function readCsvGz(file: string, onRow: (headers: string[], fields: CsvField[]) => void): Promise<number> {
+  const stream = openCsvStream(file);
+  stream.setEncoding('utf8');
+  const parser = new CsvRecordParser();
   let headers: string[] | null = null;
   let rowCount = 0;
-  for await (const line of rl) {
-    const fields = splitCsvLine(line);
-    if (!headers) {
-      headers = fields.map(f => f ?? '');
-      continue;
+  const handle = (records: CsvRecord[]) => {
+    for (const fields of records) {
+      if (!headers) { headers = fields.map(f => f ?? ''); continue; }
+      onRow(headers, fields);
+      rowCount++;
     }
-    onRow(headers, fields);
-    rowCount++;
-  }
+  };
+  for await (const chunk of stream) handle(parser.write(chunk as string));
+  handle(parser.end());
   return rowCount;
 }
 
@@ -140,6 +213,7 @@ export interface BookImportRow {
   requiresAuth?: number | null;
   failCount?: number | null;
   firstSeen?: string;
+  lastUpdated?: string;
 }
 
 export function decodeBookRow(headers: string[], fields: (string | null)[]): BookImportRow | null {
@@ -166,6 +240,7 @@ export function decodeBookRow(headers: string[], fields: (string | null)[]): Boo
     requiresAuth: toInt(get('requires_auth')),
     failCount: toInt(get('fail_count')),
     firstSeen: get('first_seen') ?? undefined,
+    lastUpdated: get('last_updated') ?? undefined,
   };
 }
 
@@ -215,7 +290,7 @@ export interface ExistingBook {
   avgRating?: number | null; published?: string; pages?: number | null;
   seriesPos?: number | null; genres?: string[]; tags?: Record<string, unknown>;
   workId?: string; isBad?: number | null; requiresAuth?: number | null;
-  failCount?: number | null; firstSeen?: string | null;
+  failCount?: number | null; firstSeen?: string | null; lastUpdated?: string | null;
 }
 export interface MergedBook {
   changed: boolean;
@@ -224,7 +299,7 @@ export interface MergedBook {
     avgRating: number | null; published: string; pages: number | null;
     seriesPos: number | null; genres?: string[]; tags?: Record<string, unknown>;
     workId?: string; isBad: number | null; requiresAuth?: number | null;
-    failCount?: number | null; firstSeen?: string | null;
+    failCount?: number | null; firstSeen?: string | null; lastUpdated?: string | null;
   };
 }
 
@@ -238,6 +313,14 @@ const goodNum = (n: number | null | undefined) => n != null && Number.isFinite(n
 function pickNum(existing: number | null | undefined, inc: number | null | undefined): number | null {
   if (goodNum(existing)) return existing!;
   return goodNum(inc) ? inc! : null;
+}
+// last_updated is "most recently refreshed from source": keep whichever of the
+// two ISO timestamps is newer (ISO-8601 sorts chronologically), else the other.
+function pickNewest(a: string | null | undefined, b: string | null | undefined): string | null {
+  const av = a || '', bv = b || '';
+  if (!av) return bv || null;
+  if (!bv) return av;
+  return av >= bv ? av : bv;
 }
 
 export function mergeBook(existing: ExistingBook | undefined, inc: BookImportRow, ratingPolicy: 'keep' | 'update' = 'keep'): MergedBook {
@@ -268,13 +351,16 @@ export function mergeBook(existing: ExistingBook | undefined, inc: BookImportRow
   // first_seen is "earliest known": keep the existing value, else adopt the
   // imported one, else null (upsert stamps import time as a last resort).
   const firstSeen = existing?.firstSeen || inc.firstSeen || null;
+  // last_updated is "latest refresh": keep whichever side is newer; a brand-new
+  // row takes the imported stamp (upsert stamps import time when absent).
+  const lastUpdated = pickNewest(existing?.lastUpdated, inc.lastUpdated);
 
   if (!existing) {
     return {
       changed: true,
       merged: {
         title, author, authorId, ratings, avgRating, published, pages, seriesPos, genres, tags, workId, isBad,
-        requiresAuth, failCount, firstSeen,
+        requiresAuth, failCount, firstSeen, lastUpdated,
       },
     };
   }
@@ -292,9 +378,10 @@ export function mergeBook(existing: ExistingBook | undefined, inc: BookImportRow
     || JSON.stringify(existing.tags || {}) !== JSON.stringify(tags || {})
     || (existing.workId ?? undefined) !== workId
     || (existing.requiresAuth ?? null) !== requiresAuth
-    || (existing.failCount ?? null) !== failCount;
+    || (existing.failCount ?? null) !== failCount
+    || (existing.lastUpdated ?? null) !== lastUpdated;
 
-  return { changed, merged: { title, author, authorId, ratings, avgRating, published, pages, seriesPos, genres, tags, workId, isBad, requiresAuth, failCount, firstSeen } };
+  return { changed, merged: { title, author, authorId, ratings, avgRating, published, pages, seriesPos, genres, tags, workId, isBad, requiresAuth, failCount, firstSeen, lastUpdated } };
 }
 
 // ── DB persistence (fill-blank + union) ─────────────────────────────
@@ -307,6 +394,9 @@ export interface ImportCounts {
   bookPagesInserted: number; bookPagesUpdated: number; bookPagesSkipped: number;
   tagStatsInserted: number; tagStatsUpdated: number;
   listsInserted: number; listsUpdated: number;
+  popularByDateInserted: number; popularByDateUpdated: number; popularByDateSkipped: number;
+  tagTailsInserted: number; tagTailsUpdated: number;
+  tagTailStateInserted: number; tagTailStateUpdated: number;
 }
 
 export async function importBooksFile(
@@ -361,7 +451,7 @@ export async function importBooksFile(
       tags: existing.tags ? safeJson(existing.tags) : undefined,
       workId: existing.work_id, isBad: existing.is_bad,
       requiresAuth: existing.requires_auth, failCount: existing.fail_count,
-      firstSeen: existing.first_seen,
+      firstSeen: existing.first_seen, lastUpdated: existing.last_updated,
     } : undefined;
     const { merged } = mergeBook(e as ExistingBook, row, ratingPolicy);
     batch.push({
@@ -375,7 +465,7 @@ export async function importBooksFile(
       pages: merged.pages,
       seriesPos: merged.seriesPos,
       genres: merged.genres && merged.genres.length ? JSON.stringify(merged.genres) : null,
-      lastUpdated: now,
+      lastUpdated: merged.lastUpdated ?? now,
       tags: merged.tags ? JSON.stringify(merged.tags) : null,
       isBad: merged.isBad ? 1 : 0,
       requiresAuth: merged.requiresAuth ? 1 : 0,
@@ -949,6 +1039,204 @@ export async function importXrefFile(
   return { total };
 }
 
+// ── popular_by_date_book import (popular-by-date ranking snapshots) ──
+// PK (page_key, book_id). Each row carries its own scraped_at, so the merge is
+// "newest scraped_at wins": an older incoming row never overwrites a fresher
+// snapshot, and a newer one replaces the row wholesale.
+export interface PopularByDateImportRow {
+  pageKey: string;
+  bookId: string;
+  rank?: number | null;
+  title?: string;
+  workId?: string;
+  statsRatings?: number | null;
+  statsReviews?: number | null;
+  statsAvg?: number | null;
+  scrapedAt?: string;
+}
+
+export function decodePopularByDateRow(headers: string[], fields: (string | null)[]): PopularByDateImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const pageKey = get('page_key');
+  const bookId = get('book_id');
+  if (!pageKey || !bookId) return null;
+  return {
+    pageKey,
+    bookId,
+    rank: toInt(get('rank')),
+    title: get('title') ?? undefined,
+    workId: get('work_id') ?? undefined,
+    statsRatings: toInt(get('stats_ratings')),
+    statsReviews: toInt(get('stats_reviews')),
+    statsAvg: toFloat(get('stats_avg')),
+    scrapedAt: get('scraped_at') ?? undefined,
+  };
+}
+
+export async function importPopularByDateFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const known = db.prepare('SELECT scraped_at FROM popular_by_date_book WHERE page_key = ? AND book_id = ?');
+  const upsert = db.prepare(`
+    INSERT INTO popular_by_date_book (page_key, book_id, rank, title, work_id, stats_ratings, stats_reviews, stats_avg, scraped_at)
+    VALUES (@pageKey, @bookId, @rank, @title, @workId, @statsRatings, @statsReviews, @statsAvg, @scrapedAt)
+    ON CONFLICT(page_key, book_id) DO UPDATE SET
+      rank=excluded.rank, title=excluded.title, work_id=excluded.work_id,
+      stats_ratings=excluded.stats_ratings, stats_reviews=excluded.stats_reviews,
+      stats_avg=excluded.stats_avg, scraped_at=excluded.scraped_at
+  `);
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodePopularByDateRow(headers, fields);
+    if (!row) return;
+    total++;
+    const existing = known.get(row.pageKey, row.bookId) as { scraped_at: string } | undefined;
+    if (existing && (!row.scrapedAt || existing.scraped_at >= row.scrapedAt)) {
+      counts.popularByDateSkipped++;
+      return;
+    }
+    upsert.run({
+      pageKey: row.pageKey,
+      bookId: row.bookId,
+      rank: row.rank ?? null,
+      title: row.title ?? null,
+      workId: row.workId ?? null,
+      statsRatings: row.statsRatings ?? null,
+      statsReviews: row.statsReviews ?? null,
+      statsAvg: row.statsAvg ?? null,
+      scrapedAt: row.scrapedAt || new Date().toISOString(),
+    });
+    if (existing) counts.popularByDateUpdated++;
+    else counts.popularByDateInserted++;
+  });
+  return { total };
+}
+
+// ── tag_tail_scrapes import (tag-recent-monitor progress) ──────────
+// PK tag_name. The row is a snapshot of the latest scan of a tag's tail, so a
+// newer last_scraped replaces the row wholesale; older rows are ignored.
+// last_scraped is NOT NULL, so a row without it is skipped.
+export interface TagTailImportRow {
+  tagName: string;
+  lastScraped?: string;
+  lastPageSeen?: number | null;
+  booksAdded?: number | null;
+  authorsAdded?: number | null;
+}
+
+export function decodeTagTailRow(headers: string[], fields: (string | null)[]): TagTailImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const tagName = get('tag_name');
+  const lastScraped = get('last_scraped');
+  if (!tagName || !lastScraped) return null;
+  return {
+    tagName,
+    lastScraped,
+    lastPageSeen: toInt(get('last_page_seen')),
+    booksAdded: toInt(get('books_added')),
+    authorsAdded: toInt(get('authors_added')),
+  };
+}
+
+export async function importTagTailsFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const upsert = db.prepare(`
+    INSERT INTO tag_tail_scrapes (tag_name, last_scraped, last_page_seen, books_added, authors_added)
+    VALUES (@tagName, @lastScraped, @lastPageSeen, @booksAdded, @authorsAdded)
+    ON CONFLICT(tag_name) DO UPDATE SET
+      last_page_seen=CASE WHEN excluded.last_scraped > tag_tail_scrapes.last_scraped THEN excluded.last_page_seen ELSE tag_tail_scrapes.last_page_seen END,
+      books_added=CASE WHEN excluded.last_scraped > tag_tail_scrapes.last_scraped THEN excluded.books_added ELSE tag_tail_scrapes.books_added END,
+      authors_added=CASE WHEN excluded.last_scraped > tag_tail_scrapes.last_scraped THEN excluded.authors_added ELSE tag_tail_scrapes.authors_added END,
+      last_scraped=CASE WHEN excluded.last_scraped > tag_tail_scrapes.last_scraped THEN excluded.last_scraped ELSE tag_tail_scrapes.last_scraped END
+  `);
+  const find = db.prepare('SELECT 1 FROM tag_tail_scrapes WHERE tag_name = ?');
+  let batch: { tagName: string; lastScraped: string; lastPageSeen: number | null; booksAdded: number | null; authorsAdded: number | null; isNew: boolean }[] = [];
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodeTagTailRow(headers, fields);
+    if (!row) return;
+    total++;
+    batch.push({
+      tagName: row.tagName,
+      lastScraped: row.lastScraped!,
+      lastPageSeen: row.lastPageSeen ?? null,
+      booksAdded: row.booksAdded ?? null,
+      authorsAdded: row.authorsAdded ?? null,
+      isNew: !find.get(row.tagName),
+    });
+    if (batch.length >= 20_000) { flush(); batch = []; }
+  });
+  flush();
+
+  function flush(): void {
+    const tx = db.transaction((rows: typeof batch) => {
+      for (const p of rows) {
+        upsert.run(p);
+        if (p.isNew) counts.tagTailsInserted++;
+        else counts.tagTailsUpdated++;
+      }
+    });
+    tx(batch);
+  }
+  return { total };
+}
+
+// ── tag_tail_monitor_state import (single in-flight run row) ───────
+// PK id. Keep the row with the newer run_started_at (with its run_completed).
+export interface TagTailStateImportRow {
+  id: string;
+  runStartedAt?: string;
+  runCompleted?: number | null;
+}
+
+export function decodeTagTailStateRow(headers: string[], fields: (string | null)[]): TagTailStateImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const id = get('id');
+  const runStartedAt = get('run_started_at');
+  if (!id || !runStartedAt) return null;
+  return { id, runStartedAt, runCompleted: toInt(get('run_completed')) };
+}
+
+export async function importTagTailStateFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const upsert = db.prepare(`
+    INSERT INTO tag_tail_monitor_state (id, run_started_at, run_completed)
+    VALUES (@id, @runStartedAt, COALESCE(@runCompleted, 0))
+    ON CONFLICT(id) DO UPDATE SET
+      run_completed=CASE WHEN excluded.run_started_at > tag_tail_monitor_state.run_started_at THEN excluded.run_completed ELSE tag_tail_monitor_state.run_completed END,
+      run_started_at=CASE WHEN excluded.run_started_at > tag_tail_monitor_state.run_started_at THEN excluded.run_started_at ELSE tag_tail_monitor_state.run_started_at END
+  `);
+  const find = db.prepare('SELECT 1 FROM tag_tail_monitor_state WHERE id = ?');
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodeTagTailStateRow(headers, fields);
+    if (!row) return;
+    total++;
+    const existing = find.get(row.id);
+    upsert.run({ id: row.id, runStartedAt: row.runStartedAt!, runCompleted: row.runCompleted ?? 0 });
+    if (existing) counts.tagTailStateUpdated++;
+    else counts.tagTailStateInserted++;
+  });
+  return { total };
+}
+
 // Fill-blank-only for authors (status fields like last_seen are always updated).
 export interface ExistingAuthor {
   id?: string; slug?: string; lastSeen?: string; firstSeen?: string; averageRating?: number | null; numRatings?: number | null;
@@ -982,14 +1270,17 @@ export interface ImportOptions {
   bookPageFile?: string;
   tagStatsFile?: string;
   listsFile?: string;
+  popularByDateFile?: string;
+  tagTailsFile?: string;
+  tagTailStateFile?: string;
   ratingPolicy?: 'keep' | 'update';
 }
 export async function importData(
   db: import('better-sqlite3').Database,
   options: ImportOptions
 ): Promise<ImportCounts> {
-  if (!options.booksFile && !options.authorsFile && !options.tagBooksFile && !options.genresFile && !options.xrefFile && !options.bookPageFile && !options.tagStatsFile && !options.listsFile) {
-    throw new Error('Provide at least one of --books, --authors, --tagBooks, --genres, --xref, --bookPage, --tagStats, or --lists file paths.');
+  if (!options.booksFile && !options.authorsFile && !options.tagBooksFile && !options.genresFile && !options.xrefFile && !options.bookPageFile && !options.tagStatsFile && !options.listsFile && !options.popularByDateFile && !options.tagTailsFile && !options.tagTailStateFile) {
+    throw new Error('Provide at least one of --books, --authors, --tagBooks, --genres, --xref, --bookPage, --tagStats, --lists, --popularByDate, --tagTails, or --tagTailState file paths.');
   }
   const counts: ImportCounts = {
     booksInserted: 0, booksUpdated: 0, booksSkipped: 0,
@@ -1000,6 +1291,9 @@ export async function importData(
     bookPagesInserted: 0, bookPagesUpdated: 0, bookPagesSkipped: 0,
     tagStatsInserted: 0, tagStatsUpdated: 0,
     listsInserted: 0, listsUpdated: 0,
+    popularByDateInserted: 0, popularByDateUpdated: 0, popularByDateSkipped: 0,
+    tagTailsInserted: 0, tagTailsUpdated: 0,
+    tagTailStateInserted: 0, tagTailStateUpdated: 0,
   };
   const policy = options.ratingPolicy === 'update' ? 'update' : 'keep';
   if (options.booksFile) await importBooksFile(db, options.booksFile, counts, policy);
@@ -1010,6 +1304,9 @@ export async function importData(
   if (options.bookPageFile) await importBookPagesFile(db, options.bookPageFile, counts);
   if (options.tagStatsFile) await importTagStatsFile(db, options.tagStatsFile, counts);
   if (options.listsFile) await importListsFile(db, options.listsFile, counts);
+  if (options.popularByDateFile) await importPopularByDateFile(db, options.popularByDateFile, counts);
+  if (options.tagTailsFile) await importTagTailsFile(db, options.tagTailsFile, counts);
+  if (options.tagTailStateFile) await importTagTailStateFile(db, options.tagTailStateFile, counts);
   return counts;
 }
 
@@ -1023,5 +1320,8 @@ export function printImportResult(counts: ImportCounts, ratingPolicy: 'keep' | '
   console.log(chalk.white(`  book_page:   ${counts.bookPagesInserted} inserted, ${counts.bookPagesUpdated} updated, ${counts.bookPagesSkipped} skipped (older scrape)`));
   console.log(chalk.white(`  tag_stats:   ${counts.tagStatsInserted} inserted, ${counts.tagStatsUpdated} updated`));
   console.log(chalk.white(`  lists:       ${counts.listsInserted} inserted, ${counts.listsUpdated} updated`));
-  console.log(chalk.gray(`  avgRating policy: ${ratingPolicy === 'update' ? 'update (overwrite)' : 'keep (fill-blank-only)'}`));;
+  console.log(chalk.white(`  pop_by_date: ${counts.popularByDateInserted} inserted, ${counts.popularByDateUpdated} updated, ${counts.popularByDateSkipped} skipped (older scrape)`));
+  console.log(chalk.white(`  tag_tails:   ${counts.tagTailsInserted} inserted, ${counts.tagTailsUpdated} updated`));
+  console.log(chalk.white(`  tag_state:   ${counts.tagTailStateInserted} inserted, ${counts.tagTailStateUpdated} updated`));
+  console.log(chalk.gray(`  avgRating policy: ${ratingPolicy === 'update' ? 'update (overwrite)' : 'keep (fill-blank-only)'}`));
 }

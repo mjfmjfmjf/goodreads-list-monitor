@@ -38,6 +38,7 @@
     "title-char-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts title-char-histogram",
     "tag-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-histogram",
     "tag-coverage": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-coverage",
+    "tag-recent-monitor": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-recent-monitor",
     "tag-first-page-picks": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-first-page-picks",
     "title-first-word-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts title-first-word-histogram",
     "backfill-series-pos": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts backfill-series-pos",

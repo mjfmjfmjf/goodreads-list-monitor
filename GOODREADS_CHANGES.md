@@ -3,6 +3,81 @@
 Record whenever Goodreads changes a page in a way that forces a code change.
 Newest entry on top. Timestamp format: `YYYY/MM/DD HH:MM` (local time).
 
+## 2026/09/30 17:55 — Tag-shelf pagination footer advertises UNREACHABLE pages (last_page_seen = 100, only ~page 25 serves content)
+
+- **Page / URL:** `https://www.goodreads.com/shelf/show/<tag>?page=<n>` (the pagination
+  footer `extractShelfPageLinks` reads).
+- **What happened:** For large tag shelves the rendered pagination footer advertises a last
+  page of **100** (stored as `tag_stats.last_page_seen` by `persistShelfPageCount`), but
+  requesting that page 404s: the first live run of the new tag-recent-monitor logged
+  `❌ Error fetching shelf page 100: Request failed with status code 404` for "biology",
+  "teen-reads", "police-procedural", "single-mom", "preschool" and more. Shelf content is
+  only served up to about **page 25**. Note an anonymous `curl` of `?page=100` returns
+  HTTP 200 — but with **no pagination block at all** and a soft/empty book grid, i.e. a
+  soft-404; the crawler's 404 (cookie-authenticated axios) is the authoritative
+  "not reachable" signal. This is the shelf-side analogue of the list-side cap already
+  documented in `src/listPageParse.ts` (`MAX_LIST_PAGE_NUMBER = 100`).
+- **Impact:** `getKnownShelfPages` is `COALESCE(last_page_seen, estimate_page)`, and the
+  new monitor used it as a tail-read start page. Every tag whose measured length exceeds
+  the reachable page burned a 404 plus a wasted page-1 re-probe and harvested nothing —
+  and the footer's advertised number is also why a huge share of tags reported
+  `known last page: 100` in the coverage dry run.
+- **Also observed (2026/10/01):** the same shelf advertised 10 pages from its
+  page-11 response and ~11 pages from its page-1 response minutes later, and a
+  shelf page renders more `.elementList` rows than it has book links (quilting
+  page 25: 52 rows → 50 books). Both make the footer untrustworthy as a length
+  and made a tail read aimed at a since-shrunk shelf fall back to page 1. Fixed
+  by `reanchorShelfPage` (re-anchor once to the last page the footer admits
+  exists) and by reporting `N book(s) from M shelf row(s)`.
+- **Fix:** the tail read no longer uses the footer's page count as its start page at all.
+  `tag_books.position` is each book's GLOBAL 1-based shelf position
+  (`bookPos = (startPage - 1) * 50` in `scrapeShelfBooks`, 50 books/page, indexed by
+  `idx_tag_books_position(tag_name, position)`), so the last page actually harvested for a
+  tag is `ceil(MAX(position) / 50)` — local, free, and always reachable. New
+  `loadTagAnchors` in `src/storage.ts` reads `COUNT(*)`, `MAX(position)` and
+  `last_page_seen` for the whole covered list in one chunked query (1.3s for all 4,084
+  tags). `tailAnchorPage` turns that into a start page (dropping to page 1 when the
+  harvest is sparser than its max position, i.e. there are un-read gaps below), and
+  `tailReadWindow` still clamps the start and the outer wall to
+  `MAX_REACHABLE_SHELF_PAGE = 25` as a safety net. Live: `tag_books` holds 4,565,515
+  rows and virtually every tag's harvest reaches position 1,250 = page 25, so each
+  covered tag now costs ~1 fetch instead of a 404 + probe. The re-probe path also keeps
+  the probe page's books instead of discarding them. The backfilled `estimate_page`
+  (`shelf_book_count / 50`; real "manga" estimates 125,293 pages) is ignored for tail
+  starts entirely. Unit tests in `src/tagRecentMonitor.test.ts`; see
+  `PLAN-tag-recent-monitor.md`.
+- **Throttling note:** no extra requests were spent diagnosing this in bulk — the clamp is
+  unit-tested and the live behavior was confirmed from the run log the user already had.
+
+## 2026/09/29 20:22 — Author-page stats block served in MULTIPLE formats (A/B / in-flight rollout)
+
+- **Page / URL:** `https://www.goodreads.com/author/show/<id>` (the header stats that
+  `parseAuthorStats` reads).
+- **What happened:** The author stats block now appears in at least TWO coexisting formats,
+  and which one a request gets seems to be an A/B / canary split, NOT a clean migration:
+  - **New format:** counts keyed by `itemprop` inside `.hreview-aggregate` — average in
+    `span.average[itemprop="ratingValue"]`, ratings in `span.votes .value-title[itemprop="ratingCount"]`,
+    reviews in `span.count .value-title[itemprop="reviewCount"]`. **No "shelved N times" string at all.**
+    The `a.authorName` link that used to sit next to the numbers is gone from this layout.
+  - **Old format:** the classic text line next to the author's name link
+    (`Average rating X · N ratings · M reviews · shelved K times`) in the
+    `.leftContainer` block, which the old parser regex read.
+  - Both were observed for the SAME author (32708716 Goswin of Bussut) minutes apart:
+    the real browser (regular AND incognito) and the app's axios fetch (Chrome/120 UA,
+    HTTP/1.1) got the **old** format ("shelved 6 times"); a raw curl got the **new** format
+    every time, regardless of UA, login cookie, Accept headers, or HTTP/1.1 vs HTTP/2.
+  - **Impact:** ~9,115 authors are "scraped but statless" (`catalog_pages >= 1` but all four
+    counts 0/undefined, fresh `last_seen`) — consistent with requests that received the new
+    format while the parser only knew the old one. `scrapeAuthorStats` bails with
+    `no_stats_line` when every stat is absent, but `parseAuthorStats` old code returned an
+    empty stats object and `catalog_pages` still got written, leaving a 0 baseline.
+- **Fix:** `src/scraper.ts` `parseAuthorStats` now reads whichever layout is present:
+  `.hreview-aggregate` itemprop first, legacy `.leftContainer a.authorName` regex as the
+  fallback, and slug falls back to the canonical `<link rel="canonical">`. Unit tests cover
+  both shapes. `GOODREADS_CHANGES.md` note: `num_shelves` only exists in the old format, so it
+  (and the `hasStats` assessment of an author) will be inconsistent between format variants —
+  and reporters should treat "new vs old" as a live experiment, not a settled migration.
+
 ## 2026/09/25 10:30 — `/book/show` throttled by HTTP 202 interstitial while other endpoints pass
 
 - **Page / URL:** `https://www.goodreads.com/book/show/<id>` via the axios SSR engine.

@@ -443,6 +443,55 @@ export function getKnownShelfPages(tag: string): number | null {
   return row && typeof row.pages === 'number' ? row.pages : null;
 }
 
+// The last page count actually MEASURED from a live pagination footer, ignoring
+// the backfilled estimate_page guess. That estimate is a shelf_book_count/50
+// division and can be wildly off (e.g. "manga" estimates 125,293 pages against
+// a real shelf ~3 orders of magnitude smaller), so it is fine for capping a
+// first-ever crawl but NOT safe as the start of a tail read. The tag-recent-
+// monitor (PLAN-tag-recent-monitor.md) anchors on the tag_books xref instead and
+// only falls back to this for a tag with no xref rows at all.
+export function getMeasuredShelfPages(tag: string): number | null {
+  const row = getDb().prepare('SELECT last_page_seen FROM tag_stats WHERE tag_name = ?').get(tag) as any;
+  return row && typeof row.last_page_seen === 'number' ? row.last_page_seen : null;
+}
+
+// Batched anchor lookup for a whole tag list: how far down each tag's shelf we
+// have already harvested, derived from tag_books itself. `position` is the
+// book's GLOBAL 1-based shelf position (scraper.ts: `bookPos = (startPage - 1) * 50`,
+// then incremented), so max_position / BOOKS_PER_SHELF_PAGE is the last page we
+// read for that tag — a far better tail anchor than a page number, and it needs
+// no live request. One chunked query per 400 tags (~1.3s for the full 4,084).
+export interface TagAnchorRow {
+  bookCount: number;
+  maxPosition: number | null;
+  measuredPage: number | null;
+}
+
+export function loadTagAnchors(tags: string[]): Map<string, TagAnchorRow> {
+  const db = getDb();
+  const out = new Map<string, TagAnchorRow>();
+  const CHUNK = 400;
+  for (let i = 0; i < tags.length; i += CHUNK) {
+    const slice = tags.slice(i, i + CHUNK);
+    const placeholders = slice.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT t.tag_name, COUNT(*) AS book_count, MAX(t.position) AS max_position, s.last_page_seen
+      FROM tag_books t
+      LEFT JOIN tag_stats s ON s.tag_name = t.tag_name
+      WHERE t.tag_name IN (${placeholders})
+      GROUP BY t.tag_name
+    `).all(...slice) as any[];
+    for (const r of rows) {
+      out.set(String(r.tag_name), {
+        bookCount: r.book_count ?? 0,
+        maxPosition: r.max_position ?? null,
+        measuredPage: typeof r.last_page_seen === 'number' ? r.last_page_seen : null,
+      });
+    }
+  }
+  return out;
+}
+
 export function loadTagStats(tag?: string): TagStatsRow[] {
   const db = getDb();
   const rows = tag !== undefined
@@ -489,6 +538,73 @@ export function loadListScrape(listId: string): ListScrapeRow | undefined {
   return row
     ? { listId: row.list_id, listName: row.list_name, firstScraped: row.first_scraped, lastScraped: row.last_scraped }
     : undefined;
+}
+
+// ── Tag tail monitor tracking ──────────────────────────────────────
+// The tag-recent-monitor (see PLAN-tag-recent-monitor.md) tail-scrapes the
+// tags a greedy set-cover needs to reach 100% tag_books coverage, to discover
+// NEW books/authors. One row per tag records when its tail was last read and
+// what the scrape found; tag_tail_monitor_state holds the in-flight pass so a
+// restarted run resumes from where it stopped instead of re-reading every tag.
+
+export interface TagTailScrapeRow {
+  tagName: string;
+  lastScraped: string;
+  lastPageSeen: number | null;
+  booksAdded: number;
+  authorsAdded: number;
+}
+
+export function upsertTagTailScrape(tag: string, info: { lastPageSeen?: number | null; booksAdded?: number; authorsAdded?: number }): void {
+  const db = getDb();
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO tag_tail_scrapes (tag_name, last_scraped, last_page_seen, books_added, authors_added)
+    VALUES (@tagName, @now, @lastPageSeen, @booksAdded, @authorsAdded)
+    ON CONFLICT(tag_name) DO UPDATE SET
+      last_scraped = excluded.last_scraped,
+      last_page_seen = excluded.last_page_seen,
+      books_added = excluded.books_added,
+      authors_added = excluded.authors_added
+  `).run({ tagName: tag, now, lastPageSeen: info.lastPageSeen ?? null, booksAdded: info.booksAdded ?? 0, authorsAdded: info.authorsAdded ?? 0 });
+}
+
+export function loadTagTailScrape(tag: string): TagTailScrapeRow | undefined {
+  const row = getDb().prepare('SELECT * FROM tag_tail_scrapes WHERE tag_name = ?').get(tag) as any;
+  return row ? {
+    tagName: row.tag_name,
+    lastScraped: row.last_scraped,
+    lastPageSeen: row.last_page_seen ?? null,
+    booksAdded: row.books_added ?? 0,
+    authorsAdded: row.authors_added ?? 0,
+  } : undefined;
+}
+
+// Tags whose tail was read after `since` (ISO) — used to skip a tag when
+// resuming an in-flight pass that already covered it.
+export function loadRecentTagTailScrapes(since: string): Set<string> {
+  const rows = getDb().prepare('SELECT tag_name FROM tag_tail_scrapes WHERE last_scraped >= ?').all(since) as any[];
+  return new Set(rows.map(r => String(r.tag_name)));
+}
+
+export interface TagTailState {
+  runStartedAt: string;
+  runCompleted: boolean;
+}
+
+export function loadTagTailState(): TagTailState | undefined {
+  const row = getDb().prepare("SELECT * FROM tag_tail_monitor_state WHERE id = '1'").get() as any;
+  return row ? { runStartedAt: row.run_started_at, runCompleted: !!row.run_completed } : undefined;
+}
+
+export function saveTagTailState(state: TagTailState): void {
+  getDb().prepare(`
+    INSERT INTO tag_tail_monitor_state (id, run_started_at, run_completed)
+    VALUES ('1', @runStartedAt, @runCompleted)
+    ON CONFLICT(id) DO UPDATE SET
+      run_started_at = excluded.run_started_at,
+      run_completed = excluded.run_completed
+  `).run({ runStartedAt: state.runStartedAt, runCompleted: state.runCompleted ? 1 : 0 });
 }
 
 export interface SyncBooksOutcome {
@@ -598,6 +714,12 @@ export function findAuthorBySlug(slug: string): { key: string; entry: AuthorCach
     .prepare('SELECT * FROM authors WHERE slug = ? ORDER BY last_seen DESC LIMIT 1')
     .get(slug) as any;
   return row ? { key: row.name as string, entry: rowToAuthor(row) } : undefined;
+}
+
+// True when an author with this id already has a cache row. The author-one
+// --file batch uses it to skip ids it has already ingested on a prior run.
+export function authorExistsById(id: string): boolean {
+  return !!getDb().prepare('SELECT 1 FROM authors WHERE id = ? LIMIT 1').get(id);
 }
 
 function bindAuthor(name: string, e: AuthorCacheEntry) {
