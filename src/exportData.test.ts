@@ -9,9 +9,9 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-export-test-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb, getDb } from './db.js';
-import { exportBooksAndAuthors, EXPORT_TABLES, EXCLUDED_TABLES } from './exportData.js';
-import { importData } from './importData.js';
+import { closeDb, getDb } from './db.ts';
+import { exportBooksAndAuthors, EXPORT_TABLES, EXCLUDED_TABLES } from './exportData.ts';
+import { importData, importAuthorsFile } from './importData.ts';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 
@@ -65,7 +65,7 @@ describe('exportBooksAndAuthors', () => {
       expect(res.bookCount).toBe(1);
       expect(res.authorCount).toBe(1);
 
-      // All eleven shareable tables are exported (config/browser_scrape/failures/list bookkeeping excluded).
+      // All shareable tables are exported (config/browser_scrape/failures/list bookkeeping excluded).
       const byTable = new Map(res.files.map(f => [f.table, f]));
       expect(byTable.get('tag_books')!.count).toBe(1);
       expect(byTable.get('genres')!.count).toBe(1);
@@ -81,8 +81,8 @@ describe('exportBooksAndAuthors', () => {
       expect(booksCsv.split('\n')[0]).toBe('id,title,author,author_id,ratings,avg_rating,published,pages,series_pos,genres,last_updated,tags,requires_auth,is_bad,fail_count,work_id,first_seen,is_work_rep');
       expect(booksCsv).toContain('170448,Animal Farm');
       const authorsCsv = parseGz(res.authorsFile);
-      expect(authorsCsv.split('\n')[0]).toBe('name,id,slug,last_seen,average_rating,num_ratings,num_reviews,num_shelves,first_seen,catalog_pages,fail_count,last_error,ratings_rate');
-      expect(authorsCsv).toContain('George Orwell,3706');
+      expect(authorsCsv.split('\n')[0]).toBe('id,name,slug,last_seen,average_rating,num_ratings,num_reviews,num_shelves,first_seen,catalog_pages,ratings_rate');
+      expect(authorsCsv).toContain('3706,George Orwell');
 
       const tagCsv = parseGz(byTable.get('tag_books')!.path);
       expect(tagCsv.split('\n')[0]).toBe('tag_name,book_id,position,shelved,harvested_at');
@@ -213,14 +213,14 @@ describe('import of new tables (fill-blank, don\'t replace good data)', () => {
 });
 
 describe('export → import round-trip preserves new tables and columns', () => {
-  it('restores books.first_seen/requires_auth/fail_count, authors.fail_count, book_page, tag_stats, and lists', async () => {
+  it('restores books.first_seen/requires_auth/fail_count, authors.stats, book_page, tag_stats, and lists', async () => {
     const db = getDb();
     const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'grdxrt-'));
     try {
       db.prepare(`INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, last_updated, requires_auth, is_bad, fail_count, work_id, first_seen)
         VALUES ('rt1', 'Round Trip', 'George Orwell', '3706', 100, 4.0, '1945', '2026-08-01', 1, 0, 4, 'w1', '2026-01-01')`).run();
-      db.prepare(`INSERT INTO authors (name, id, slug, last_seen, num_ratings, fail_count)
-        VALUES ('Round Trip Author', '3706', '3706.Round_Trip_Author', '2026-08-28', 10, 2)`).run();
+      db.prepare(`INSERT INTO authors (name, id, slug, last_seen, num_ratings)
+        VALUES ('Round Trip Author', 'rt3706', 'rt3706.Round_Trip_Author', '2026-08-28', 10)`).run();
       db.prepare(`INSERT INTO book_page (book_id, publisher, isbn13, format, language, editions_count, scraped_at)
         VALUES ('rt1', 'Secker', '9781234567897', 'Hardback', 'English', 5, '2026-09-05T00:00:00Z')`).run();
       db.prepare(`INSERT INTO tag_stats (tag_name, last_page_seen, estimate_page, estimate_source, updated)
@@ -261,7 +261,6 @@ describe('export → import round-trip preserves new tables and columns', () => 
       expect(book.work_id).toBe('w1');
       const author = db.prepare('SELECT * FROM authors WHERE name=?').get('Round Trip Author') as any;
       expect(author.first_seen).toBeNull(); // not exported in the fixture (null)
-      expect(author.fail_count).toBe(2);
       const page = db.prepare('SELECT * FROM book_page WHERE book_id=?').get('rt1') as any;
       expect(page.publisher).toBe('Secker');
       expect(page.isbn13).toBe('9781234567897');
@@ -372,11 +371,101 @@ describe('CSV round-trip with embedded newlines and the new tables', () => {
     }
   });
 
+  it('imports two distinct ids sharing a name (collision a name-PK table cannot represent)', async () => {
+    const db = getDb();
+    const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'grcol-'));
+    try {
+      const file = path.join(dir, 'authors.csv.gz');
+      writeGz(file, [
+        'id,name,slug,last_seen,num_ratings',
+        'col100,Alex Smith,col100.Alex_Smith,2026-01-01,5',
+        'col200,Alex Smith,col200.Alex_Smith,2026-01-02,7',
+      ].join('\n'));
+      const counts = { authorsInserted: 0, authorsUpdated: 0 } as any;
+      await importAuthorsFile(db, file, counts);
+      const first = db.prepare("SELECT id FROM authors WHERE name='Alex Smith' ORDER BY id").all() as { id: string }[];
+      expect(first.map((r) => r.id)).toEqual(['col100', 'col200']);
+
+      await importAuthorsFile(db, file, counts);
+      const again = db.prepare("SELECT COUNT(*) AS n FROM authors WHERE name='Alex Smith'").get() as { n: number };
+      expect(again.n).toBe(2);
+    } finally {
+      fs.removeSync(dir);
+    }
+  });
+
+  it('round-trips list_tags with from_sidebar/from_directory provenance preserved', async () => {
+    const db = getDb();
+    const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'grltprv-'));
+    try {
+      db.prepare(`INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen, from_sidebar, from_directory)
+        VALUES ('ltp', 'side', '2026-01-01', '2026-01-05', 1, 0)`) .run();
+      db.prepare(`INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen, from_sidebar, from_directory)
+        VALUES ('ltp', 'both', '2026-02-02', '2026-02-03', 1, 1)`) .run();
+
+      const res = await exportBooksAndAuthors(db, { basename: 'ltp', outDir: dir });
+      db.exec('DELETE FROM list_tags;');
+      const byTable = new Map(res.files.map(f => [f.table, f.path]));
+      const counts = await importData(db, { listTagsFile: byTable.get('list_tags')! });
+      expect(counts.listTagsInserted).toBe(2);
+
+      const side = db.prepare('SELECT * FROM list_tags WHERE tag_name=?').get('side') as any;
+      expect(side.from_sidebar).toBe(1);
+      expect(side.from_directory).toBe(0);
+      const both = db.prepare('SELECT * FROM list_tags WHERE tag_name=?').get('both') as any;
+      expect(both.from_sidebar).toBe(1);
+      expect(both.from_directory).toBe(1);
+
+      // A directory-only export must NOT clear an existing sidebar flag.
+      db.prepare('UPDATE list_tags SET from_sidebar=1 WHERE tag_name=?').run('both');
+      const again = await importData(db, { listTagsFile: byTable.get('list_tags')! });
+      expect(again.listTagsUpdated).toBe(2);
+      expect((db.prepare('SELECT * FROM list_tags WHERE tag_name=?').get('both') as any).from_sidebar).toBe(1);
+    } finally {
+      fs.removeSync(dir);
+    }
+  });
+
+  it('round-trips author_slugs and list_tag_walk_history', async () => {
+    const db = getDb();
+    const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'grashu-'));
+    try {
+      db.prepare(`INSERT INTO author_slugs (author_id, slug, name, first_seen, last_seen)
+        VALUES ('as1', 'as1.slug', 'Alice', '2026-01-01', '2026-01-05')`) .run();
+      db.prepare(`INSERT INTO list_tag_walk_history (tag_name, first_walked, last_walked, num_walks, num_lists)
+        VALUES ('walkhist', '2026-03-01', '2026-03-04', 2, 12)`) .run();
+
+      const res = await exportBooksAndAuthors(db, { basename: 'ash', outDir: dir });
+      db.exec('DELETE FROM author_slugs; DELETE FROM list_tag_walk_history;');
+      const byTable = new Map(res.files.map(f => [f.table, f.path]));
+      const counts = await importData(db, {
+        authorSlugsFile: byTable.get('author_slugs')!,
+        listTagWalkHistoryFile: byTable.get('list_tag_walk_history')!,
+      });
+      expect(counts.authorSlugsInserted).toBe(1);
+      expect(counts.listTagWalkHistoryInserted).toBe(1);
+
+      const slug = db.prepare('SELECT * FROM author_slugs WHERE author_id=?').get('as1') as any;
+      expect(slug.name).toBe('Alice');
+      expect(slug.first_seen).toBe('2026-01-01');
+      expect(slug.last_seen).toBe('2026-01-05');
+      const hist = db.prepare('SELECT * FROM list_tag_walk_history WHERE tag_name=?').get('walkhist') as any;
+      expect(hist.num_walks).toBe(2);
+      expect(hist.num_lists).toBe(12);
+    } finally {
+      fs.removeSync(dir);
+    }
+  });
+
   it('accounts for every schema table in EXPORT_TABLES or EXCLUDED_TABLES', () => {
     const db = getDb();
     const schemaTables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map(r => r.name);
     const covered = new Set<string>([...EXPORT_TABLES, ...EXCLUDED_TABLES]);
     expect(schemaTables.filter(t => !covered.has(t))).toEqual([]);
     for (const t of EXPORT_TABLES) expect([...EXCLUDED_TABLES]).not.toContain(t);
+    // list_tag_walks is the retiring legacy per-(tag,list) membership table:
+    // excluded (never exported), not exported (a receiver can't import it).
+    expect(EXPORT_TABLES).not.toContain('list_tag_walks');
+    expect(EXCLUDED_TABLES).toContain('list_tag_walks');
   });
 });

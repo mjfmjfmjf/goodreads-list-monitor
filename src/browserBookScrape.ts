@@ -1,10 +1,10 @@
 import chalk from 'chalk';
 import { BrowserContext } from 'playwright';
-import { getDb } from './db.js';
-import { getBook, loadConfig, upsertBook, upsertAuthor, CachedBook, countBooks, countAuthors } from './storage.js';
-import { fetchWithRetry, httpCallInfo, isConnectivityError, withDbLockRetry } from './utils.js';
-import { USER_AGENT } from './scraper.js';
-import { BROWSER_PROFILE_DIR, checkBrowserLogin, launchBrowserProfile } from './browserSession.js';
+import { getDb } from './db.ts';
+import { getBook, loadConfig, upsertBook, upsertAuthor, CachedBook, countBooks, countAuthors } from './storage.ts';
+import { fetchWithRetry, httpCallInfo, isConnectivityError, withDbLockRetry } from './utils.ts';
+import { USER_AGENT } from './scraper.ts';
+import { BROWSER_PROFILE_DIR, checkBrowserLogin, launchBrowserProfile } from './browserSession.ts';
 import {
   buildCandidateQuery,
   classifyBookFetch,
@@ -14,7 +14,7 @@ import {
   BookPageDetails,
   SocialSignals,
   FetchClass,
-} from './bookPageParse.js';
+} from './bookPageParse.ts';
 
 // Pacing: uniform random 2000–4000 ms at millisecond precision (deliberately
 // NOT utils.delay(), which inflates each range by ~1.5x and adds 100 ms).
@@ -27,6 +27,7 @@ export interface BrowserBookScrapeOptions {
   skipHas: string[];
   sort: string;
   engine: 'axios' | 'browser';
+  candidateSource?: 'default' | 'coverage-gap';
   dryRun?: boolean;
   force?: boolean;
   cooldownMs?: number;
@@ -362,20 +363,38 @@ export function shouldRescrapeUnknownTitle(prior: CheckpointRow | undefined, can
   return staleMs >= UNKNOWN_TITLE_RESCAN_DAYS * 86400000;
 }
 
+// Coverage-gap candidates: work-representative editions (books.is_work_rep)
+// that have NO book_page row — the works the ratingsCoverageHistogram's
+// WORK+F column marks as uncovered. Ordered most-ratings-first so the highest-
+// value works are scraped first. Mirrors the histogram's streaming query but
+// bounded by LIMIT (SQLite walks idx_books_ratings, not the whole table).
+export function buildCoverageGapQuery(opts: { limit: number; minRatings?: number }): { sql: string; params: any[] } {
+  const where = ['b.is_work_rep = 1', 'b.is_bad = 0', 'b.requires_auth = 0', 'bp.book_id IS NULL'];
+  const params: any[] = [];
+  if (opts.minRatings !== undefined) {
+    where.push('b.ratings >= ?');
+    params.push(Number(opts.minRatings));
+  }
+  const sql = `
+    SELECT b.id, b.title, b.ratings
+    FROM books b
+    LEFT JOIN book_page bp ON bp.book_id = b.id
+    WHERE ${where.join(' AND ')}
+    ORDER BY b.ratings DESC, b.id ASC
+    LIMIT ?`;
+  params.push(Number(opts.limit));
+  return { sql, params };
+}
+
 export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): Promise<ScrapeRunSummary> {
   const strict = process.env.GOODREADS_STRICT_THROTTLE === '1';
   const cooldownMs = options.cooldownMs ?? 60_000;
   const engine = options.engine || 'browser';
+  const candidateSource = options.candidateSource ?? 'default';
 
-  console.log(chalk.cyan.bold(`\n🌐 browser-book-scrape: engine=${engine} skipHas=[${options.skipHas.join(', ')}] sort=${options.sort} limit=${options.limit}`));
+  console.log(chalk.cyan.bold(`\n🌐 browser-book-scrape: engine=${engine} source=${candidateSource} limit=${options.limit}`));
+  if (candidateSource !== 'default') console.log(chalk.gray(`   skipHas=[${options.skipHas.join(', ')}]`));
   if (engine === 'browser') console.log(chalk.gray('   (headed Chromium window — one at a time, 2–4s pacing)'));
-
-  const { sql, params } = buildCandidateQuery({
-    skipHas: options.skipHas,
-    minRatings: options.minRatings,
-    sort: options.sort,
-    limit: options.limit,
-  });
 
   const db = getDb();
   let candidates: { id: string; title: string; ratings: number }[];
@@ -391,10 +410,22 @@ export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): P
       title: options.candidateTitleByBook?.get(id) ?? `book ${id}`,
       ratings: options.candidateRatingsByBook?.get(id) ?? 0,
     });
+  } else if (candidateSource === 'coverage-gap') {
+    const { sql, params } = buildCoverageGapQuery({
+      limit: options.limit,
+      minRatings: options.minRatings,
+    });
+    candidates = db.prepare(sql).all(...params) as { id: string; title: string; ratings: number }[];
   } else {
+    const { sql, params } = buildCandidateQuery({
+      skipHas: options.skipHas,
+      minRatings: options.minRatings,
+      sort: options.sort,
+      limit: options.limit,
+    });
     candidates = db.prepare(sql).all(...params) as { id: string; title: string; ratings: number }[];
   }
-  console.log(chalk.gray(`   Backlog: ${candidates.length} candidate(s) matching criteria`));
+  console.log(chalk.gray(`   Backlog: ${candidates.length.toLocaleString()} candidate(s) ${candidateSource === 'coverage-gap' ? '(work reps without a book_page row, most ratings first)' : 'matching criteria'}`));
 
   if (options.dryRun) {
     for (const c of candidates) {

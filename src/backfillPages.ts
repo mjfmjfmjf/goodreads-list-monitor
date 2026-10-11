@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { loadLibraryExportCache, backfillBookPagesFromLibrary } from './libraryExport.js';
+import { loadLibraryExportCache, backfillBookPagesFromLibrary } from './libraryExport.ts';
 
 export async function runBackfillPages(options: { library?: string } = {}): Promise<void> {
   if (options.library) {

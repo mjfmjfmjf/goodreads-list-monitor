@@ -8,16 +8,16 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-gaps-test-${process.pid}-${Date.now()}.db`;
 });
 
-vi.mock('./scraper.js', () => ({
+vi.mock('./scraper.ts', () => ({
   scrapeShelfBooks: vi.fn(),
 }));
 
-import { closeDb } from './db.js';
-import { scrapeShelfBooks } from './scraper.js';
-import { upsertBook } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { runCacheGaps, runTagGaps } from './tagGaps.js';
-import { runNextBooks } from './nextBooks.js';
+import { closeDb } from './db.ts';
+import { scrapeShelfBooks } from './scraper.ts';
+import { upsertBook } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { runCacheGaps, runTagGaps } from './tagGaps.ts';
+import { runNextBooks } from './nextBooks.ts';
 
 const mockScrape = vi.mocked(scrapeShelfBooks);
 

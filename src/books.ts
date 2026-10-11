@@ -1,11 +1,11 @@
 import chalk from 'chalk';
 import path from 'path';
-import { iterateBooks } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { getDb } from './db.js';
-import { RegexCriterion, matchesRegex } from './bookMatch.js';
-import { getYear, formatBookLink } from './utils.js';
-import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.js';
+import { iterateBooks } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { getDb } from './db.ts';
+import { RegexCriterion, matchesRegex } from './bookMatch.ts';
+import { getYear, formatBookLink } from './utils.ts';
+import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.ts';
 
 export interface BooksOptions {
   pattern?: string;

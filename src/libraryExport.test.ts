@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { computeBookPagesBackfill } from './libraryExport.js';
-import { LibraryEntry } from './libraryExport.js';
-import { CachedBook } from './storage.js';
+import { computeBookPagesBackfill } from './libraryExport.ts';
+import { LibraryEntry } from './libraryExport.ts';
+import { CachedBook } from './storage.ts';
 
 function entry(overrides: Partial<LibraryEntry> = {}): LibraryEntry {
   return {

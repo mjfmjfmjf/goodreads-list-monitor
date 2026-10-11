@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { getLibrary, readAll } from './library.js';
-import { getBook } from './storage.js';
-import type { BookCache } from './storage.js';
+import { getLibrary, readAll } from './library.ts';
+import { getBook } from './storage.ts';
+import type { BookCache } from './storage.ts';
 import {
   DIVIDER,
   Section,
@@ -16,8 +16,8 @@ import {
   renderTags,
   parseRating,
   readingDays
-} from './yearInBooks.js';
-import { LibraryEntry } from './libraryExport.js';
+} from './yearInBooks.ts';
+import { LibraryEntry } from './libraryExport.ts';
 
 export interface LifeInBooksOptions {
   export?: string;

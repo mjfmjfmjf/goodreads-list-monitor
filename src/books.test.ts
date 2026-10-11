@@ -7,8 +7,8 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-books-test-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb, getDb } from './db.js';
-import { runBooks, resetBooksCaches } from './books.js';
+import { closeDb, getDb } from './db.ts';
+import { runBooks, resetBooksCaches } from './books.ts';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderMarkdown, renderColorLegend } from './readme.js';
+import { renderMarkdown, renderColorLegend } from './readme.ts';
 
 // Strip ANSI escape codes so we can assert on the visible text.
 function stripAnsi(s: string): string {

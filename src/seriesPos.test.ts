@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSeriesPos, matchesSeriesPos, SERIES_POS_MULTI, SERIES_POS_STANDALONE } from './seriesPos.js';
+import { parseSeriesPos, matchesSeriesPos, SERIES_POS_MULTI, SERIES_POS_STANDALONE } from './seriesPos.ts';
 
 describe('parseSeriesPos (general book form)', () => {
   it('parses a single integer position', () => {

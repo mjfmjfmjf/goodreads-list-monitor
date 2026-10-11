@@ -9,7 +9,7 @@
 
 import fs from 'fs-extra';
 import path from 'path';
-import { getDb, closeDb } from './db.js';
+import { getDb, closeDb } from './db.ts';
 
 const CWD = process.cwd();
 const BACKUP_DIR = path.join(CWD, 'json-backup');
@@ -117,8 +117,8 @@ async function migrate() {
     const upsert = db.prepare(`
       INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves)
       VALUES (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves)
-      ON CONFLICT(name) DO UPDATE SET
-        id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
+      ON CONFLICT(id) DO UPDATE SET
+        name=COALESCE(authors.name, excluded.name), slug=excluded.slug, last_seen=excluded.last_seen,
         average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
         num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves
     `);

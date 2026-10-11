@@ -1,9 +1,9 @@
 import chalk from 'chalk';
 import * as cheerio from 'cheerio';
-import { LibraryEntry, LibraryExport } from './libraryExport.js';
-import { loadConfig, loadState, Config } from './storage.js';
-import { fetchWithRetry, delay, httpCallInfo } from './utils.js';
-import { USER_AGENT } from './scraper.js';
+import { LibraryEntry, LibraryExport } from './libraryExport.ts';
+import { loadConfig, loadState, Config } from './storage.ts';
+import { fetchWithRetry, delay, httpCallInfo } from './utils.ts';
+import { USER_AGENT } from './scraper.ts';
 
 const TIMEOUT = 30000;
 const PER_PAGE = 100;
@@ -102,12 +102,15 @@ export function parseRowRating($el: cheerio.Cheerio<any>): string {
   const ownRating = $el.find('.field.rating .stars').attr('data-rating');
   if (typeof ownRating === 'string' && ownRating.trim()) return ownRating.trim();
 
-  // Other-user view: staticStars with a title like "liked it", and/or
-  // .staticStar.p10 spans (filled star) — count them if no title.
-  const title = ($el.find('.field.rating .staticStars').attr('title') || '').toLowerCase().trim();
+  // Other-user view: read-only stars with a title like "really liked it", and,
+  // if no title, count the filled spans. Goodreads renamed the markup
+  // staticStars/staticStar.p10 → readOnlyStars/readOnlyStar.full (2026/10,
+  // verified on a live other-user page); match both so cached/lagged pages
+  // keep parsing.
+  const title = ($el.find('.field.rating .staticStars, .field.rating .readOnlyStars').attr('title') || '').toLowerCase().trim();
   if (STATIC_RATING_LABELS[title]) return STATIC_RATING_LABELS[title];
 
-  const filled = $el.find('.field.rating .staticStar.p10').length;
+  const filled = $el.find('.field.rating .staticStar.p10, .field.rating .readOnlyStar.full').length;
   if (filled > 0) return String(filled);
 
   return '';

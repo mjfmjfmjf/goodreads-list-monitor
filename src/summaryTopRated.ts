@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { iterateBooks } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { getYear, formatBookLink } from './utils.js';
+import { iterateBooks } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { getYear, formatBookLink } from './utils.ts';
 
 interface SummaryOptions {
   minAvg?: string;

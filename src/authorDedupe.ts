@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
+import { getDb } from './db.ts';
 
 // ── Author identity consolidation ─────────────────────────────────────────
 // authors.name is the primary key, but names arrive from scraped book rows
@@ -177,7 +177,7 @@ export async function runAuthorDedupe(options: { apply?: boolean }): Promise<voi
     return;
   }
 
-  const backup = await import('./db.js');
+  const backup = await import('./db.ts');
   await backup.backupDb();
   const result = applyConsolidation(db);
   console.log(chalk.green(`\n   ✅ Merged ${result.mergedRows} rows, renamed ${result.renamed}.`));

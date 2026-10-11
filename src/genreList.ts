@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { scrapeGenreList } from './scraper.js';
-import { upsertGenres, loadGenres, countGenres } from './storage.js';
-import { runGenreCompare } from './genreCompare.js';
-import { ensureXrefSeeded, renderXref } from './genreXref.js';
+import { scrapeGenreList } from './scraper.ts';
+import { upsertGenres, loadGenres, countGenres } from './storage.ts';
+import { runGenreCompare } from './genreCompare.ts';
+import { ensureXrefSeeded, renderXref } from './genreXref.ts';
 
 export interface GenreListOptions {
   scrape?: boolean;

@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { iterateBooks } from './storage.js';
-import type { BookCache } from './storage.js';
-import { scrapeAndCacheBook } from './singleBook.js';
-import { getYear } from './utils.js';
+import { iterateBooks } from './storage.ts';
+import type { BookCache } from './storage.ts';
+import { scrapeAndCacheBook } from './singleBook.ts';
+import { getYear } from './utils.ts';
 
 export interface CheckQueueOptions {
   force?: boolean;

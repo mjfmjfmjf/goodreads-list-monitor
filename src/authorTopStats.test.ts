@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { wasAuthorPageScraped } from './authorTopStats.js';
-import type { AuthorCacheEntry } from './storage.js';
+import { wasAuthorPageScraped } from './authorTopStats.ts';
+import type { AuthorCacheEntry } from './storage.ts';
 
 const entry = (extra: Partial<AuthorCacheEntry> = {}): AuthorCacheEntry => ({
   id: '1',

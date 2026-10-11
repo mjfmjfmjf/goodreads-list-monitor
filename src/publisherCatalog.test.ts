@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { computePublisherCatalog } from './publisherCatalog.js';
-import type { PublisherBookRow } from './publisherCatalog.js';
+import { computePublisherCatalog } from './publisherCatalog.ts';
+import type { PublisherBookRow } from './publisherCatalog.ts';
 
 const row = (publisher: string, workKey: string, ratings: number, avgRating: number | null): PublisherBookRow => ({
   publisher,

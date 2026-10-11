@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractBookDetailsFromHtml, extractGenresFromDom } from './bookSweep.js';
+import { extractBookDetailsFromHtml, extractGenresFromDom } from './bookSweep.ts';
 
 function makePage(apolloState: Record<string, any>, bookId: string, extraDom = ''): string {
   const bookKey = `Book:${bookId}`;

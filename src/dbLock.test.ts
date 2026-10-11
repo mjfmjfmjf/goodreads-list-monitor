@@ -10,8 +10,8 @@ vi.hoisted(() => {
   process.env.GOODREADS_LOCK_RETRY_DELAY_MS = '20';
 });
 
-import { closeDb, getDb } from './db.js';
-import { upsertBook, upsertTagBooks } from './storage.js';
+import { closeDb, getDb } from './db.ts';
+import { upsertBook, upsertTagBooks } from './storage.ts';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 

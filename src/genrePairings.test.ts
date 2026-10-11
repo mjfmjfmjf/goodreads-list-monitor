@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { rankPairings } from './genrePairings.js';
+import { rankPairings } from './genrePairings.ts';
 
 describe('rankPairings', () => {
   const genre = new Set(['a', 'b', 'c']); // 3 books

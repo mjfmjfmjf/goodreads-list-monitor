@@ -5,7 +5,7 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-workreps-test-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb, getDb, recomputeWorkReps, refreshWorkRep } from './db.js';
+import { closeDb, getDb, recomputeWorkReps, refreshWorkRep } from './db.ts';
 
 afterAll(() => {
   closeDb();

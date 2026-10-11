@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
-import { parseSeriesPos } from './seriesPos.js';
-import { getDb, refreshWorkRep, TAG_PAGE_ESTIMATE_BACKFILL_SQL } from './db.js';
+import { parseSeriesPos } from './seriesPos.ts';
+import { getDb, refreshWorkRep, TAG_PAGE_ESTIMATE_BACKFILL_SQL } from './db.ts';
 
 export interface ListState {
   title: string;
@@ -51,6 +51,7 @@ export interface Config {
 
 export interface AuthorCacheEntry {
   id: string;
+  name?: string;
   slug: string;
   lastSeen: string;
   firstSeen?: string;
@@ -64,7 +65,47 @@ export interface AuthorCacheEntry {
   ratingsRate?: number;
 }
 
-export const AUTHOR_FAIL_LIMIT = 5;
+// Does `authors` still carry the legacy strike counter? Checked once per process
+// and cached: the migration that drops it runs with crawlers stopped, so the
+// answer cannot change under a running sweep.
+let legacyFailCountCol: boolean | undefined;
+function legacyFailCountColumnPresent(db: any): boolean {
+  if (legacyFailCountCol === undefined) {
+    try {
+      const cols = db.prepare('PRAGMA table_info(authors)').all() as { name: string }[];
+      legacyFailCountCol = cols.some((c) => c.name === 'fail_count');
+    } catch {
+      legacyFailCountCol = false;
+    }
+  }
+  return legacyFailCountCol;
+}
+
+// The whole ledger as authorId -> failCount, for candidate selection. One query
+// instead of one per candidate: the ledger is small (hundreds of rows) and the
+// sweeps filter tens of thousands of candidates.
+//
+// Until `author-ledger-migrate --apply` drops `authors.fail_count`, the two
+// ledgers must be UNIONED, not swapped. They barely overlap (on the live DB 569
+// ids are only in the legacy column, 721 only in the ledger) because the legacy
+// counter was written by years of past crawls. Filtering on the ledger alone
+// silently re-admitted every author the legacy counter had already retired at
+// the threshold — 519 never-crawled authors at fail_count >= 5, which is how a
+// `--sortBy topRatings` queue GREW (235,645 -> 235,907) instead of shrinking.
+// Take the max so an author is skipped if EITHER ledger says it is exhausted.
+export function loadStrikeMap(): Map<string, number> {
+  const db = getDb();
+  const merged = new Map<string, number>();
+  for (const r of db.prepare('SELECT author_id, fail_count FROM author_scrape_failures').all() as any[]) {
+    merged.set(r.author_id, r.fail_count ?? 0);
+  }
+  if (legacyFailCountColumnPresent(getDb())) {
+    for (const r of db.prepare('SELECT id, fail_count FROM authors WHERE fail_count > 0').all() as any[]) {
+      merged.set(r.id, Math.max(merged.get(r.id) ?? 0, r.fail_count ?? 0));
+    }
+  }
+  return merged;
+}
 
 // Minimum time between two stats observations before a per-day ratings-growth
 // rate is recorded, so a back-to-back scrape (or an unlucky same-day update)
@@ -72,7 +113,7 @@ export const AUTHOR_FAIL_LIMIT = 5;
 export const GROWTH_RATE_MIN_DAYS = 1;
 
 export interface AuthorCache {
-  [authorName: string]: AuthorCacheEntry;
+  [authorId: string]: AuthorCacheEntry;
 }
 
 export interface AuthorStats {
@@ -177,6 +218,18 @@ export function* iterateBooks(): Generator<CachedBook> {
   const stmt = getDb().prepare('SELECT * FROM books');
   for (const row of stmt.iterate()) {
     yield rowToBook(row);
+  }
+}
+
+// Stream the full `authors` table one row at a time as AuthorCacheEntry objects,
+// O(1) memory — the replacement for loadAuthorCache() in iteration-only
+// consumers (status, topology, selection/review commands). Scan/filter/sort over
+// the whole table still reads all rows (that data is the input), but it never
+// materializes the ~960k-row id-keyed object at once.
+export function* iterateAuthors(): Generator<AuthorCacheEntry & { name: string }> {
+  const stmt = getDb().prepare('SELECT * FROM authors');
+  for (const row of stmt.iterate()) {
+    yield rowToAuthor(row);
   }
 }
 
@@ -540,6 +593,143 @@ export function loadListScrape(listId: string): ListScrapeRow | undefined {
     : undefined;
 }
 
+// ── List tags ────────────────────────────────────────────────────
+// The unified list↔tag xref: a list's "Tags:" sidebar (list/show/<id>, e.g.
+// list 35080 carries 1000000, goodreads-statistics, million, ...) AND the
+// Listopia directory membership recorded by a walk of that tag. One row per
+// (list, tag); from_sidebar / from_directory say which routes taught us.
+// first_seen is never re-stamped; last_seen advances on each read, so the pair
+// records both "we have seen this tag" and "we still saw it at <last_seen>".
+
+export interface ListTagRow {
+  listId: string;
+  tagName: string;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export function loadListTags(listId: string): ListTagRow[] {
+  const rows = getDb().prepare(
+    'SELECT * FROM list_tags WHERE list_id = ? ORDER BY tag_name',
+  ).all(listId) as any[];
+  return rows.map(r => ({ listId: r.list_id, tagName: r.tag_name, firstSeen: r.first_seen, lastSeen: r.last_seen }));
+}
+
+// ── List tags xref + directory walk history ────────────────────────
+// list_tags is the ONE list↔tag xref. Two routes learn an association:
+//   from_sidebar   — the list's own "Tags:" sidebar (a walk OF the list);
+//   from_directory — the Listopia /list/tag/<tag> directory (a walk of the
+//                    TAG that enumerated this list).
+// "Did I walk this directory tag, when, and what did it yield?" lives one
+// table over, in list_tag_walk_history.
+
+// Idempotent single-statement upserts (no db.transaction) so these are safe to
+// call from a crawl that already holds the database-wide write lock.
+
+export function upsertListTags(listId: string, tags: string[], now = new Date().toISOString()): void {
+  const stmt = getDb().prepare(`
+    INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen, from_sidebar, from_directory)
+    VALUES (@listId, @tagName, @now, @now, 1, 0)
+    ON CONFLICT(list_id, tag_name) DO UPDATE SET
+      last_seen = excluded.last_seen,
+      from_sidebar = 1
+  `);
+  for (const tagName of tags) {
+    if (!tagName) continue;
+    stmt.run({ listId, tagName, now });
+  }
+}
+
+// Directory membership: every list the tag's directory yielded, marked as
+// learned through that route. A sidebar row that later gets re-found by a walk
+// keeps its original first_seen and flips on from_directory — one xref, both
+// facts, no second table to keep in sync.
+export function recordListTagMembership(tagName: string, listIds: string[], now = new Date().toISOString()): void {
+  const tagName_lc = tagName.toLowerCase();
+  const stmt = getDb().prepare(`
+    INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen, from_sidebar, from_directory)
+    VALUES (@listId, @tagName, @now, @now, 0, 1)
+    ON CONFLICT(list_id, tag_name) DO UPDATE SET
+      first_seen = MIN(list_tags.first_seen, excluded.first_seen),
+      last_seen = MAX(list_tags.last_seen, excluded.last_seen),
+      from_directory = 1
+  `);
+  for (const listId of listIds) {
+    stmt.run({ listId, tagName: tagName_lc, now });
+  }
+}
+
+// One history row per directory tag: first/last walk, walk count, and how many
+// lists the directory yielded. numLists is NULL only when membership is
+// genuinely unknown (a pre-unification walk). Lowercased on write because
+// Goodreads treats /show_tag/Dutch and /show_tag/dutch as the same tag.
+export function recordListTagWalkHistory(tagName: string, numLists: number | null, now = new Date().toISOString()): void {
+  getDb().prepare(`
+    INSERT INTO list_tag_walk_history (tag_name, first_walked, last_walked, num_walks, num_lists)
+    VALUES (@tagName, @now, @now, 1, @numLists)
+    ON CONFLICT(tag_name) DO UPDATE SET
+      first_walked = MIN(list_tag_walk_history.first_walked, excluded.first_walked),
+      last_walked = MAX(list_tag_walk_history.last_walked, excluded.last_walked),
+      num_walks = list_tag_walk_history.num_walks + 1,
+      num_lists = excluded.num_lists
+  `).run({ tagName: tagName.toLowerCase(), now, numLists });
+}
+
+export interface ListTagWalkHistoryRow {
+  tagName: string;
+  firstWalked: string;
+  lastWalked: string;
+  walks: number;
+  lists: number | null;
+}
+
+export function loadListTagWalkHistory(): ListTagWalkHistoryRow[] {
+  const rows = getDb().prepare(
+    'SELECT * FROM list_tag_walk_history ORDER BY tag_name',
+  ).all() as any[];
+  return rows.map(r => ({
+    tagName: r.tag_name,
+    firstWalked: r.first_walked,
+    lastWalked: r.last_walked,
+    walks: Number(r.num_walks),
+    lists: r.num_lists == null ? null : Number(r.num_lists),
+  }));
+}
+
+// Just the tag names, for filtering a report. Sorted+deduped by SQL, then
+// lowercased in JS so rows seeded before normalization still match — DISTINCT
+// and ORDER BY are case-sensitive in SQLite, so 'Dutch' and 'dutch' would both
+// survive and defeat the filter otherwise.
+export function loadWalkedTagNames(): string[] {
+  const rows = getDb().prepare('SELECT DISTINCT tag_name FROM list_tag_walk_history ORDER BY tag_name').all() as any[];
+  return [...new Set(rows.map(r => (r.tag_name as string).toLowerCase()))].sort();
+}
+
+export function countListTagWalks(): { tags: number; withMembership: number } {
+  const row = getDb().prepare(`
+    SELECT COUNT(*) AS tags,
+           COUNT(num_lists) AS withMembership
+    FROM list_tag_walk_history
+  `).get() as any;
+  return { tags: row.tags, withMembership: row.withMembership };
+}
+
+// Per-walk-tag rollup for reports: how many lists the directory yielded, how
+// many walks ran, and when the last walk finished. `lists` is 0 for a tag
+// walked before membership was recorded (num_lists NULL) and 0 for a
+// never-walked tag — callers distinguish those by key presence.
+export function loadWalkTagStats(): Map<string, { lists: number; walkedAt: string; walks: number }> {
+  const rows = getDb().prepare(`
+    SELECT tag_name, last_walked, num_lists, num_walks
+    FROM list_tag_walk_history
+  `).all() as any[];
+  return new Map(rows.map((r) => [String(r.tag_name).toLowerCase(), {
+    lists: r.num_lists == null ? 0 : Number(r.num_lists),
+    walkedAt: r.last_walked ? String(r.last_walked) : '',
+    walks: Number(r.num_walks) || 1,
+  }]));
+}
+
 // ── Tag tail monitor tracking ──────────────────────────────────────
 // The tag-recent-monitor (see PLAN-tag-recent-monitor.md) tail-scrapes the
 // tags a greedy set-cover needs to reach 100% tag_books coverage, to discover
@@ -693,19 +883,32 @@ function rowToAuthor(row: any): AuthorCacheEntry & { name: string } {
   };
 }
 
+// Authors are keyed by Goodreads id. The in-memory cache is id-keyed so that
+// same-id name/slug variants (which the old name-PK table collapsed) are
+// preserved. `name` travels on the entry for display.
 export function loadAuthorCache(): AuthorCache {
   const db = getDb();
   const rows = db.prepare('SELECT * FROM authors').all();
   const cache: AuthorCache = {};
   for (const row of rows) {
     const author = rowToAuthor(row);
-    cache[author.name] = author;
+    cache[author.id] = author;
   }
   return cache;
 }
 
+export function getAuthorById(id: string): AuthorCacheEntry | undefined {
+  const row = getDb().prepare('SELECT * FROM authors WHERE id = ?').get(id) as any;
+  return row ? rowToAuthor(row) : undefined;
+}
+
+// Transitional name lookup for call sites that only carry a display name.
+// Names are no longer unique; returns the most-recently-seen match. New code
+// should resolve the author id and use getAuthorById.
 export function getAuthor(name: string): AuthorCacheEntry | undefined {
-  const row = getDb().prepare('SELECT * FROM authors WHERE name = ?').get(name) as any;
+  const row = getDb()
+    .prepare('SELECT * FROM authors WHERE name = ? ORDER BY last_seen DESC LIMIT 1')
+    .get(name) as any;
   return row ? rowToAuthor(row) : undefined;
 }
 
@@ -722,10 +925,10 @@ export function authorExistsById(id: string): boolean {
   return !!getDb().prepare('SELECT 1 FROM authors WHERE id = ? LIMIT 1').get(id);
 }
 
-function bindAuthor(name: string, e: AuthorCacheEntry) {
+function bindAuthor(id: string, e: AuthorCacheEntry) {
   return {
-    name,
-    id: e.id,
+    id,
+    name: e.name ?? null,
     slug: e.slug,
     lastSeen: e.lastSeen,
     firstSeen: e.firstSeen ?? null,
@@ -735,45 +938,92 @@ function bindAuthor(name: string, e: AuthorCacheEntry) {
     numShelves: parseNum(e.numShelves),
     catalogPages: e.catalogPages ?? null,
     failCount: e.failCount ?? null,
-    lastError: e.lastError ?? null,
     ratingsRate: e.ratingsRate ?? null,
   };
 }
 
 const AUTHOR_UPSERT_SQL = `
-  INSERT INTO authors (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, fail_count, last_error, ratings_rate)
-  VALUES (@name, @id, @slug, @lastSeen, COALESCE(@firstSeen, @lastSeen), @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @failCount, @lastError, @ratingsRate)
-  ON CONFLICT(name) DO UPDATE SET
-    id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
+  INSERT INTO authors (id, name, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, ratings_rate)
+  VALUES (@id, @name, @slug, @lastSeen, COALESCE(@firstSeen, @lastSeen), @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @ratingsRate)
+  ON CONFLICT(id) DO UPDATE SET
+    name=COALESCE(excluded.name, name), slug=excluded.slug, last_seen=excluded.last_seen,
     first_seen=COALESCE(authors.first_seen, excluded.first_seen),
     average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
     num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
     catalog_pages=COALESCE(excluded.catalog_pages, catalog_pages),
-    fail_count=COALESCE(excluded.fail_count, fail_count),
-    last_error=COALESCE(excluded.last_error, last_error),
     ratings_rate=excluded.ratings_rate
 `;
 
-export function upsertAuthor(name: string, entry: AuthorCacheEntry): void {
-  getDb().prepare(AUTHOR_UPSERT_SQL).run(bindAuthor(name, entry));
+export function upsertAuthorById(id: string, entry: AuthorCacheEntry): void {
+  getDb().prepare(AUTHOR_UPSERT_SQL).run(bindAuthor(id, entry));
 }
 
-export function recordAuthorFailure(name: string, reason: string): void {
-  const existing = getAuthor(name);
-  if (!existing) return;
-  existing.failCount = (existing.failCount ?? 0) + 1;
-  existing.lastError = reason.slice(0, 200);
-  upsertAuthor(name, existing);
+// Transitional name-keyed wrapper: resolves the id from the entry (or the
+// existing row) and writes id-first. Prefer upsertAuthorById.
+export function upsertAuthor(name: string, entry: AuthorCacheEntry): void {
+  const id = entry.id || getAuthor(name)?.id;
+  if (!id) return;
+  if (!entry.name) entry.name = name;
+  upsertAuthorById(id, entry);
+}
+
+// ── Author slug history ledger ─────────────────────────────────
+// Records every slug an author id has been seen under. Identity is always the
+// id; slugs are display/lookup aliases and may change over time. Single-statement
+// autocommit upsert: first_seen is set on insert, last_seen advances on every
+// sighting. History only — never used to resolve identity.
+
+export interface AuthorSlugRow {
+  authorId: string;
+  slug: string;
+  name?: string;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export function upsertAuthorSlug(
+  authorId: string,
+  slug: string,
+  name?: string,
+  ts = new Date().toISOString(),
+): void {
+  if (!authorId || !slug) return;
+  getDb()
+    .prepare(`
+      INSERT INTO author_slugs (author_id, slug, name, first_seen, last_seen)
+      VALUES (@id, @slug, @name, @ts, @ts)
+      ON CONFLICT(author_id, slug) DO UPDATE SET
+        last_seen=excluded.last_seen,
+        name=COALESCE(excluded.name, name)
+    `)
+    .run({ id: authorId, slug, name: name ?? null, ts });
+}
+
+export function loadAuthorSlugs(): AuthorSlugRow[] {
+  const rows = getDb().prepare('SELECT * FROM author_slugs').all() as any[];
+  return rows.map((r) => ({
+    authorId: r.author_id,
+    slug: r.slug,
+    name: r.name ?? undefined,
+    firstSeen: r.first_seen,
+    lastSeen: r.last_seen,
+  }));
 }
 
 // ── Author scrape-failure tracking ─────────────────────────────
 // Persists author ids that failed to scrape (e.g. orphan ids that 404), so a
 // later run can skip re-trying the same bad ids instead of hammering them.
 
-// After this many consecutive failures, stop re-trying an author id on future
-// runs. Shared by the orphan-author sweeps and the single-book author-page
-// lookups (scrapeBookByAuthorPage).
-export const AUTHOR_SCRAPE_FAIL_LIMIT = 3;
+// THE failure threshold. There is exactly one strike ledger (`author_scrape_failures`,
+// keyed by author id) and one limit, read by every sweep and by the single-book
+// author-page lookup. It used to be two ledgers with two limits (5 on
+// `authors.fail_count`, 3 here), so one scrape failure could burn a strike in both
+// and an author retired at 3 by one path still looked live to the other.
+//
+// 5 rather than 3: softer. A Goodreads blip on a 404 id costs nothing if retried a
+// few times over weeks, and the softer number avoids permanently discarding an
+// author on one transient failure.
+export const AUTHOR_FAIL_LIMIT = 5;
 
 export interface AuthorScrapeFailure {
   authorId: string;
@@ -783,11 +1033,34 @@ export interface AuthorScrapeFailure {
   lastSeen: string;
 }
 
-export function recordAuthorScrapeFailure(authorId: string, reason: string): void {
+// A 404/410 author page is a durable, verified answer from Goodreads ("no such
+// author"), not a transient blip, so it is worth more than one strike. The long
+// tail is mostly dead ids, and one strike per attempt burns five Goodreads
+// round trips to retire each one; weighting by reason retires them in two.
+// Only a genuine 404/410 qualifies — a 403 is just as likely to be throttling
+// (and is classified as a strike only because that is the pre-existing policy),
+// so it stays worth exactly one.
+const HARD_GONE_STRIKES = 3;
+
+export function strikeWeight(reason: string | undefined): number {
+  return /^(HTTP )?4(?:04|10)\b/.test(reason ?? '') ? HARD_GONE_STRIKES : 1;
+}
+
+// Saturating, weighted strike recorder.
+//
+// The cap is the important half: `fail_count` used to grow without bound while
+// AUTHOR_FAIL_LIMIT stayed at 5, so any author selected from a stale run-start
+// snapshot (or bumped by a concurrent writer) printed the nonsense "Consecutive
+// failure 6/5". An author at the limit is skipped, so a strike beyond the limit
+// is never information — it is a bug in the selector. MIN() makes 6/5
+// structurally impossible and keeps the ledger bounded.
+export function recordAuthorScrapeFailure(authorId: string, reason: string, weight?: number): void {
   const db = getDb();
   const now = new Date().toISOString();
+  // One upsert, no read-then-write: fail_count increments atomically, so two
   const row = db.prepare('SELECT fail_count FROM author_scrape_failures WHERE author_id = ?').get(authorId) as any;
-  const failCount = (row?.fail_count ?? 0) + 1;
+  const strikes = weight ?? strikeWeight(reason);
+  const failCount = Math.min((row?.fail_count ?? 0) + strikes, AUTHOR_FAIL_LIMIT);
   db.prepare(`
     INSERT INTO author_scrape_failures (author_id, fail_count, last_error, first_seen, last_seen)
     VALUES (@id, @failCount, @error, @now, @now)
@@ -796,6 +1069,24 @@ export function recordAuthorScrapeFailure(authorId: string, reason: string): voi
       last_error = excluded.last_error,
       last_seen = excluded.last_seen
   `).run({ id: authorId, failCount, error: reason.slice(0, 200), now });
+}
+
+// Has this author already retired? Reads the LIVE ledger for every candidate.
+//
+// The obvious optimisation is to snapshot `author_scrape_failures` once per run
+// (`loadStrikeMap`) and filter against that, but the snapshot is only as fresh as
+// the moment it was taken and the ledger is written by every other sweep, by
+// `author-ledger-migrate`, and by any manual correction. A stale snapshot
+// therefore selects an author that is already retired, and the crawl spends a
+// real Goodreads request re-confirming a 404 it already knows five times over —
+// which is exactly how a 5-strike author got scraped and printed "6/5".
+//
+// Re-reading is affordable because it is one indexed primary-key probe per
+// candidate: measured at 1.4µs each over the full 236,274-author untouched
+// queue (339ms total), against ~1.8s of polite inter-author delay per candidate.
+// There is no reason to trade correctness for a fraction of a percent.
+export function isRetiredAuthor(authorId: string): boolean {
+  return (loadAuthorScrapeFailure(authorId)?.failCount ?? 0) >= AUTHOR_FAIL_LIMIT;
 }
 
 export function clearAuthorScrapeFailure(authorId: string): void {
@@ -946,39 +1237,55 @@ export function syncAuthorsToCache(books: any[], authorCache: AuthorCache): numb
   let added = 0;
 
   const upsert = db.prepare(`
-    INSERT INTO authors (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves)
-    VALUES (@name, @id, @slug, @lastSeen, @lastSeen, NULL, 0, 0, 0)
-    ON CONFLICT(name) DO UPDATE SET
-      id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
+    INSERT INTO authors (id, name, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves)
+    VALUES (@id, @name, @slug, @lastSeen, @lastSeen, NULL, 0, 0, 0)
+    ON CONFLICT(id) DO UPDATE SET
+      name=COALESCE(authors.name, excluded.name), slug=excluded.slug, last_seen=excluded.last_seen,
       first_seen=COALESCE(authors.first_seen, excluded.first_seen)
   `);
-  const findById = db.prepare('SELECT name FROM authors WHERE id = ?');
+  const upsertSlug = db.prepare(`
+    INSERT INTO author_slugs (author_id, slug, name, first_seen, last_seen)
+    VALUES (@id, @slug, @name, @ts, @ts)
+    ON CONFLICT(author_id, slug) DO UPDATE SET
+      last_seen=excluded.last_seen,
+      name=COALESCE(excluded.name, name)
+  `);
 
   for (const book of books) {
     if (book.author && book.author !== 'Unknown Author' && book.authorSlug) {
-      // Author identity is the id; if this author already exists under some
-      // OTHER name variant (mangled spacing, role suffixes), do NOT create
-      // a duplicate row keyed by the variant.
+      // Author identity is the id. Mint on first sight, preserving any
+      // already-scraped canonical name; never create a name-variant row.
       const authorId = String(book.authorId || book.authorSlug.split('.')[0]);
-      const existingById = findById.get(authorId) as any;
-      if (existingById && existingById.name !== book.author) {
-        continue;
+      // The cache is a run-scoped memo, never a snapshot of the table: on a miss
+      // fall back to ONE indexed primary-key lookup. Callers can therefore pass
+      // `{}` instead of loadAuthorCache(), which materializes ~960k rows
+      // (~1.3s + 390MB) per invocation.
+      let existing: AuthorCacheEntry | undefined = authorCache[authorId];
+      if (!existing) {
+        existing = getAuthorById(authorId);
+        if (existing) authorCache[authorId] = existing;
       }
-      const existing = authorCache[book.author];
-      if (!existing || existing.slug !== book.authorSlug) {
-        if (!existing) added++;
+      if (!existing) {
         const entry: AuthorCacheEntry = {
-          id: book.authorId || book.authorSlug.split('.')[0],
+          id: authorId,
+          name: book.author,
           slug: book.authorSlug,
           lastSeen: new Date().toISOString(),
         };
-        authorCache[book.author] = entry;
+        authorCache[authorId] = entry;
+        upsert.run({ id: entry.id, name: entry.name, slug: entry.slug, lastSeen: entry.lastSeen });
+        upsertSlug.run({ id: entry.id, slug: entry.slug, name: entry.name, ts: entry.lastSeen });
+        added++;
+      } else if (existing.slug !== book.authorSlug) {
+        existing.slug = book.authorSlug;
+        existing.lastSeen = new Date().toISOString();
         upsert.run({
-          name: book.author,
-          id: entry.id,
-          slug: entry.slug,
-          lastSeen: entry.lastSeen,
+          id: existing.id,
+          name: existing.name ?? book.author,
+          slug: existing.slug,
+          lastSeen: existing.lastSeen,
         });
+        upsertSlug.run({ id: existing.id, slug: existing.slug, name: existing.name, ts: existing.lastSeen });
       }
     }
   }

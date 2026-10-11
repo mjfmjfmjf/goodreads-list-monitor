@@ -3,7 +3,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { chromium, BrowserContext } from 'playwright';
-import { loadState } from './storage.js';
+import { loadState } from './storage.ts';
 
 // Persistent, durable browser profile (NOT os.tmpdir() — macOS wipes /tmp on
 // reboot, which would silently destroy a logged-in session).

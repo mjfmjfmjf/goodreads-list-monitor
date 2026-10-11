@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
+import { getDb } from './db.ts';
 
 export interface GenreCompareResult {
   exactMatched: string[];   // genre names that ARE a tag

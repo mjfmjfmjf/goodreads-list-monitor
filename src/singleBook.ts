@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { scrapeBookDetails } from './scraper.js';
-import { getBook, upsertBook, type BookCache, type CachedBook } from './storage.js';
-import { parseSeriesPos } from './seriesPos.js';
+import { scrapeBookDetails } from './scraper.ts';
+import { getBook, upsertBook, type BookCache, type CachedBook } from './storage.ts';
+import { parseSeriesPos } from './seriesPos.ts';
 
 export async function scrapeAndCacheBook(bookId: string, force = false, passedCache?: BookCache): Promise<CachedBook | null> {
   try {

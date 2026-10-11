@@ -1,10 +1,10 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
-import { scrapeListBooks, scrapeShelfBooks, scrapeBookDetails, scrapeTopShelves } from './scraper.js';
-import { loadState, countBooks, getBook, upsertBook, syncBooksToCache, type BookCache } from './storage.js';
-import { TagConfig, ListEntry } from './tagConfig.js';
-import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
+import { scrapeListBooks, scrapeShelfBooks, scrapeBookDetails, scrapeTopShelves } from './scraper.ts';
+import { loadState, countBooks, getBook, upsertBook, syncBooksToCache, type BookCache } from './storage.ts';
+import { TagConfig, ListEntry } from './tagConfig.ts';
+import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.ts';
 
 const AUDIT_REPORT = path.join(process.cwd(), 'auditReport.txt');
 

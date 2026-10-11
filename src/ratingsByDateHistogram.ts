@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { buildRatingBuckets } from './summaryHistogram.js';
-import { dayBuckets, weekBuckets, monthBuckets } from './booksAddedHistogram.js';
-import { getDb } from './db.js';
+import { buildRatingBuckets } from './summaryHistogram.ts';
+import { dayBuckets, weekBuckets, monthBuckets } from './booksAddedHistogram.ts';
+import { getDb } from './db.ts';
 
 const formatNum = (n: number): string => n.toLocaleString('en-US');
 

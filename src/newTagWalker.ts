@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { scrapeShelfBooks, scrapeTopShelves } from './scraper.js';
-import { getDb } from './db.js';
-import { getBook, getKnownShelfPages, loadAuthorCache, syncAuthorsToCache, syncBooksToCache, upsertBook } from './storage.js';
-import { delay, isConnectivityError, withConnectivityProbe } from './utils.js';
+import { scrapeShelfBooks, scrapeTopShelves } from './scraper.ts';
+import { getDb } from './db.ts';
+import { getBook, getKnownShelfPages, syncAuthorsToCache, syncBooksToCache, upsertBook, type AuthorCache } from './storage.ts';
+import { delay, isConnectivityError, withConnectivityProbe } from './utils.ts';
 
 export interface NewTagWalkerOptions {
   maxListPages?: string;
@@ -65,8 +65,9 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
 
   // One author cache for the whole run: scrapeShelfBooks skips its internal
   // author sync (skipAuthorSync), so every author we mint here comes through
-  // our own syncAuthorsToCache call and can be counted precisely.
-  const authorCache = loadAuthorCache();
+  // our own syncAuthorsToCache call and can be counted precisely. Empty memo —
+  // syncAuthorsToCache resolves misses with one indexed PK lookup.
+  const authorCache: AuthorCache = {};
 
   console.log(chalk.cyan.bold('\n🔀 Walking top shelves for tags not yet scraped...'));
   console.log(chalk.gray(`   Start page ${startPage}, up to ${maxListPages} page(s), ${shelfPageEnd} shelf page(s) per tag, ${dryRun ? 'dry run (no scraping)' : 'scraping new tags'}.`));

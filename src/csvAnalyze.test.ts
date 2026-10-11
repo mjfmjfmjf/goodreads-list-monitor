@@ -9,9 +9,9 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-analyze-test-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb, getDb } from './db.js';
-import { exportBooksAndAuthors } from './exportData.js';
-import { analyzeCsv } from './csvAnalyze.js';
+import { closeDb, getDb } from './db.ts';
+import { exportBooksAndAuthors } from './exportData.ts';
+import { analyzeCsv } from './csvAnalyze.ts';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 

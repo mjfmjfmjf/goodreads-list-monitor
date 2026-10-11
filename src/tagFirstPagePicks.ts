@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { loadTagBooks, getBook } from './storage.js';
-import type { TagBookRow, BookCache, CachedBook } from './storage.js';
-import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.js';
-import { getYear, formatBookLink } from './utils.js';
+import { loadTagBooks, getBook } from './storage.ts';
+import type { TagBookRow, BookCache, CachedBook } from './storage.ts';
+import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.ts';
+import { getYear, formatBookLink } from './utils.ts';
 
 export interface TagFirstPagePicksOptions {
   limit?: string;

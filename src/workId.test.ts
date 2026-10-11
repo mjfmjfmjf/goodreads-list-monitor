@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractWorkId } from './scraper.js';
+import { extractWorkId } from './scraper.ts';
 
 describe('extractWorkId', () => {
   it('extracts the id from a work/editions link', () => {
@@ -24,7 +24,7 @@ describe('extractWorkId', () => {
   });
 });
 
-import { parseCatalogPageCount } from './scraper.js';
+import { parseCatalogPageCount } from './scraper.ts';
 
 describe('parseCatalogPageCount', () => {
   it('returns the max page number when pagination exists', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { computeBookPageGapStats, listMissingTopBooks, runBookPageGaps, workKey } from './bookPageGaps.js';
+import { computeBookPageGapStats, listMissingTopBooks, runBookPageGaps, workKey } from './bookPageGaps.ts';
 import chalk from 'chalk';
 
 vi.hoisted(() => {
@@ -7,7 +7,7 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-bookpagegaps-test-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb, getDb } from './db.js';
+import { closeDb, getDb } from './db.ts';
 
 afterAll(() => {
   closeDb();

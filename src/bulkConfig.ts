@@ -1,9 +1,9 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
-import { loadState } from './storage.js';
-import { TagConfig, ListEntry, AuditCriteria } from './tagConfig.js';
-import { SERIES_POS_STANDALONE } from './seriesPos.js';
+import { loadState } from './storage.ts';
+import { TagConfig, ListEntry, AuditCriteria } from './tagConfig.ts';
+import { SERIES_POS_STANDALONE } from './seriesPos.ts';
 
 const BULK_CONFIG_FILE = path.join(process.cwd(), 'bulkAuditConfig.json');
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { findTagFirstPagePicks } from './tagFirstPagePicks.js';
-import { TagBookRow, BookCache } from './storage.js';
+import { findTagFirstPagePicks } from './tagFirstPagePicks.ts';
+import { TagBookRow, BookCache } from './storage.ts';
 
 const cache: BookCache = {
   '1': { id: '1', title: 'Book One', author: 'Author A', ratings: '10,000', avgRating: '4.5', published: '2020', lastUpdated: '' },

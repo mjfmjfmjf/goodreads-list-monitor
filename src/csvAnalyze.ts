@@ -1,6 +1,6 @@
 import { statSync } from 'node:fs';
 import chalk from 'chalk';
-import { CsvRecordParser, openCsvStream } from './importData.js';
+import { CsvRecordParser, openCsvStream } from './importData.ts';
 
 // Field-level analysis for a CSV (plain or gzipped) file. Single streaming pass,
 // memory-safe for large files. Reports population, non-blank %, type guess,

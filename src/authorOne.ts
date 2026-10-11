@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import chalk from 'chalk';
-import { findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, authorExistsById } from './storage.js';
-import type { AuthorCacheEntry } from './storage.js';
-import { scrapeAuthorStats } from './scraper.js';
-import type { AuthorStatsResult } from './scraper.js';
-import { delay, isConnectivityError, parseDelayRange } from './utils.js';
+import { getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, recordAuthorScrapeFailure, authorExistsById } from './storage.ts';
+import type { AuthorCacheEntry } from './storage.ts';
+import { scrapeAuthorStats, describeAuthorId } from './scraper.ts';
+import type { AuthorStatsResult } from './scraper.ts';
+import { delay, isConnectivityError, parseDelayRange } from './utils.ts';
 
 function parseAuthorInput(input: string): { id: string; slug: string } | undefined {
   const trimmed = input.trim();
@@ -52,17 +52,20 @@ interface StoredAuthor {
 function storeAuthorStats(parsed: { id: string; slug: string }, result: AuthorStatsResult): StoredAuthor {
   const stats = result.stats;
   const slug = stats.slug || parsed.slug;
-  const id = slug.split('.')[0];
+  const id = parsed.id;
   const name = stats.name || fallbackNameFromSlug(slug);
 
-  const found = findAuthorBySlug(slug);
-  const key = found?.key ?? name;
-  const isNew = !found;
-  const entry: AuthorCacheEntry = found?.entry ?? {
+  const existing = getAuthorById(id);
+  const isNew = !existing;
+  const entry: AuthorCacheEntry = existing ?? {
     id,
+    name,
     slug,
     lastSeen: new Date().toISOString(),
   };
+  // Persist the page's canonical name/slug; ids can outlive their slugs.
+  if (stats.name) entry.name = stats.name;
+  if (stats.slug) entry.slug = stats.slug;
 
   const prev = {
     averageRating: entry.averageRating,
@@ -77,9 +80,10 @@ function storeAuthorStats(parsed: { id: string; slug: string }, result: AuthorSt
   entry.lastSeen = new Date().toISOString();
 
   const changed = updateAuthorStats(entry, stats) || entry.catalogPages !== prevCatalogPages;
-  if (changed) upsertAuthor(key, entry);
+  upsertAuthorById(id, entry);
+  upsertAuthorSlug(id, entry.slug, entry.name);
 
-  return { key, name, slug, changed, isNew, stats, prev };
+  return { key: id, name, slug, changed, isNew, stats, prev };
 }
 
 export async function runAuthorOne(input: string, options: AuthorOneOptions = {}): Promise<void> {
@@ -104,8 +108,8 @@ export async function runAuthorOne(input: string, options: AuthorOneOptions = {}
     throw error;
   }
   if (!result) {
-    console.log(chalk.yellow(`   ⚠️ No stats line found for ${parsed.slug}`));
-    recordAuthorFailure(fallbackNameFromSlug(parsed.slug), failReason);
+    console.log(chalk.yellow(`   ⚠️ No stats line found for ${describeAuthorId(parsed.id)}`));
+    recordAuthorScrapeFailure(parsed.id, failReason);
     return;
   }
 
@@ -205,7 +209,7 @@ export async function runAuthorOneFile(filePath: string, options: AuthorOneOptio
     }
     if (!result) {
       noStats++;
-      recordAuthorFailure(fallbackNameFromSlug(parsed.slug), failReason);
+      recordAuthorScrapeFailure(parsed.id, failReason);
       console.log(chalk.yellow(`${tag} ${parsed.id} ⚠️ no stats line`));
     } else {
       const { name, slug, stats, isNew } = storeAuthorStats(parsed, result);

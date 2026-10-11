@@ -1,15 +1,15 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
-import { scrapeListBooks } from './scraper.js';
-import { iterateBooks, countBooks, getBook } from './storage.js';
-import type { BookCache, CachedBook } from './storage.js';
-import { getDb } from './db.js';
-import { ListEntry } from './tagConfig.js';
-import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.js';
-import { matchesRegex } from './bookMatch.js';
-import { parseSeriesPos, matchesSeriesPos, SERIES_POS_STANDALONE, SERIES_POS_MULTI } from './seriesPos.js';
-import { looksLikeNameConcat } from './authorOrphans.js';
+import { scrapeListBooks } from './scraper.ts';
+import { iterateBooks, countBooks, getBook } from './storage.ts';
+import type { BookCache, CachedBook } from './storage.ts';
+import { getDb } from './db.ts';
+import { ListEntry } from './tagConfig.ts';
+import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink } from './utils.ts';
+import { matchesRegex } from './bookMatch.ts';
+import { parseSeriesPos, matchesSeriesPos, SERIES_POS_STANDALONE, SERIES_POS_MULTI } from './seriesPos.ts';
+import { looksLikeNameConcat } from './authorOrphans.ts';
 
 const AUDIT_REPORT = path.join(process.cwd(), 'auditReport.txt');
 const DEFAULT_BULK_CONFIG_FILE = path.join(process.cwd(), 'bulkAuditConfig.json');

@@ -7,7 +7,7 @@ import {
   parseBookPageFromHtml,
   parseSocialSignals,
   BookPageDetails,
-} from './bookPageParse.js';
+} from './bookPageParse.ts';
 
 function nextDataHtml(apolloState: any, extraBody = ''): string {
   const next = { props: { pageProps: { apolloState } } };

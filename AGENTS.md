@@ -1,5 +1,33 @@
 # AGENTS.md — Working memory for this repo
 
+## Working agreement — COMMUNICATE (do not go dark)
+This is the most important section in this file. A session that ends with the
+user saying "the last useful thing it said was lost" is a failed session, no
+matter how much code it wrote.
+
+- **Report before you dig.** When you start investigating (especially after a
+  handoff or a context reset), emit a short line FIRST: what you think the task
+  is and what you're about to check. Silence reads as a hang, and the user
+  cannot tell "working as intended" from "confused and thrashing."
+- **Never run more than a few tool calls without a word.** Long silent stretches
+  of `grep`/`git log`/`sed` are what produced the lost session. Narrate in
+  between: one or two lines on what you found, what's next.
+- **State findings as you confirm them, not in one dump at the end.** If you
+  discover the repo doesn't build or a half-finished feature exists, say so
+  right away — that is exactly the information the user needs to steer.
+- **Surface a blocker as a question with options, then stop.** When progress
+  needs a decision (which approach, revert or keep, A vs B), ask and WAIT. Do
+  not pick silently and keep going; a wrong guess costs more than the pause.
+- **Keep a running breadcrumb in the transcript**: current state, what's done,
+  what's left, what's verified. Assume context can be lost at any point and
+  that your earlier messages may be the only record.
+- **Wrap up with an explicit status**: what I changed, what I verified (with the
+  command and its result), what I did NOT do, and the next step. Never leave the
+  user guessing whether something is finished.
+- **On resuming a lost session**, lead with the reconstruction: current state of
+  the tree, what's implemented, what's missing, and the open question. Do not
+  silently start editing.
+
 ## Testing cadence
 - **Unit tests** (`./runUnitTests.sh`): fast, offline. Three gates in order:
   `tsc --noEmit` (full strict typecheck — ts-node typechecks at load time in
@@ -69,6 +97,62 @@
   are given. Both keys share `loadAuthorBookStats`, whose SQL drops years above
   `currentYear+5` (Goodreads encodes some BCE works as positive years, e.g.
   2600, which would otherwise outrank genuinely recent books).
+- **List tags: ONE unified xref + one walk-history table (unified 2026/10/07).**
+  `list_tags(list_id, tag_name, first_seen, last_seen, from_sidebar,
+  from_directory)` is THE list↔tag xref: `from_sidebar` = learned from the
+  list's own `Tags:` sidebar (`/list/show/<id>`, scrapeListBooks),
+  `from_directory` = learned by enumerating a Listopia **directory** tag
+  (`/list/tag/<tag>` via `listTagWalk.sh` / `walkListTag.sh`); a row can carry
+  both. Per-tag counts (`listTagStats.sh`, `listTags.sh`) are over this table,
+  so a walked tag's count is its REAL directory size (historical → 1,018, not
+  the sidebar subset — sidebar coverage is only ~half of what a walk finds).
+  `list_tag_walk_history(tag_name PK, first_walked, last_walked, num_walks,
+  num_lists)` answers "did I walk this tag, when, how often, and how many
+  lists did it yield" (`num_lists` NULL = walked before membership tracking).
+  Writers: `upsertListTags` (sidebar), `recordListTagMembership` +
+`recordListTagWalkHistory` (directory walks, recorded up front for ALL
+  enumerated lists — before the already-scraped skip filter, which is what the
+  2026/10/07 christian-walk bug was about). `reconcileListTagsXref()`
+  (src/db.ts) runs at every startup: adds the provenance columns on an old DB,
+  stamps legacy both-flag-0 rows as sidebar (only old code leaves both 0, and
+  old code only ever wrote sidebar), and — while the LEGACY `list_tag_walks`
+  (per-(tag,list) membership, still written by crawlers started before the
+  unification) exists — mirrors its rows into list_tags and seeds/refreshes
+  history. Seed rules: `num_walks` = distinct DAYS walked (per-row walked_at
+  timestamps would invent hundreds of "walks"); `num_lists` = max of the two
+  known enumerations, NULL preserved. `list_tag_walks` is ALREADY dropped from
+  EXPORT_TABLES (it exports nothing a receiver can import) and lives in
+  EXCLUDED_TABLES instead. **When the last pre-unification crawler exits: drop
+  `list_tag_walks` + `idx_list_tag_walks_list`, delete that reconcile step, and
+  remove `list_tag_walks` from EXCLUDED_TABLES** (keep `list_tag_walk_history`,
+  which IS exported and imported). Newer round-trip importers: `author_slugs`
+  (first_seen keeps earliest, last_seen keeps latest, name fill-blank), and
+  `list_tag_walk_history` (earliest first_walked, latest last_walked, larger
+  num_walks/num_lists) — both added 2026/10/10 so a restored DB doesn't revert
+  to re-walking every tag or re-canonicalizing slugs.
+- **Walk-tag history is ALREADY SEEDED (56 tags) — do not re-run this.** The
+  user ran, on 2026/10/05:
+  `history -1000 | grep listTagWalk.sh | egrep -v history | sed 's/.*Walk.sh //' | sed 's/ .*//' | sort | uniq | egrep -v "\-\-"`
+  Result: 56 distinct tags — years `2010`–`2027` plus `author average-ratings
+  best Castilian children covers Dutch fantasy fiction flemish french gay german
+  graphic-novels historical-fiction historical-romance horror italian japanese
+  latin manga middle-grade mystery non-fiction nonfiction paranormal
+  picture-books polish Portuguese queer romance science science-fiction spanish
+  swedish thriller titles young-adult`. Seeded into `list_tag_walks` with
+  `list_id = ''` (`WALKED_TAG_MEMBERSHIP_UNKNOWN`) because the tag names survive
+  in shell history but the per-list membership does not. `listTagStats.sh
+  --exclude-walked` subtracts these. Don't re-derive the list from history and
+  don't re-seed; just check `SELECT COUNT(DISTINCT tag_name) FROM
+  list_tag_walks` (expect 56). Re-running is harmless but pointless.
+- **Tag names are LOWERCASED at the storage boundary** — `parseListTags()`
+  lowercases, and `upsertListTagWalk()` lowercases too, because Goodreads treats
+  `/show_tag/Dutch` and `/show_tag/dutch` as the same tag. Shell history
+  preserves whatever case was typed, so the seeded set was `Castilian Dutch
+  Portuguese` capitalized; those 3 rows were normalized in place on 2026/10/05.
+  `loadWalkedTagNames()` lowercases on read as well, and `rankListTags()`
+  compares lowercased on BOTH sides — otherwise `--exclude-walked` silently
+  fails to exclude a tag you already walked. If you add a tag source that isn't
+  lowercased, fix it at the write, not in the report.
 - **Connectivity errors get a probation window, not an instant abort**
   (2026-09-25 fix + 2026-09-26 follow-up). `scrapeAuthorStats` rethrows
   `isConnectivityError` errors (both the outer fetch and the inner multiPage
@@ -112,6 +196,15 @@
     (`cachedPublishedYear`, `summaryTopByYear`, `booksAddedHistogram`).
   Keep new bulk writers as plain single-statement upserts (see below) and
   reach for these patterns instead of a new full-table load.
+- **`idx_books_author_pub (author_id, ratings DESC, published)` must keep
+  `published`.** It is the only reason `loadAuthorBookStats`'s
+  `GROUP BY author_id` (MAX(ratings) + year-over-`published` + COUNT across
+  ~12.3M books) is a covering scan: 189s cold without `published` in the index
+  vs 2.2s with it (83×, benchmarked 2026/10/07). Without it SQLite reads the
+  grouping from the index but still table-fetches `published` for every row —
+  EXPLAIN says `USING INDEX` instead of `USING COVERING INDEX`. The old
+  `idx_books_author_id` was a strict prefix and was dropped; `ensureIndexes()`
+  creates the replacement first, then drops (see `SCHEMA_DROP_INDEXES`).
 - Earlier npm scripts had a central `--max-old-space-size=8192` in NODE_OPTIONS
   to make the full-cache commands fit; that bump was reverted on 2026/09/13
   once the loads were gone. `NODE_OPTIONS='--loader ts-node/esm --no-warnings'`
@@ -186,5 +279,12 @@
 - Scrapers live in `src/scraper.ts` using cheerio. Unit-test pure logic in
   `src/*.test.ts`; never hit the network in unit tests.
 - Vitest configs are `.mjs` (must stay `.mjs` — tsconfig uses `rootDir: src`).
+- **Relative imports carry the `.ts` extension** (`from './storage.ts'`), which is
+  why `tsconfig.json` sets `allowImportingTsExtensions` + `noEmit`. Both are
+  required together: `allowImportingTsExtensions` is rejected without `noEmit`,
+  and dropping either one makes all ~540 imports fail to typecheck AND makes the
+  production ts-node/esm loader die with an unreadable null-prototype dump (not a
+  normal stack trace) on the very first import. If `npx tsc --noEmit` reports
+  hundreds of `TS5097` errors, that flag is missing — not 540 real bugs.
 - `npm test` = fast unit; `npm run test:coverage` = unit + coverage;
   `npm run test:integration` = live suite (slow, polite).

@@ -3,6 +3,178 @@
 Record whenever Goodreads changes a page in a way that forces a code change.
 Newest entry on top. Timestamp format: `YYYY/MM/DD HH:MM` (local time).
 
+## 2026/10/10 — Other-user review-list rating markup renamed `staticStars` → `readOnlyStars`
+
+- Logged-in fetch of another user's review list (`/review/list/<id>?shelf=read`,
+  verified against user 1147761, 200) shows the reviewer's rating now rendered as
+  `<span class="readOnlyStars notranslate" title="really liked it">` with child
+  spans `readOnlyStar full` / `readOnlyStar empty` — the old
+  `staticStar p10` / `staticStar p0` classes no longer appear anywhere on the
+  page. The `title` word label ("liked it" etc.) is untouched.
+- `parseRowRating`'s other-user fallback now looks at both `.staticStars` (legacy,
+  still matched so stale/cached pages parse) and `.readOnlyStars` for the title,
+  and counts both `.staticStar.p10` and `.readOnlyStar.full` for the
+  title-less fallback (src/reviewListSync.ts).
+- Verified quarter-star data on other-user pages: the friend's rows in this fetch
+  were all whole-star (titles `did not like it` … `it was amazing`, no fractional
+  `readOnlyStar` class observed). The only `data-rating` on the page is on the
+  viewer's own "my rating" shelf widget (`data-user-id="970632"`), which the
+  parser already ignores. Fractional other-user rendering (e.g. a friend who rated
+  3.75) is still UNOBSERVED — if/when one appears, re-check whether
+  `readOnlyStar` gets a partial class or `readOnlyStars` gains a `data-rating`.
+
+## 2026/10/03 19:30 — §4 MERGED the legacy `authors.fail_count` into the ledger (dropping it was the bug)
+
+- **What was wrong:** §4 pointed the sweeps' candidate filter at
+  `author_scrape_failures` alone while `authors.fail_count` still existed, and the
+  planned migration DISCARDED the legacy counts. The two ledgers barely overlap —
+  on the live DB **569 ids were legacy-only, 721 ledger-only** — because the
+  legacy counter was written by years of past crawls. So every author the legacy
+  counter had already retired at the threshold was silently re-admitted:
+  **519 never-crawled authors at `fail_count >= 5`**, plus 154 at 1–4. Proof from
+  the running log: `52038502` (`thornton-sarah`, the very id being re-scraped)
+  carried `fail_count = 5` and was being fetched anyway. A `--sortBy topRatings`
+  queue **grew** 235,645 -> 235,907 instead of shrinking.
+- **Fixed, two parts:**
+  1. `loadStrikeMap()` now UNIONES both sources with `MAX()`, so an author is
+     skipped if EITHER ledger says it is exhausted. This protects every run
+     between now and the migration, and is what stopped the immediate bleeding.
+  2. `author-ledger-migrate` now MERGES the legacy strikes into the ledger
+     (`MAX(authors.fail_count, ledger.fail_count)`) in the same transaction as the
+     drop, instead of dropping the data. Applied to the live DB: **877 -> 1,403
+     ledger rows (+526)**, 520 authors now at/over the threshold.
+- **Why MAX is correct:** a legacy `5` means "exhausted" and must keep excluding
+  the author — 503 legacy rows sit at exactly 5, the old cap, which is a retired
+  author and not a suspicious number. MAX also never lowers an existing ledger
+  count.
+- **Migration bug found and fixed on first apply:** `ALTER TABLE ... DROP COLUMN`
+  already removes the column's indexes, so the trailing `DROP INDEX` failed with
+  `no such column: page_gone` and rolled the transaction back. The index is now
+  dropped BEFORE the column.
+- **Live DB after apply:** `authors` = `id, name, slug, last_seen, average_rating,
+  num_ratings, num_reviews, num_shelves, first_seen, catalog_pages, ratings_rate`.
+  `fail_count`, `last_error`, `page_gone` gone; `integrity_check: ok`; fresh
+  backup in `backups/goodreads.db.2026-10-04` (5.81 GB, 60.7s).
+- **Tests:** 76 files / 903 tests + CLI smoke. `authorLedgerMigrate.test.ts`
+  covers the merge, MAX-both-directions, and no-double-count on re-run;
+  `storage.test.ts` pins the union filter.
+
+## 2026/10/03 19:20 — REVERTED: permanent `authors.page_gone` retirement of dead author pages
+
+- **What was wrong:** a 404/410/400 author page was classified as a durable FACT
+  (`scrapeAuthorStats` reported the sentinel `author_page_gone`) and each sweep
+  retired the id via a new `authors.page_gone` column while explicitly recording
+  **no strike**. That removed the only mechanism that was actually making
+  progress: a strike-based skip drops an author from the crawl queue after
+  `AUTHOR_FAIL_LIMIT` runs, whereas retirement-without-a-strike drops nothing.
+  Live effect on 2026/10/03: `author-rescan --sortBy topRatings` queued 235,645
+  authors, the first ~80 were all one-book misattributed ids (404), and the queue
+  did not shrink between runs (235,645 → 235,820) — every dead author re-404'd
+  forever, each with three lines of noise instead of one.
+- **Fixed:** reverted entirely. `isPermanentAuthorPageFailure` is back to
+  `4xx && !== 429`, so 400/404/410 count a strike like any other permanent
+  failure and the author is filtered out of the queue after `AUTHOR_FAIL_LIMIT`.
+  Removed `isDeadAuthorPage`, `isThrottleResponse`, `THROTTLE_STATUSES`,
+  `AUTHOR_PAGE_GONE`, `markAuthorPageGone`, `clearAuthorPageGone`,
+  `countAuthorsPageGone`, the `pageGone` field/SQL, the `page_gone` DDL and
+  startup migration, the two `entry.pageGone` candidate filters, the
+  `retired_gone` report line, and the export/import round-trip of the column.
+- **Lesson (the point of the workaround):** a permanent failure must consume a
+  strike. "This id is bad forever" is only actionable if it removes the author
+  from the queue; a flag that is written but never filters anything just makes
+  the run louder and the queue permanent.
+- **Live DB:** `authors.page_gone` is still present but inert (nothing reads or
+  writes it). `authorLedgerMigrate` now drops it alongside `fail_count` /
+  `last_error`.
+- **Tests:** `src/scraper.test.ts` asserts dead pages ARE permanent failures
+  (with a comment recording why), and `src/storage.test.ts`'s retirement suite is
+  deleted. Full gate: 76 files / 900 tests + CLI smoke.
+
+## 2026/10/03 19:05 — §4 unified the author strike ledger; dropped `authors.fail_count` / `authors.last_error`
+
+- **What changed:** failure state for author pages now lives in exactly ONE
+  place, `author_scrape_failures`, read through `loadStrikeMap()` /
+  `loadAuthorScrapeFailure()` and gated by ONE threshold,
+  `storage.ts:AUTHOR_FAIL_LIMIT = 5`.
+- **Was:** two parallel counters that could disagree — `authors.fail_count`
+  (limit 5) and `author_scrape_failures.fail_count` (limit 3), plus
+  `authors.last_error`. A single failure could burn a strike in both.
+- **Fixed:** removed `recordAuthorFailureById` and every `authors.fail_count` /
+  `authors.last_error` read and write (`authorRescan`, `authorOrphans`,
+  `authorRecent`, `authorTopBooks`, `authorOne`, `scraper`, `importData`,
+  `authorRekey`, `fieldCoverage`). `authors` no longer creates or migrates the
+  two columns; `authorRekey`'s rebuild DDL drops them. `field-coverage` reports
+  `failed_ever` / `chronic_failures` from the ledger with the shared constant
+  instead of two hardcoded limits.
+- **Migration NOT yet applied to the live DB:** the dropped columns are still
+  present there. They are inert (nothing reads or writes them). Deliberately does
+  NOT import the legacy counts: on the live DB 331 of the 354 never-crawled
+  authors it would block have `last_error=ERR_BAD_REQUEST`, i.e. exactly the
+  dead-page class that is now a normal strike — importing it would exclude them
+  from the crawl for a reason that no longer applies. Drop the columns only with
+  the crawlers stopped.
+- **Tests:** `src/exportData.test.ts` (authors header without strike columns),
+  `src/authorRekey.test.ts` (6).
+
+## 2026/10/03 19:05 — New `./bookLanguages.sh` and `./bookFormats.sh` facet catalogs
+
+- **What changed:** added `book-languages` / `book-formats` commands, modelled on
+  `publisher-catalog`, sharing one module (`src/facetCatalog.ts`) because
+  `language` and `format` are both plain `book_page` columns.
+- **Ranking** reuses the publisher work-dedup rule: editions of one work
+  collapse, each `(facet, work)` represented by its highest-rated edition.
+  Sorts `--sortBy books|avgRating|totalRatings`, filters `--minBooks`
+  / `--minRatings`, `--limit`.
+- **Data note:** `book_page.format` is the raw page string and its tail is
+  messy — 227 distinct values, with case/whitespace variants splitting real
+  formats (`Paperback` 72,961 vs `paperback` 31 vs `Paperback ` 9). Values are
+  trimmed, inner whitespace collapsed, and case-folded by default; the folded
+  spellings are listed as `also:` so nothing is hidden, and `--raw` keeps them
+  apart. Placeholders (`Unknown Binding`, which alone is 2,244 rows) are
+  excluded. `language` needs no folding (71 values, no trim or case dupes).
+- **Not a Goodreads page change** — recorded here only because the log is the
+  place the two §4-adjacent changes above are tracked.
+- **Tests:** `src/facetCatalog.test.ts` (13).
+
+## 2026/10/03 17:55 — `/author/list/<id>` returns **HTTP 400 (ERR_BAD_REQUEST)** for some valid author ids
+
+- **Page / URL:** `https://www.goodreads.com/author/list/<authorId>` — the URL
+  `buildAuthorListUrl` builds for every author crawl (`author-rescan`,
+  `author-orphans`, `author-recent`, `author-top-books`).
+- **What happened:** the `author-orphans --scrape` run logged
+  `⚠️ Author stats fetch failed for 53189166: ERR_BAD_REQUEST` and the same for
+  `36868517` on ids that are otherwise normal (a real book with 63,567 ratings
+  sits on `53189166`). This is a **400**, not the 404 we treat as a dead id, and
+  it is not the 202/403/429 anti-bot shape — so it is neither a dead-end signal
+  nor throttling. Observed only on the id-only `/author/list/` form; the same
+  authors were not re-tested against `/author/show/`.
+- **Impact:** each occurrence costs a strike in **both** failure ledgers
+  (`authors.fail_count` limit 5 *and* `author_scrape_failures.fail_count`
+  limit 3 — `authorOrphans.ts` records both for one event), so a 400 currently
+  burns two of an author's three-strike budget per attempt. Whether a 400 is
+  permanent for a given id is not yet established; treat it as retryable until
+  proven otherwise, and do **not** shrink the pacing in response (this is not
+  throttle-shaped).
+- **Also recorded (data, not a page change):** `books.published` is the literal
+  string **`'Unknown'`** for **8,780,422 of 11,578,563 books (75.8%)** in the
+  live DB. This is our own stored value, not a Goodreads response, but it is the
+  durable fact behind a serious selection bug: `loadAuthorBookStats` gated its
+  *entire* aggregation on a parseable 4-digit year, so any author whose books
+  were all `'Unknown'` produced no stats row, and `selectMultiPageAuthors` drops
+  book-based-sort authors with no stats row. That made
+  `author-rescan --multiPage --onlyUntouched --sortBy topRatings` able to see
+  only **~393 of 236,804** never-crawled authors (99.84% invisible) — the grind
+  reported "Done" after ~600 authors. Fixed by scoping the year range to
+  `newest` only (`top`/`books` now use `ratings` alone unless `--minBookYear` is
+  set, which is that flag's documented job); reachable authors went
+  **597 → 234,573**. Regression tests in `src/authorBookStats.test.ts`.
+  **Lesson:** a filter added to tame one sort key must not silently gate the
+  others — `ratings` is ~100% dense, `published` is 24% dense.
+- **Fix:** the strike double-write is removed in the ledger unification
+  (`PLAN-author-completion.md` §4). A follow-up should decide whether a 400 gets
+  its own `onError` reason so it can be distinguished from `404`/`no_stats_line`
+  in `author_scrape_failures.last_error`.
+
 ## 2026/09/30 17:55 — Tag-shelf pagination footer advertises UNREACHABLE pages (last_page_seen = 100, only ~page 25 serves content)
 
 - **Page / URL:** `https://www.goodreads.com/shelf/show/<tag>?page=<n>` (the pagination

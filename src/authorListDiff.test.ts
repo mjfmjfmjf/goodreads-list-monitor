@@ -15,11 +15,11 @@ import {
   authorStatsPresent,
   planBuildProgress,
   SUGGESTION_MIN_RATINGS,
-} from './authorListDiff.js';
-import type { SelectedAuthor } from './authorTopStats.js';
-import type { AuthorCacheEntry } from './storage.js';
-import type { CachedBook } from './storage.js';
-import type { UserVoteEntry } from './scraper.js';
+} from './authorListDiff.ts';
+import type { SelectedAuthor } from './authorTopStats.ts';
+import type { AuthorCacheEntry } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import type { UserVoteEntry } from './scraper.ts';
 
 function author(name: string, slug: string, averageRating: string, numRatings: string): SelectedAuthor {
   const entry: AuthorCacheEntry = {
@@ -29,7 +29,7 @@ function author(name: string, slug: string, averageRating: string, numRatings: s
     averageRating,
     numRatings,
   };
-  return { name, entry, value: parseFloat(averageRating) };
+  return { id: entry.id, name, entry, value: parseFloat(averageRating) };
 }
 
 function vote(position: number, bookId: string, title: string, name: string, slug?: string): UserVoteEntry {

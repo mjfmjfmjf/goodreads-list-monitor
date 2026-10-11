@@ -4,11 +4,11 @@ import path from 'path';
 import os from 'os';
 import chalk from 'chalk';
 import { constants } from 'node:fs';
-import { isDbLockError } from './utils.js';
+import { isDbLockError } from './utils.ts';
 
 // Override point for tests: GOODREADS_DB_PATH redirects all storage to an
 // isolated database file so unit tests never touch the real goodreads.db.
-const DB_PATH = process.env.GOODREADS_DB_PATH || path.join(process.cwd(), 'goodreads.db');
+export const DB_PATH = process.env.GOODREADS_DB_PATH || path.join(process.cwd(), 'goodreads.db');
 const BACKUP_DIR = path.join(process.cwd(), 'backups');
 const KEEP_BACKUPS = 7;
 
@@ -253,6 +253,20 @@ export function getDb(): Database.Database {
       _db = null;
       throw err;
     }
+
+    // Refuse to serve against a pre-rekey `authors` table. Before the author-id
+    // migration the primary key is `name`; the id-first code would silently
+    // mis-key writes. `author-rekey` opens a raw connection and bypasses this.
+    const pkCols = (_db.prepare('PRAGMA table_info(authors)').all() as { name: string; pk: number }[])
+      .filter((c) => c.pk > 0)
+      .map((c) => c.name);
+    if (!(pkCols.length === 1 && pkCols[0] === 'id')) {
+      _db.close();
+      _db = null;
+      throw new Error(
+        `authors table is not id-keyed (PK: ${pkCols.join(', ') || 'none'}) — run 'author-rekey --apply' before starting the app`,
+      );
+    }
   }
   return _db;
 }
@@ -397,6 +411,63 @@ export const TAG_PAGE_ESTIMATE_BACKFILL_SQL = `
     updated = excluded.updated
 `;
 
+// Every index the app relies on, with the table it covers so a slow build can
+// say *what* it is building. `CREATE INDEX IF NOT EXISTS` is near-instant when
+// the index is present; we only log the ones actually missing.
+const SCHEMA_INDEXES: Array<{ name: string; table: string; sql: string }> = [
+  { name: 'idx_genre_tag_xref_tag', table: 'genre_tag_xref', sql: 'CREATE INDEX IF NOT EXISTS idx_genre_tag_xref_tag ON genre_tag_xref(tag_name)' },
+  { name: 'idx_tag_books_position', table: 'tag_books', sql: 'CREATE INDEX IF NOT EXISTS idx_tag_books_position ON tag_books(tag_name, position)' },
+  { name: 'idx_books_ratings', table: 'books', sql: 'CREATE INDEX IF NOT EXISTS idx_books_ratings ON books(ratings DESC)' },
+  { name: 'idx_books_author', table: 'books', sql: 'CREATE INDEX IF NOT EXISTS idx_books_author ON books(author)' },
+  { name: 'idx_books_first_seen', table: 'books', sql: 'CREATE INDEX IF NOT EXISTS idx_books_first_seen ON books(first_seen)' },
+  { name: 'idx_books_work_id', table: 'books', sql: 'CREATE INDEX IF NOT EXISTS idx_books_work_id ON books(work_id)' },
+  // `published` is REQUIRED for the scan to be covering: loadAuthorBookStats
+  // aggregates MAX(ratings) + a year expression over `published` + COUNT in one
+  // GROUP BY author_id. Without `published` in the index SQLite reads the
+  // grouping/ratings from the index but still fetches `published` from the table
+  // for all ~12.3M rows (measured 189s cold vs 2.2s with the covering index —
+  // an 83x win). The (author_id, ratings DESC) prefix also serves authorMint's
+  // keyset chunk query and its per-author highest-rated-book subquery.
+  { name: 'idx_books_author_pub', table: 'books', sql: 'CREATE INDEX IF NOT EXISTS idx_books_author_pub ON books(author_id, ratings DESC, published)' },
+  { name: 'idx_authors_num_ratings', table: 'authors', sql: 'CREATE INDEX IF NOT EXISTS idx_authors_num_ratings ON authors(num_ratings DESC)' },
+  { name: 'idx_authors_num_shelves', table: 'authors', sql: 'CREATE INDEX IF NOT EXISTS idx_authors_num_shelves ON authors(num_shelves DESC)' },
+  // Name → id is a real lookup (getAuthor, author-name resolution in
+  // scrapeBookDetails), historically a full 960k-row linear scan.
+  { name: 'idx_authors_name', table: 'authors', sql: 'CREATE INDEX IF NOT EXISTS idx_authors_name ON authors(name)' },
+  { name: 'idx_author_slugs_slug', table: 'author_slugs', sql: 'CREATE INDEX IF NOT EXISTS idx_author_slugs_slug ON author_slugs(slug)' },
+  { name: 'idx_list_tags_tag', table: 'list_tags', sql: 'CREATE INDEX IF NOT EXISTS idx_list_tags_tag ON list_tags(tag_name)' },
+  { name: 'idx_list_tag_walks_list', table: 'list_tag_walks', sql: 'CREATE INDEX IF NOT EXISTS idx_list_tag_walks_list ON list_tag_walks(list_id)' },
+
+];
+
+// Obsolete indexes to remove once their replacement above exists. Dropped
+// AFTER ensureIndexes creates replacements, so there is never a moment without
+// an index on the key. Dropping is cheap (~2s); the replacement build is not.
+const SCHEMA_DROP_INDEXES = [
+  // Replaced by idx_books_author_pub (strict superset: same leading columns).
+  'idx_books_author_id',
+];
+
+function ensureIndexes(db: Database.Database): void {
+  const have = new Set(
+    (db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all() as any[]).map((r) => r.name),
+  );
+  for (const idx of SCHEMA_INDEXES) {
+    if (have.has(idx.name)) continue;
+    const started = Date.now();
+    console.error(`   → building missing index ${idx.name} on ${idx.table} — this can take a while on a large DB...`);
+    db.exec(idx.sql);
+    console.error(`   → built ${idx.name} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  }
+  for (const name of SCHEMA_DROP_INDEXES) {
+    if (!have.has(name)) continue;
+    const started = Date.now();
+    console.error(`   → dropping obsolete index ${name}...`);
+    db.exec(`DROP INDEX IF EXISTS ${name}`);
+    console.error(`   → dropped ${name} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  }
+}
+
 function initSchema(db: Database.Database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS books (
@@ -420,15 +491,26 @@ function initSchema(db: Database.Database) {
   );
 
     CREATE TABLE IF NOT EXISTS authors (
-      name TEXT PRIMARY KEY,
-      id TEXT NOT NULL,
-      slug TEXT NOT NULL,
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      slug TEXT,
       last_seen TEXT NOT NULL,
       average_rating REAL,
       num_ratings INTEGER DEFAULT 0,
       num_reviews INTEGER DEFAULT 0,
       num_shelves INTEGER DEFAULT 0,
-      first_seen TEXT
+      first_seen TEXT,
+      catalog_pages INTEGER,
+      ratings_rate REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS author_slugs (
+      author_id  TEXT NOT NULL,
+      slug       TEXT NOT NULL,
+      name       TEXT,
+      first_seen TEXT NOT NULL,
+      last_seen  TEXT NOT NULL,
+      PRIMARY KEY (author_id, slug)
     );
 
     CREATE TABLE IF NOT EXISTS config (
@@ -475,6 +557,50 @@ function initSchema(db: Database.Database) {
       tag_name   TEXT NOT NULL,
       kind       TEXT NOT NULL DEFAULT 'exact',
       PRIMARY KEY (genre_name, tag_name)
+    );
+    CREATE TABLE IF NOT EXISTS list_tags (
+      list_id TEXT NOT NULL,
+      tag_name TEXT NOT NULL,
+      first_seen TEXT NOT NULL,
+      last_seen TEXT NOT NULL,
+      -- Provenance: which route taught us this (list, tag) association.
+      -- from_sidebar: the list's own "Tags:" sidebar (scrapeListBooks).
+      -- from_directory: the Listopia /list/tag/<tag> directory enumeration
+      -- (list-tag-walk / walk-list-tag). A row can be both — it is ONE xref
+      -- for "these two are associated", with flags saying how we learned it.
+      -- Reconcile stamps rows with both flags 0 as sidebar: only legacy
+      -- (pre-flag) writers leave them at 0, and they only ever wrote sidebar.
+      from_sidebar INTEGER NOT NULL DEFAULT 0,
+      from_directory INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (list_id, tag_name)
+    );
+    -- Legacy per-(tag,list) walk membership, superseded by list_tags's
+    -- from_directory flag. Kept ONLY because crawlers started before the
+    -- unification still write it live; reconcileListTagsXref() mirrors its
+    -- rows into list_tags on every startup. Drop it (plus
+    -- idx_list_tag_walks_list) once no old process runs, then delete that
+    -- reconcile step.
+    --
+    -- list_id is '' for a historical walk whose membership was never recorded
+    -- (the tag was known, the lists it yielded were not): we know the tag was
+    -- walked without knowing what it produced.
+    CREATE TABLE IF NOT EXISTS list_tag_walks (
+      tag_name  TEXT NOT NULL,
+      list_id   TEXT NOT NULL,
+      walked_at TEXT NOT NULL,
+      PRIMARY KEY (tag_name, list_id)
+    );
+    -- Walk history, one row per Listopia DIRECTORY tag ever walked: when the
+    -- first/last walk ran, how many walks, and how many lists the tag's
+    -- directory yielded (NULL = unknown: walks recorded before membership
+    -- tracking existed). This is the "did I walk this tag?" table —
+    -- membership itself lives in list_tags (from_directory = 1).
+    CREATE TABLE IF NOT EXISTS list_tag_walk_history (
+      tag_name     TEXT PRIMARY KEY,
+      first_walked TEXT NOT NULL,
+      last_walked  TEXT NOT NULL,
+      num_walks    INTEGER NOT NULL DEFAULT 1,
+      num_lists    INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS tag_stats (
@@ -547,15 +673,13 @@ function initSchema(db: Database.Database) {
       scraped_at TEXT NOT NULL
     );
 
-    CREATE INDEX IF NOT EXISTS idx_genre_tag_xref_tag ON genre_tag_xref(tag_name);
-    CREATE INDEX IF NOT EXISTS idx_tag_books_position ON tag_books(tag_name, position);
-    CREATE INDEX IF NOT EXISTS idx_books_ratings ON books(ratings DESC);
-    CREATE INDEX IF NOT EXISTS idx_books_author ON books(author);
-    CREATE INDEX IF NOT EXISTS idx_books_first_seen ON books(first_seen);
-    CREATE INDEX IF NOT EXISTS idx_books_work_id ON books(work_id);
-    CREATE INDEX IF NOT EXISTS idx_authors_num_ratings ON authors(num_ratings DESC);
-    CREATE INDEX IF NOT EXISTS idx_authors_num_shelves ON authors(num_shelves DESC);
   `);
+
+  // Indexes are built after the tables (and can be the slow part on a large DB),
+  // so create them one at a time and announce any that are missing — a fresh or
+  // long-unmaintained DB can otherwise sit silently for minutes building an
+  // index while the command looks hung.
+  ensureIndexes(db);
 
   // Migrations for databases created before a column existed.
   const bookCols = db.prepare('PRAGMA table_info(books)').all() as any[];
@@ -565,12 +689,6 @@ function initSchema(db: Database.Database) {
   const authorCols = db.prepare('PRAGMA table_info(authors)').all() as any[];
   if (!authorCols.some((c: any) => c.name === 'catalog_pages')) {
     db.exec('ALTER TABLE authors ADD COLUMN catalog_pages INTEGER');
-  }
-  if (!authorCols.some((c: any) => c.name === 'fail_count')) {
-    db.exec('ALTER TABLE authors ADD COLUMN fail_count INTEGER DEFAULT 0');
-  }
-  if (!authorCols.some((c: any) => c.name === 'last_error')) {
-    db.exec('ALTER TABLE authors ADD COLUMN last_error TEXT');
   }
   if (!authorCols.some((c: any) => c.name === 'first_seen')) {
     // Capture when we first saw an author. Existing rows predate the column,
@@ -619,6 +737,80 @@ function initSchema(db: Database.Database) {
   if (tagStatsEmpty) {
     db.exec(TAG_PAGE_ESTIMATE_BACKFILL_SQL);
   }
+
+  reconcileListTagsXref(db);
+}
+
+// ── list_tags xref unification ─────────────────────────────────────
+// list_tags is the ONE list↔tag xref: sidebar tags (from_sidebar) and
+// directory-walk membership (from_directory) land in the same rows. This
+// reconciler makes legacy data converge there, idempotently, on every startup:
+//   1. add the provenance columns to a pre-unification DB;
+//   2. stamp rows old code wrote (both flags 0) as sidebar — safe because new
+//      code always sets at least one flag, and old code only ever wrote
+//      sidebar tags;
+//   3. while the legacy list_tag_walks table still exists (old crawlers are
+//      live), mirror its membership rows into list_tags and seed/refresh the
+//      tag-level walk history from them.
+// No-op on a fresh/test DB and after the legacy table is dropped.
+export function reconcileListTagsXref(db: Database.Database = getDb()): void {
+  const cols = db.prepare('PRAGMA table_info(list_tags)').all() as any[];
+  if (!cols.some((c: any) => c.name === 'from_sidebar')) {
+    db.exec('ALTER TABLE list_tags ADD COLUMN from_sidebar INTEGER NOT NULL DEFAULT 0');
+    db.exec('ALTER TABLE list_tags ADD COLUMN from_directory INTEGER NOT NULL DEFAULT 0');
+  }
+
+  db.prepare(`
+    UPDATE list_tags SET from_sidebar = 1
+    WHERE from_sidebar = 0 AND from_directory = 0
+  `).run();
+
+  const legacy = db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='list_tag_walks'",
+  ).get();
+  if (!legacy) return;
+
+  // Membership: each legacy (tag, list) row said "this list was reached through
+  // this directory tag" — exactly a from_directory sighting. first/last_seen
+  // span both routes, so widen them rather than overwrite.
+  db.prepare(`
+    INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen, from_sidebar, from_directory)
+    SELECT list_id, LOWER(tag_name), walked_at, walked_at, 0, 1
+    FROM list_tag_walks
+    WHERE list_id <> ''
+    ON CONFLICT(list_id, tag_name) DO UPDATE SET
+      first_seen = MIN(list_tags.first_seen, excluded.first_seen),
+      last_seen = MAX(list_tags.last_seen, excluded.last_seen),
+      from_directory = 1
+  `).run();
+
+  // History: one row per walked tag. Legacy rows carry one walked_at per
+  // (tag, list) — crawl-time stamps, later overwritten by re-walks — so
+  // counting DISTINCT timestamps invents hundreds of "walks" per tag. Count
+  // distinct DAYS instead: one walk's rows land within minutes, a re-walk on
+  // another day adds one. (Still a best-effort seed: MAX keeps a higher count
+  // already established by new-code walks, which increment by 1 each.)
+  // num_lists: how many distinct lists the walk yielded; NULL when the legacy
+  // rows are membership-unknown placeholders only. On conflict take the larger
+  // of the two known enumerations and only fall back when one side is NULL —
+  // a partial legacy mirror must not clobber a complete new-code count.
+  db.prepare(`
+    INSERT INTO list_tag_walk_history (tag_name, first_walked, last_walked, num_walks, num_lists)
+    SELECT LOWER(tag_name), MIN(walked_at), MAX(walked_at),
+           MAX(COUNT(DISTINCT date(walked_at)), 1),
+           NULLIF(COUNT(DISTINCT CASE WHEN list_id <> '' THEN list_id END), 0)
+    FROM list_tag_walks
+    GROUP BY LOWER(tag_name)
+    ON CONFLICT(tag_name) DO UPDATE SET
+      first_walked = MIN(list_tag_walk_history.first_walked, excluded.first_walked),
+      last_walked = MAX(list_tag_walk_history.last_walked, excluded.last_walked),
+      num_walks = MAX(list_tag_walk_history.num_walks, excluded.num_walks),
+      num_lists = CASE
+        WHEN excluded.num_lists IS NULL THEN list_tag_walk_history.num_lists
+        WHEN list_tag_walk_history.num_lists IS NULL THEN excluded.num_lists
+        ELSE MAX(list_tag_walk_history.num_lists, excluded.num_lists)
+      END
+  `).run();
 }
 
 // ── Work-representative de-dup (books.is_work_rep) ──────────────────

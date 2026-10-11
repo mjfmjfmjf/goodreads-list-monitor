@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeTag, nextShelfPageNumber, parseShelfPage } from './tagWalkBooks.js';
+import { normalizeTag, nextShelfPageNumber, parseShelfPage } from './tagWalkBooks.ts';
 
 const ELEMENT = (id: number, title: string) => `
 <div class="elementList">

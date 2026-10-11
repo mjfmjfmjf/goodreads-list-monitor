@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CachedBook } from './storage.js';
+import type { CachedBook } from './storage.ts';
 import {
   computeTopRated,
   diffTopRated,
   extractSeriesName,
   normalizeSeriesName,
   isBoxSet,
-} from './monitorTopRatedList.js';
-import { SERIES_POS_MULTI } from './seriesPos.js';
-import type { UserVoteEntry } from './scraper.js';
+} from './monitorTopRatedList.ts';
+import { SERIES_POS_MULTI } from './seriesPos.ts';
+import type { UserVoteEntry } from './scraper.ts';
 
 function book(id: string, over: Partial<CachedBook> = {}): CachedBook {
   return {

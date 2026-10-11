@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
-import { loadTagBooks, TagBookRow } from './storage.js';
+import { getDb } from './db.ts';
+import { loadTagBooks, TagBookRow } from './storage.ts';
 
 // Every tag harvest stops at the shelf cap (25 pages x 50 books = 1,250), so a
 // tag's xref row count ABOVE that is harvest drift — extra (tag, position) rows

@@ -1,9 +1,9 @@
 import chalk from 'chalk';
-import { getBook } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { parseSeriesPos } from './seriesPos.js';
-import { scrapeUserVoteBooks } from './scraper.js';
-import type { UserVoteEntry } from './scraper.js';
+import { getBook } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { parseSeriesPos } from './seriesPos.ts';
+import { scrapeUserVoteBooks } from './scraper.ts';
+import type { UserVoteEntry } from './scraper.ts';
 
 export const STANDALONE_MIN_RATINGS = 10000;
 export const STANDALONE_DEFAULT_VOTE_REF = '9695567';

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeTagHistogram, parseTagHistogramSortKey } from './tagHistogram.js';
-import type { TagBookRow } from './storage.js';
+import { computeTagHistogram, parseTagHistogramSortKey } from './tagHistogram.ts';
+import type { TagBookRow } from './storage.ts';
 
 const row = (tag: string, book: string, shelved?: number): TagBookRow => ({
   tagName: tag,

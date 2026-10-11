@@ -6,11 +6,11 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-tagrecent-${process.pid}-${Date.now()}.db`;
 });
 
-vi.mock('./scraper.js', () => ({
+vi.mock('./scraper.ts', () => ({
   scrapeShelfBooks: vi.fn(),
 }));
 
-vi.mock('./utils.js', () => ({
+vi.mock('./utils.ts', () => ({
   delay: vi.fn(async () => {}),
   isConnectivityError: vi.fn(() => false),
   isDbLockError: vi.fn(() => false),
@@ -18,9 +18,9 @@ vi.mock('./utils.js', () => ({
   connectivityProbeDefaults: vi.fn(() => ({ waitMs: 1, probes: 1 })),
 }));
 
-import { closeDb, getDb } from './db.js';
-import { scrapeShelfBooks } from './scraper.js';
-import { isConnectivityError } from './utils.js';
+import { closeDb, getDb } from './db.ts';
+import { scrapeShelfBooks } from './scraper.ts';
+import { isConnectivityError } from './utils.ts';
 import {
   getBook,
   getKnownShelfPages,
@@ -29,8 +29,8 @@ import {
   persistShelfPageCount,
   saveTagTailState,
   upsertTagBooks,
-} from './storage.js';
-import { needsTailReprobe, pickAnchorPage, runTagRecentMonitor, shouldResumePass, tailAnchorPage, tailReadWindow } from './tagRecentMonitor.js';
+} from './storage.ts';
+import { needsTailReprobe, pickAnchorPage, runTagRecentMonitor, shouldResumePass, tailAnchorPage, tailReadWindow } from './tagRecentMonitor.ts';
 
 const mockShelfBooks = vi.mocked(scrapeShelfBooks);
 const DB_FILE = process.env.GOODREADS_DB_PATH!;

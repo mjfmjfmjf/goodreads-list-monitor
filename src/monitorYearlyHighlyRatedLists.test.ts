@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeYearlyDistinctWorks, mapYearListSizes } from './monitorYearlyHighlyRatedLists.js';
+import { computeYearlyDistinctWorks, mapYearListSizes } from './monitorYearlyHighlyRatedLists.ts';
 
 describe('computeYearlyDistinctWorks', () => {
   it('counts distinct works per year at the 4.4/4.5/4.6 thresholds', () => {

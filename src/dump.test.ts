@@ -1,6 +1,6 @@
 import { test } from 'vitest';
-import { buildAuthorBucketBuckets, computeAuthorTopBookHistogram } from '/Users/mitchellfriedman/codebase/goodreads/src/authorTopBookHistogram.js';
-import { CachedBook } from '/Users/mitchellfriedman/codebase/goodreads/src/storage.js';
+import { buildAuthorBucketBuckets, computeAuthorTopBookHistogram } from '/Users/mitchellfriedman/codebase/goodreads/src/authorTopBookHistogram.ts';
+import { CachedBook } from '/Users/mitchellfriedman/codebase/goodreads/src/storage.ts';
 test('dump', () => {
   const b = buildAuthorBucketBuckets();
   const C = (c: CachedBook) => computeAuthorTopBookHistogram([c]);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { computeTitleCharHistogram } from './titleCharHistogram.js';
-import { stripTitleSuffix } from './utils.js';
+import { computeTitleCharHistogram } from './titleCharHistogram.ts';
+import { stripTitleSuffix } from './utils.ts';
 
 describe('stripTitleSuffix', () => {
   it('strips trailing series info with number', () => {

@@ -16,8 +16,8 @@ const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'goodreads-lifestats-'));
 // The temp DB is empty, so runLifeInBooks is fast; keep a generous timeout
 // in case the machine is under load when the suite runs.
 const SLOW_TIMEOUT = 30_000;
-import { runLifeInBooks } from './lifeInBooks.js';
-import { runPublisherStats } from './publisherStats.js';
+import { runLifeInBooks } from './lifeInBooks.ts';
+import { runPublisherStats } from './publisherStats.ts';
 
 const CSV_FILE = path.join(TMP_DIR, 'library.csv');
 const EMPTY_CSV = path.join(TMP_DIR, 'empty.csv');

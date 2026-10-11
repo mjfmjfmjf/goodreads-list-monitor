@@ -9,8 +9,8 @@ import {
   buildReadAtUrl,
   liveEntriesForYear,
   describeFetchError
-} from './reviewListSync.js';
-import type { LibraryExport, LibraryEntry } from './libraryExport.js';
+} from './reviewListSync.ts';
+import type { LibraryExport, LibraryEntry } from './libraryExport.ts';
 
 function rowHtml(
   opts: {
@@ -252,11 +252,34 @@ describe('parseReviewListPage', () => {
     const html = `<table><tbody>${rowHtml({ shelves: 'read' })}</tbody></table>`;
     expect(parseReviewListPage(html)[0].bookshelves).toBe('');
   });
+  it('passes quarter-star personal ratings (data-rating="3.75") through untouched', () => {
+    const html = `<table><tbody>${rowHtml({ rating: '3.75' })}</tbody></table>`;
+    expect(parseReviewListPage(html)[0].myRating).toBe('3.75');
+  });
   it('parses another user\'s static-star rating when not on our own list', () => {
     const html = `<table><tbody>${otherUserRowHtml({ staticTitle: 'really liked it' })}</tbody></table>`;
     const row = parseReviewListPage(html)[0];
     expect(row.myRating).toBe('4');
     expect(row.author).toBe('An Author');
+  });
+  it('parses another user\'s rating from the current readOnlyStars markup', () => {
+    const html = '<table><tbody>' + otherUserRowHtml({ staticTitle: 'liked it' })
+      .replace(/staticStars/g, 'readOnlyStars')
+      .replace(/staticStar p10/g, 'readOnlyStar full') // 3 filled
+      .replace(/staticStar p0/g, 'readOnlyStar empty') // 1 empty
+      + '</tbody></table>';
+    const row = parseReviewListPage(html)[0];
+    expect(row.myRating).toBe('3'); // via the "liked it" title on readOnlyStars
+  });
+  it('falls back to filled readOnlyStar counts when the title is missing (new markup)', () => {
+    const html = '<table><tbody>' + otherUserRowHtml({ staticTitle: '' })
+      .replace(/staticStars/g, 'readOnlyStars')
+      .replace(/staticStar p10/g, 'readOnlyStar full')
+      .replace(/staticStar p0/g, 'readOnlyStar empty')
+      .replace('title=""', '')
+      + '</tbody></table>';
+    const row = parseReviewListPage(html)[0];
+    expect(row.myRating).toBe('3'); // count of .readOnlyStar.full spans
   });
   it('reads another user\'s review text via the freeTextreview ids', () => {
     const html = `<table><tbody>${otherUserRowHtml({ review: 'Great comic, weak ending.' })}</tbody></table>`;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { splitAuthorNames, authorFirstAndLast, compileRegex, matchesRegex } from './bookMatch.js';
+import { splitAuthorNames, authorFirstAndLast, compileRegex, matchesRegex } from './bookMatch.ts';
 
 describe('splitAuthorNames', () => {
   it('returns an empty list for missing or Unknown authors', () => {

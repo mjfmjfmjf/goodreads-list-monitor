@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { iterateBooks } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { normalizeAuthorName, looksLikeNameConcat } from './authorOrphans.js';
+import { iterateBooks } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { normalizeAuthorName, looksLikeNameConcat } from './authorOrphans.ts';
 
 const formatNum = (n: number): string => n.toLocaleString('en-US');
 

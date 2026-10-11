@@ -8,7 +8,7 @@ import {
   parseTopListRows,
   shouldSkipPage,
   distinctIdsFromRows,
-} from './popularByDate.js';
+} from './popularByDate.ts';
 
 describe('distinctIdsFromRows', () => {
   it('dedupes book ids preserving rank order and drops junk', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTagShelvesIndex, tagShelvedCount, findBelowTagShelves, resolveMissingWorkIds } from './auditor.js';
+import { buildTagShelvesIndex, tagShelvedCount, findBelowTagShelves, resolveMissingWorkIds } from './auditor.ts';
 
 const row = (bookId: string | number, shelved?: number | null) => ({ book_id: bookId, shelved });
 const workRow = (bookId: string | number, workId: string | number, shelved: number) => ({ book_id: bookId, work_id: workId, shelved });

@@ -1,8 +1,9 @@
 import chalk from 'chalk';
-import { LibraryExport, LibraryEntry } from './libraryExport.js';
-import { getLibrary } from './library.js';
-import { splitAuthorNames } from './bookMatch.js';
-import { normalizeAuthor } from './utils.js';
+import { LibraryExport, LibraryEntry } from './libraryExport.ts';
+import { getLibrary } from './library.ts';
+import { splitAuthorNames } from './bookMatch.ts';
+import { normalizeAuthor } from './utils.ts';
+import { starBucket } from './yearInBooks.ts';
 
 const STAR_LABELS = [5, 4, 3, 2, 1] as const;
 
@@ -97,7 +98,10 @@ export function groupRatedRows(entries: LibraryEntry[], extract: GroupExtractor)
       groups.set(extracted.key, group);
     }
     group.ratings.push(rating);
-    group.stars.set(rating, (group.stars.get(rating) || 0) + 1);
+    // Bucket fractional ratings into their rounded whole star for the
+    // per-author ★ breakdown; `ratings` keeps the exact value for the average.
+    const bucket = starBucket(rating);
+    group.stars.set(bucket, (group.stars.get(bucket) || 0) + 1);
     group.entries.push(entry);
   }
 

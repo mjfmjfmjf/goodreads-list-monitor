@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { iterateBooks, loadAuthorCache } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { normalizeAuthorName } from './authorOrphans.js';
+import { iterateBooks, iterateAuthors } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { normalizeAuthorName } from './authorOrphans.ts';
 
 const formatNum = (n: number): string => n.toLocaleString('en-US');
 
@@ -117,9 +117,14 @@ export function computeCumulatives(counts: number[]): { cumGE: number[]; cumLE: 
 }
 
 export async function runAuthorTopBookHistogram(): Promise<void> {
-  const authorCache = await loadAuthorCache();
-  const authorNames = new Set(Object.keys(authorCache));
-  const authorIds = new Set(Object.values(authorCache).map(e => String(e.id)));
+  // Only the id/name membership sets are needed, built by streaming the authors
+  // table once instead of materializing the full ~960k-row cache object.
+  const authorNames = new Set<string>();
+  const authorIds = new Set<string>();
+  for (const entry of iterateAuthors()) {
+    if (entry.name) authorNames.add(entry.name);
+    authorIds.add(entry.id);
+  }
 
   const buckets = buildAuthorBucketBuckets();
   const { counts, totalAuthors, inAuthorCache, notInAuthorCache } =

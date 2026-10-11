@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildYearEntry, extractYearLinks } from './bestOfYearConfig.js';
+import { buildYearEntry, extractYearLinks } from './bestOfYearConfig.ts';
 
 describe('extractYearLinks', () => {
   it('picks years from best_of_year hrefs and bare-year link text with correct URLs', () => {

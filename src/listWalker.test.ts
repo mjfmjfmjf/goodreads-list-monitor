@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { listHtmlUsable, isCaptchaPage } from './listWalker.js';
+import { listHtmlUsable, isCaptchaPage } from './listWalker.ts';
 
 describe('listHtmlUsable', () => {
   it('accepts a real list page', () => {
@@ -20,7 +20,7 @@ describe('listHtmlUsable', () => {
 describe('isCaptchaPage', () => {
   it('recognizes the common human-verification pages', () => {
     expect(isCaptchaPage('<html><title>Verify you are human</title></html>')).toBe(true);
-    expect(isCaptchaPage("<script src='https://challenges.cloudflare.com/turnstile/v0/api.js'></script>")).toBe(true);
+    expect(isCaptchaPage("<script src='https://challenges.cloudflare.com/turnstile/v0/api.ts'></script>")).toBe(true);
     expect(isCaptchaPage('AWS WAF Certification required to continue')).toBe(true);
     expect(isCaptchaPage('route through the captcha challenge before you can continue')).toBe(true);
     expect(isCaptchaPage('There was unusual traffic from your computer network.')).toBe(true);

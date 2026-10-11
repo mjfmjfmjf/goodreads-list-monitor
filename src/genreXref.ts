@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
-import { replaceGenreTagXref, loadGenreTagXref, loadGenres } from './storage.js';
-import { computeGenreCompare } from './genreCompare.js';
+import { getDb } from './db.ts';
+import { replaceGenreTagXref, loadGenreTagXref, loadGenres } from './storage.ts';
+import { computeGenreCompare } from './genreCompare.ts';
 
 // Curated spelling-variant families: a canonical genre mapped to all its
 // spelling/tag-form variants (kind='cognate'). These fold sf/scifi/sci-fi/sff

@@ -1,3 +1,5 @@
+import { cleanScrapedText } from './scraper.ts';
+
 export interface ChainLink {
   listId: string;
   label: string;
@@ -148,4 +150,16 @@ export function parseListStats(html: string): {
     walkablePages,
     walkableBooks: totalBooks ? Math.min(totalBooks, walkablePages * 100) : walkablePages * 100,
   };
+}
+
+export function parseListTags(html: string): string[] {
+  const m = html.match(/Tags:[\s\S]*?<\/div>/i);
+  if (!m) return [];
+  const block = m[0];
+  const tags = new Set<string>();
+  for (const am of block.matchAll(/<a[^>]*class="[^"]*actionLinkLite[^"]*"[^>]*href="[^"]*\/list\/show_tag\/[^"]*"[^>]*>([\s\S]*?)<\/a>/gi)) {
+    const t = cleanScrapedText(am[1].replace(/<[^>]+>/g, ''));
+    if (t) tags.add(t);
+  }
+  return Array.from(tags);
 }

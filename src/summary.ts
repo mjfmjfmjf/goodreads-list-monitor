@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { iterateBooks } from './storage.js';
-import { getYear } from './utils.js';
+import { iterateBooks } from './storage.ts';
+import { getYear } from './utils.ts';
 
 export async function runSummaryByYear(): Promise<void> {
   const yearCounts: { [year: number]: number } = {};

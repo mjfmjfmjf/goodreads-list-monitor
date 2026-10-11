@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { getLibrary } from './library.js';
+import { getLibrary } from './library.ts';
 
 export interface ShelfStatsOptions {
   limit?: string;

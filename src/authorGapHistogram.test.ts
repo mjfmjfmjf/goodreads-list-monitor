@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { computeAuthorMaxGap, extractYear } from './authorGapHistogram.js';
-import type { CachedBook } from './storage.js';
+import { computeAuthorMaxGap, extractYear } from './authorGapHistogram.ts';
+import type { CachedBook } from './storage.ts';
 
 const book = (o: Partial<CachedBook>): CachedBook => ({
   id: 'x', title: 'T', author: 'A', ratings: '0', published: '', lastUpdated: '', ...o,

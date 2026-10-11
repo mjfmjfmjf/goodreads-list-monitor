@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { scrapePopularListsPage, scrapeListBooks, TagListEntry } from './scraper.js';
-import { countAuthors, loadListScrape, syncBooksToCache, upsertListScrape, type BookCache } from './storage.js';
-import { delay, isConnectivityError, withConnectivityProbe } from './utils.js';
-import { shouldSkipList } from './listTagWalker.js';
+import { scrapePopularListsPage, scrapeListBooks, TagListEntry } from './scraper.ts';
+import { countAuthors, loadListScrape, syncBooksToCache, upsertListScrape, type BookCache } from './storage.ts';
+import { delay, isConnectivityError, withConnectivityProbe } from './utils.ts';
+import { shouldSkipList } from './listTagWalker.ts';
 
 export interface ListPopularWalkerOptions {
   startPage?: number;

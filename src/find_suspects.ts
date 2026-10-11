@@ -1,4 +1,4 @@
-import { iterateBooks } from './storage.js';
+import { iterateBooks } from './storage.ts';
 
 async function analyze() {
   let totalSuspects = 0;

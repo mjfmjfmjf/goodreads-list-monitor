@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { scrapeListBooks } from './scraper.js';
-import { syncBooksToCache, syncAuthorsToCache } from './storage.js';
-import type { BookCache, AuthorCache } from './storage.js';
-import { delay } from './utils.js';
+import { scrapeListBooks } from './scraper.ts';
+import { syncBooksToCache, syncAuthorsToCache } from './storage.ts';
+import type { BookCache, AuthorCache } from './storage.ts';
+import { delay } from './utils.ts';
 
 export const BEST_OF_YEAR_FIRST = 1980;
 export const MAX_PAGES_PER_YEAR = 100;

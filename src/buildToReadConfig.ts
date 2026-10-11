@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import * as cheerio from 'cheerio';
-import { fetchWithRetry, delay } from './utils.js';
+import { fetchWithRetry, delay } from './utils.ts';
 
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 

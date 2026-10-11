@@ -1,10 +1,10 @@
 import chalk from 'chalk';
-import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT, type AuthorCacheEntry } from './storage.js';
-import { loadAuthorBookStats } from './authorRescan.js';
-import type { AuthorBookStats } from './authorRescan.js';
-import { wasAuthorPageScraped, type SelectedAuthor } from './authorTopStats.js';
-import { scrapeAuthorStats } from './scraper.js';
-import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.js';
+import { iterateAuthors, getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, countBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_FAIL_LIMIT, type AuthorCacheEntry  , isRetiredAuthor } from './storage.ts';
+import { loadAuthorBookStats } from './authorRescan.ts';
+import type { AuthorBookStats } from './authorRescan.ts';
+import { authorPairs, wasAuthorPageScraped, type SelectedAuthor } from './authorTopStats.ts';
+import { scrapeAuthorStats, authorScrapeRef, describeAuthorId } from './scraper.ts';
+import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.ts';
 
 export interface AuthorRecentOptions {
   limit?: string;    // max authors to refresh per run (default 100)
@@ -48,13 +48,12 @@ export function newestYearSortKey(year: number, now: number): number {
 // then name. Authors with no author-page stats yet (numRatings 0) still qualify
 // if they own a recent book.
 export function selectRecentAuthors(
-  authorCache: Record<string, AuthorCacheEntry>,
+  authorCache: Record<string, AuthorCacheEntry> | Iterable<AuthorCacheEntry>,
   opts: RecentSelectionOptions,
 ): SelectedAuthor[] {
   const sortBy = opts.sortBy ?? 'ratings';
   const now = opts.now ?? new Date().getFullYear();
-  return Object.entries(authorCache)
-    .map(([name, entry]) => ({ name, entry, value: parseNum(entry.numRatings) }))
+  return Array.from(authorPairs(authorCache), ([id, entry]) => ({ id, name: entry.name ?? id, entry, value: parseNum(entry.numRatings) }))
     .filter(({ entry }) => {
       const stats = opts.bookStats[entry.id];
       return stats !== undefined && stats.books > 0;
@@ -85,8 +84,6 @@ export function selectRecentAuthors(
 }
 
 export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promise<void> {
-  const authorCache = await loadAuthorCache();
-
   const years = options.years !== undefined ? parseNum(options.years) : 10;
   const now = new Date().getFullYear();
   const minYear = now - years;
@@ -95,7 +92,7 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
   const sortBy = options.sortBy === 'newestYear' ? 'newestYear' : 'ratings';
 
   const bookStats = loadAuthorBookStats(minYear, 0);
-  const authors = selectRecentAuthors(authorCache, { limit, bookStats, now, sortBy });
+  const authors = selectRecentAuthors(iterateAuthors(), { limit, bookStats, now, sortBy });
 
   const orderNote = sortBy === 'newestYear'
     ? `sorted newest qualifying book first (future years equal, then ${now}, then back)`
@@ -115,7 +112,7 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
   let minAgeSkipped = 0;
   let failSkipped = 0;
   for (const a of authors) {
-    if ((a.entry.failCount ?? 0) >= AUTHOR_FAIL_LIMIT) {
+    if (isRetiredAuthor(a.id)) {
       failSkipped++;
       continue;
     }
@@ -134,31 +131,41 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
   let failed = 0;
   let updated = 0;
   let noStats = 0;
-  let totalInserted = 0;
+      let totalInserted = 0;
   let totalEnriched = 0;
   const booksAtStart = countBooks();
   const start = Date.now();
 
   for (let i = 0; i < toScrape.length; i++) {
-    const { name, entry: snapshotEntry, value } = toScrape[i];
+    const { id, name, entry: snapshotEntry, value } = toScrape[i];
+    // Declared out here (not inside the try) because BOTH the dead-page branch
+    // and the tail of the loop have to wait: retiring an author still cost one
+    // Goodreads request.
+    const [authorDelayMin, authorDelayMax] = parseDelayRange(
+      process.env.GR_AUTHOR_DELAY_MS,
+      options.withCookie ? 2000 : 1000,
+      options.withCookie ? 5000 : 1800
+    );
     try {
       const statsEntry = bookStats[snapshotEntry.id];
       const bookSuffix = statsEntry
         ? ` newest=${statsEntry.newestYear} top-bk-ratings=${statsEntry.topRatings.toLocaleString('en-US')} books=${statsEntry.books}`
         : '';
-      const failCount = snapshotEntry.failCount ?? 0;
+      const failCount = loadAuthorScrapeFailure(id)?.failCount ?? 0;
       const failSuffix = failCount > 0 ? ` failCount=${failCount}` : '';
-      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${snapshotEntry.slug}) numRatings=${value.toLocaleString('en-US')}${bookSuffix}${failSuffix}`));
+      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${snapshotEntry.slug || '(mint, no slug yet)'}) numRatings=${value.toLocaleString('en-US')}${bookSuffix}${failSuffix}`));
       let failReason = 'no_stats_line';
       const result = await withConnectivityProbe(
-        () => scrapeAuthorStats(snapshotEntry.slug, (r) => { failReason = r; }, false, 'original_publication_year', !!options.withCookie),
+        // Fall back to the id when the row is a mint with no slug yet, or
+        // buildAuthorListUrl would fetch `/author/list/null` and burn strikes.
+        () => scrapeAuthorStats(authorScrapeRef(snapshotEntry.slug, id), (r) => { failReason = r; }, false, 'original_publication_year', !!options.withCookie),
         { label: `author recent "${name}"` }
       );
       if (!result) {
         noStats++;
-        console.log(chalk.yellow(`   ⚠️ No stats line found for ${name}`));
-        recordAuthorFailure(name, failReason);
-        const strikes = getAuthor(name)?.failCount ?? (snapshotEntry.failCount ?? 0) + 1;
+        console.log(chalk.yellow(`   ⚠️ No stats line found for ${describeAuthorId(id, name)}`));
+        recordAuthorScrapeFailure(id, failReason);
+        const strikes = loadAuthorScrapeFailure(id)?.failCount ?? 1;
         console.log(chalk.gray(`      ↳ Consecutive failure ${strikes}/${AUTHOR_FAIL_LIMIT}${strikes >= AUTHOR_FAIL_LIMIT ? ' — skipped for future runs' : ''}`));
       } else {
         const stats = result.stats;
@@ -178,11 +185,10 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
           console.log(chalk.gray(`   (No books from ${minYear}+ on first page)`));
         }
 
-        const entry = getAuthor(name) ?? snapshotEntry;
+        const entry = getAuthorById(id) ?? snapshotEntry;
         const prevCatalogPages = entry.catalogPages;
         if (result.catalogPages) entry.catalogPages = result.catalogPages;
-        entry.failCount = 0;
-        entry.lastError = undefined;
+        clearAuthorScrapeFailure(id);
         // Every successful scrape (stats moved, catalog was extended, or the
         // page was identical) = "seen recently", so the other scrapers' --minAge
         // gate can skip it for the cooldown window.
@@ -200,14 +206,18 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
           `   ${chalk.green.bold(fmt(stats.numRatings, prev.numRatings))} ratings · ` +
           `${chalk.yellow(fmt(stats.numReviews, prev.numReviews))} reviews · ` +
           `${chalk.cyan(fmt(stats.numShelves, prev.numShelves))} shelves · ` +
-          `Avg ${fmt(stats.averageRating, prev.averageRating)}`
+          `Avg ${fmt(stats.averageRating, prev.averageRating)}` +
+          ` ${chalk.gray(`· slug ${entry.slug ?? '(none)'}`)}`
         );
+        // Persist the page's canonical name/slug; ids can outlive their slugs.
+        if (stats.name) entry.name = stats.name;
+        if (stats.slug) entry.slug = stats.slug;
+        upsertAuthorById(id, entry);
+        upsertAuthorSlug(id, entry.slug, entry.name);
         if (changed) {
           updated++;
-          upsertAuthor(name, entry);
           console.log(chalk.green.bold(`   ✅ Author cache updated`));
         } else {
-          upsertAuthor(name, entry);
           console.log(chalk.gray(`   (No change - values already current or not greater)`));
         }
       }
@@ -222,11 +232,6 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
       failed++;
       console.error(chalk.red.bold(`   ❌ Failed for ${name}: ${(error as any).message}`));
     }
-    const [authorDelayMin, authorDelayMax] = parseDelayRange(
-      process.env.GR_AUTHOR_DELAY_MS,
-      options.withCookie ? 2000 : 1000,
-      options.withCookie ? 5000 : 1800
-    );
     await delay(authorDelayMin, authorDelayMax);
   }
 

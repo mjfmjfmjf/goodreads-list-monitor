@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeGenreCompare } from './genreCompare.js';
+import { computeGenreCompare } from './genreCompare.ts';
 
 describe('computeGenreCompare', () => {
   it('splits into exact-matched, unmatched genres, and non-genre tags', () => {

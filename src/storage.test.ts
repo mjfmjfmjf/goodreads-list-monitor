@@ -9,7 +9,7 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-storage-test-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb, getDb } from './db.js';
+import { closeDb, getDb, reconcileListTagsXref } from './db.ts';
 import {
   deleteBook,
   findAuthorBySlug,
@@ -29,8 +29,13 @@ import {
   loadTagBooks,
   recordAuthorScrapeFailure,
   clearAuthorScrapeFailure,
+  strikeWeight,
+  isRetiredAuthor,
+  AUTHOR_FAIL_LIMIT,
+  upsertAuthorById,
   loadAuthorScrapeFailure,
   loadScrapeFailures,
+  loadStrikeMap,
   upsertGenres,
   loadGenres,
   countGenres,
@@ -44,9 +49,17 @@ import {
   backfillTagPageEstimates,
   upsertListScrape,
   loadListScrape,
+  upsertListTags,
+  loadListTags,
+  recordListTagMembership,
+  recordListTagWalkHistory,
+  loadListTagWalkHistory,
+  loadWalkedTagNames,
+  countListTagWalks,
+  loadWalkTagStats,
   mergeBooksFromAuthorPage
-} from './storage.js';
-import type { AuthorCacheEntry, CachedBook } from './storage.js';
+} from './storage.ts';
+import type { AuthorCacheEntry, CachedBook } from './storage.ts';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 
@@ -201,11 +214,12 @@ describe('author rows', () => {
     expect(findAuthorBySlug('missing.slug')).toBeUndefined();
   });
 
-  it('loadAuthorCache returns every row keyed by name', () => {
+  it('loadAuthorCache returns every row keyed by id', () => {
     upsertAuthor('Cache Check A', makeEntry({ id: '666', slug: '666.Cache_Check_A' }));
     const cache = loadAuthorCache();
-    expect(cache['Cache Check A'].slug).toBe('666.Cache_Check_A');
-    expect(cache['Round Trip Author']).toBeDefined();
+    expect(cache['666'].slug).toBe('666.Cache_Check_A');
+    expect(cache['666'].name).toBe('Cache Check A');
+    expect(cache['222']).toBeDefined();
   });
 });
 
@@ -219,13 +233,14 @@ describe('syncAuthorsToCache seeding', () => {
       { author: '' },
     ], cache as any);
     expect(getAuthor('Seeded Author')!.slug).toBe('777.Seeded_Author');
-    expect((cache as any)['Seeded Author'].id).toBe('777');
-    expect(Object.keys(cache as any)).toEqual(['Seeded Author']);
+    expect((cache as any)['777'].id).toBe('777');
+    expect((cache as any)['777'].name).toBe('Seeded Author');
+    expect(Object.keys(cache as any)).toEqual(['777']);
   });
 
   it('leaves existing entries alone when the slug matches, re-seeds when it changes', async () => {
     upsertAuthor('Slug Shift', makeEntry({ id: '999', slug: '999.Old_Slug', numRatings: '50' }));
-    const cache = { 'Slug Shift': makeEntry({ id: '999', slug: '999.Old_Slug', numRatings: '50' }) };
+    const cache = { '999': makeEntry({ id: '999', slug: '999.Old_Slug', numRatings: '50' }) };
     await syncAuthorsToCache([
       { author: 'Slug Shift', authorSlug: '999.Old_Slug' },
       { author: 'Slug Shift', authorSlug: '999.New_Slug', authorId: '999' },
@@ -485,6 +500,76 @@ describe('author scrape-failure tracking', () => {
     expect(fail?.lastSeen).toBeTruthy();
   });
 
+  // A 404/410 is a durable "no such author" from Goodreads, so it retires a dead
+  // id in two attempts instead of five round trips. The long tail is mostly
+  // these, and each wasted attempt costs a real request plus the inter-author delay.
+  it('weights a hard 404/410 as three strikes, retiring the author in two attempts', () => {
+    clearAuthorScrapeFailure('w404');
+    recordAuthorScrapeFailure('w404', 'HTTP 404 ERR_BAD_REQUEST');
+    expect(loadAuthorScrapeFailure('w404')?.failCount).toBe(3);
+    recordAuthorScrapeFailure('w404', 'HTTP 404 ERR_BAD_REQUEST');
+    expect(loadAuthorScrapeFailure('w404')?.failCount).toBe(AUTHOR_FAIL_LIMIT);
+  });
+
+  // axios labels EVERY 4xx `ERR_BAD_REQUEST`, so a 403 that is really a block
+  // must not inherit the 404 weight and get retired for the wrong reason.
+  it('does not triple-strike a 403 or a 429', () => {
+    expect(strikeWeight('HTTP 403 ERR_BAD_REQUEST')).toBe(1);
+    expect(strikeWeight('HTTP 429')).toBe(1);
+    expect(strikeWeight('HTTP 500')).toBe(1);
+    expect(strikeWeight('no_stats_line')).toBe(1);
+    expect(strikeWeight('SQLITE_BUSY')).toBe(1);
+  });
+
+  it('strikeWeight recognises bare and prefixed 404/410 forms', () => {
+    expect(strikeWeight('HTTP 404')).toBe(3);
+    expect(strikeWeight('HTTP 410')).toBe(3);
+    expect(strikeWeight('404 ERR_BAD_REQUEST')).toBe(3);
+  });
+
+  // The "6/5" readout: fail_count used to grow past the limit, which is never
+  // information — an author at the limit is already skipped. MIN() bounds it.
+  it('saturates fail_count at AUTHOR_FAIL_LIMIT so it can never exceed the limit', () => {
+    clearAuthorScrapeFailure('sat');
+    for (let i = 0; i < 20; i++) recordAuthorScrapeFailure('sat', 'no_stats_line');
+    expect(loadAuthorScrapeFailure('sat')?.failCount).toBe(AUTHOR_FAIL_LIMIT);
+
+    clearAuthorScrapeFailure('sat404');
+    for (let i = 0; i < 10; i++) recordAuthorScrapeFailure('sat404', 'HTTP 404 ERR_BAD_REQUEST');
+    expect(loadAuthorScrapeFailure('sat404')?.failCount).toBe(AUTHOR_FAIL_LIMIT);
+  });
+
+  // The run-start snapshot goes stale under any concurrent writer (another
+  // sweep, a ledger migration, a manual bump). Trusting it blindly is how a
+  // 5-strike author got scraped and printed "6/5", so the check is now an
+  // unconditional live read.
+  it('isRetiredAuthor reads the live ledger, not a stale snapshot', () => {
+    clearAuthorScrapeFailure('ret');
+    expect(isRetiredAuthor('ret')).toBe(false);   // never failed → not retired
+    expect(isRetiredAuthor('nope')).toBe(false);  // no ledger row at all
+
+    recordAuthorScrapeFailure('ret', 'no_stats_line');
+    expect(isRetiredAuthor('ret')).toBe(false);
+
+    recordAuthorScrapeFailure('ret', 'HTTP 404 ERR_BAD_REQUEST'); // +3 → 4, still live
+    expect(loadAuthorScrapeFailure('ret')?.failCount).toBe(4);
+    expect(isRetiredAuthor('ret')).toBe(false);
+
+    recordAuthorScrapeFailure('ret', 'no_stats_line'); // +1 → 5, retired
+    expect(isRetiredAuthor('ret')).toBe(true);
+
+    // Over the limit (legacy rows at 6/8 from the old migration): still retired.
+    getDb().prepare('UPDATE author_scrape_failures SET fail_count = 8 WHERE author_id = ?').run('ret');
+    expect(isRetiredAuthor('ret')).toBe(true);
+
+    // One strike short is NOT retired.
+    clearAuthorScrapeFailure('nearly');
+    for (let i = 0; i < AUTHOR_FAIL_LIMIT - 1; i++) recordAuthorScrapeFailure('nearly', 'no_stats_line');
+    expect(isRetiredAuthor('nearly')).toBe(false);
+    recordAuthorScrapeFailure('nearly', 'no_stats_line');
+    expect(isRetiredAuthor('nearly')).toBe(true);
+  });
+
   it('clearAuthorScrapeFailure removes the record', () => {
     recordAuthorScrapeFailure('55', 'boom');
     expect(loadAuthorScrapeFailure('55')?.failCount).toBe(1);
@@ -503,6 +588,51 @@ describe('author scrape-failure tracking', () => {
     const byId = Object.fromEntries(all.map(f => [f.authorId, f.failCount]));
     expect(byId['111']).toBe(1);
     expect(byId['222']).toBe(2);
+  });
+
+  // Regression guard: §4 pointed the sweeps' candidate filter at
+  // author_scrape_failures alone while authors.fail_count still existed. The two
+  // ledgers barely overlap (live DB: 569 ids legacy-only, 721 ledger-only), so
+  // every author the legacy counter had already retired at the threshold was
+  // silently re-admitted — 519 never-crawled authors, and a --sortBy topRatings
+  // queue that GREW (235,645 -> 235,907) instead of shrinking.
+  it('loadStrikeMap unions the legacy authors.fail_count with the ledger', () => {
+    const db = getDb();
+    const hasLegacy = (db.prepare('PRAGMA table_info(authors)').all() as any[]).some((c) => c.name === 'fail_count');
+
+    // Legacy-only author: known to the old counter, absent from the ledger.
+    const legacyOnly = '900001';
+    clearAuthorScrapeFailure(legacyOnly);
+    db.prepare('INSERT INTO authors (id, name, slug, last_seen) VALUES (?,?,?,?)').run(legacyOnly, 'L', `${legacyOnly}.L`, '2026-01-01');
+    if (hasLegacy) db.prepare('UPDATE authors SET fail_count = 4 WHERE id = ?').run(legacyOnly);
+
+    // Ledger-only author.
+    const ledgerOnly = '900002';
+    clearAuthorScrapeFailure(ledgerOnly);
+    db.prepare('INSERT INTO authors (id, name, slug, last_seen) VALUES (?,?,?,?)').run(ledgerOnly, 'L2', `${ledgerOnly}.L2`, '2026-01-01');
+    recordAuthorScrapeFailure(ledgerOnly, 'e1');
+    recordAuthorScrapeFailure(ledgerOnly, 'e1');
+    recordAuthorScrapeFailure(ledgerOnly, 'e1');
+
+    const map = loadStrikeMap();
+    if (hasLegacy) {
+      // The regression: filtering on the ledger alone returned 0 here and let an
+      // already-exhausted author back into the crawl queue.
+      expect(map.get(legacyOnly)).toBe(4);
+    }
+    expect(map.get(ledgerOnly)).toBe(3);
+
+    // max(), not overwrite — an author at 1 in one ledger and 4 in the other
+    // must be treated as 4.
+    if (hasLegacy) {
+      clearAuthorScrapeFailure(legacyOnly);
+      recordAuthorScrapeFailure(legacyOnly, 'e1');
+      expect(loadStrikeMap().get(legacyOnly)).toBe(4);
+    }
+
+    db.prepare('DELETE FROM authors WHERE id IN (?,?)').run(legacyOnly, ledgerOnly);
+    clearAuthorScrapeFailure(ledgerOnly);
+    clearAuthorScrapeFailure(legacyOnly);
   });
 });
 
@@ -694,3 +824,229 @@ describe('list_scrapes', () => {
     expect(loadListScrape('999999')).toBeUndefined();
   });
 });
+
+describe('unified list↔tag xref + walk history', () => {
+  const clear = () => {
+    getDb().exec('DELETE FROM list_tag_walk_history');
+    getDb().exec('DELETE FROM list_tags WHERE from_directory = 1');
+    getDb().exec('DELETE FROM list_tag_walks');
+  };
+  beforeEach(() => clear());
+
+  it('recordListTagMembership flags each list as reached through the directory tag', () => {
+    recordListTagMembership('2024', ['99001', '99002'], '2026-10-05T00:00:00.000Z');
+    const rows = getDb().prepare(
+      `SELECT list_id, from_sidebar, from_directory, first_seen, last_seen
+       FROM list_tags WHERE from_directory = 1 ORDER BY list_id`,
+    ).all() as any[];
+    expect(rows.map(r => r.list_id)).toEqual(['99001', '99002']);
+    expect(rows.every(r => r.from_sidebar === 0 && r.from_directory === 1)).toBe(true);
+    expect(rows[0].first_seen).toBe('2026-10-05T00:00:00.000Z');
+  });
+
+  it('merges with an existing sidebar row instead of duplicating it — one xref, both routes', () => {
+    upsertListTags('99001', ['fiction'], '2026-10-01T00:00:00.000Z');
+    recordListTagMembership('fiction', ['99001'], '2026-10-07T00:00:00.000Z');
+
+    const rows = getDb().prepare(
+      `SELECT from_sidebar, from_directory, first_seen, last_seen
+       FROM list_tags WHERE list_id='99001' AND tag_name='fiction'`,
+    ).all() as any[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].from_sidebar).toBe(1);
+    expect(rows[0].from_directory).toBe(1);
+    // first_seen stays at the earliest sighting from either route; last_seen
+    // follows the newest read.
+    expect(rows[0].first_seen).toBe('2026-10-01T00:00:00.000Z');
+    expect(rows[0].last_seen).toBe('2026-10-07T00:00:00.000Z');
+  });
+
+  it('lowercases directory tags on write, so Goodreads-equivalent spellings collapse', () => {
+    recordListTagMembership('Dutch', ['1'], 't1');
+    recordListTagMembership('dutch', ['2'], 't1');
+    const rows = getDb().prepare(
+      `SELECT list_id FROM list_tags WHERE tag_name='dutch' AND from_directory=1 ORDER BY list_id`,
+    ).all() as any[];
+    expect(rows.map(r => r.list_id)).toEqual(['1', '2']);
+  });
+
+  it('recordListTagWalkHistory counts walks and remembers what the directory yielded', () => {
+    recordListTagWalkHistory('Fiction', 3, '2026-10-05T00:00:00.000Z');
+    recordListTagWalkHistory('fiction', 5, '2026-10-06T00:00:00.000Z');
+
+    const rows = loadListTagWalkHistory();
+    expect(rows).toEqual([{
+      tagName: 'fiction',
+      firstWalked: '2026-10-05T00:00:00.000Z',
+      lastWalked: '2026-10-06T00:00:00.000Z',
+      walks: 2,
+      lists: 5,
+    }]);
+  });
+
+  it('keeps NULL num_lists (membership genuinely unknown) distinct from a count', () => {
+    recordListTagWalkHistory('2010', null, 't1');
+    const rows = loadListTagWalkHistory();
+    expect(rows[0].lists).toBeNull();
+    // countListTagWalks counts only known-membership tags under withMembership
+    recordListTagWalkHistory('fiction', 2, 't1');
+    expect(countListTagWalks()).toEqual({ tags: 2, withMembership: 1 });
+  });
+
+  it('loadWalkedTagNames lowercases names stored before normalization existed', () => {
+    // Simulate a legacy row written by an older build: bypass the writer so a
+    // capitalized name lands in the table directly.
+    getDb().prepare(
+      `INSERT INTO list_tag_walk_history (tag_name, first_walked, last_walked, num_walks, num_lists)
+       VALUES ('Castilian', 't1', 't1', 1, NULL)`,
+    ).run();
+    expect(loadWalkedTagNames()).toEqual(['castilian']);
+  });
+
+  it('loadWalkedTagStats exposes counts, walk count, and last-walk time', () => {
+    recordListTagWalkHistory('historical', 1018, '2026-10-07T00:00:00.000Z');
+    const stats = loadWalkTagStats();
+    expect(stats.get('historical')).toEqual({
+      lists: 1018,
+      walkedAt: '2026-10-07T00:00:00.000Z',
+      walks: 1,
+    });
+  });
+
+  it('reports zero when nothing is recorded', () => {
+    expect(countListTagWalks()).toEqual({ tags: 0, withMembership: 0 });
+    expect(loadWalkedTagNames()).toEqual([]);
+    expect(loadWalkTagStats().size).toBe(0);
+  });
+
+  describe('reconcileListTagsXref (legacy list_tag_walks → unified xref)', () => {
+    const WALK_PLACEHOLDER = '';
+    const LEGACY = getDb().prepare(
+      'INSERT INTO list_tag_walks (tag_name, list_id, walked_at) VALUES (?, ?, ?)',
+    );
+    const cleanup = () => {
+      getDb().exec(
+        `DELETE FROM list_tag_walks;
+         DELETE FROM list_tags WHERE tag_name IN ('legacytag', 'ph', 'castilian-x');
+         DELETE FROM list_tag_walk_history WHERE tag_name IN ('legacytag', 'ph', 'castilian-x');`,
+      );
+    };
+    beforeEach(() => cleanup());
+    afterAll(() => cleanup());
+
+    it('mirrors legacy membership rows into list_tags and seeds the walk history', () => {
+      LEGACY.run('LegacyTag', '555', '2026-10-01T00:00:00.000Z');
+      LEGACY.run('legacytag', '556', '2026-10-02T00:00:00.000Z');
+
+      reconcileListTagsXref();
+
+      const rows = getDb().prepare(
+        `SELECT list_id, from_sidebar, from_directory, first_seen
+         FROM list_tags WHERE tag_name='legacytag' ORDER BY list_id`,
+      ).all() as any[];
+      expect(rows).toEqual([
+        { list_id: '555', from_sidebar: 0, from_directory: 1, first_seen: '2026-10-01T00:00:00.000Z' },
+        { list_id: '556', from_sidebar: 0, from_directory: 1, first_seen: '2026-10-02T00:00:00.000Z' },
+      ]);
+
+      const hist = getDb().prepare(
+        `SELECT first_walked, last_walked, num_lists FROM list_tag_walk_history WHERE tag_name='legacytag'`,
+      ).get() as any;
+      expect(hist.first_walked).toBe('2026-10-01T00:00:00.000Z');
+      expect(hist.last_walked).toBe('2026-10-02T00:00:00.000Z');
+      expect(hist.num_lists).toBe(2);
+    });
+
+    it('is idempotent — a second run neither duplicates rows nor moves timestamps', () => {
+      LEGACY.run('legacytag', '555', '2026-10-01T00:00:00.000Z');
+      LEGACY.run('legacytag', '556', '2026-10-02T00:00:00.000Z');
+      reconcileListTagsXref();
+      reconcileListTagsXref();
+
+      const count = getDb().prepare(
+        `SELECT COUNT(*) AS c FROM list_tags WHERE tag_name='legacytag'`,
+      ).get() as any;
+      expect(count.c).toBe(2);
+      const hist = getDb().prepare(
+        `SELECT COUNT(*) AS c FROM list_tag_walk_history WHERE tag_name='legacytag'`,
+      ).get() as any;
+      expect(hist.c).toBe(1);
+    });
+
+    it('seeds history with NULL lists for a placeholder-only legacy walk', () => {
+      LEGACY.run('ph', WALK_PLACEHOLDER, '2026-10-01T00:00:00.000Z');
+      reconcileListTagsXref();
+
+      // No membership rows invented — '' is not a list id.
+      const memberships = getDb().prepare(
+        `SELECT COUNT(*) AS c FROM list_tags WHERE tag_name='ph'`,
+      ).get() as any;
+      expect(memberships.c).toBe(0);
+
+      const hist = getDb().prepare(
+        `SELECT num_lists FROM list_tag_walk_history WHERE tag_name='ph'`,
+      ).get() as any;
+      expect(hist.num_lists).toBeNull();
+    });
+
+    it('stamps rows with neither provenance flag as sidebar (old-code writes)', () => {
+      // Old code inserted without the provenance columns → both default to 0.
+      getDb().prepare(
+        `INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen)
+         VALUES ('LX', 'castilian-x', 't1', 't1')`,
+      ).run();
+      reconcileListTagsXref();
+      const row = getDb().prepare(
+        `SELECT from_sidebar, from_directory FROM list_tags WHERE list_id='LX' AND tag_name='castilian-x'`,
+      ).get() as any;
+      expect(row.from_sidebar).toBe(1);
+      expect(row.from_directory).toBe(0);
+    });
+  });
+});
+
+describe('list_tags', () => {
+  const clear = () => getDb().prepare(`DELETE FROM list_tags WHERE list_id = '35080'`).run();
+  beforeEach(() => clear());
+
+  it('records one row per tag with first/last timestamps', () => {
+    const t1 = '2026-10-05T00:00:00.000Z';
+    upsertListTags('35080', ['1000000', 'villaine', 'ratings'], t1);
+
+    expect(loadListTags('35080')).toEqual([
+      { listId: '35080', tagName: '1000000', firstSeen: t1, lastSeen: t1 },
+      { listId: '35080', tagName: 'ratings', firstSeen: t1, lastSeen: t1 },
+      { listId: '35080', tagName: 'villaine', firstSeen: t1, lastSeen: t1 },
+    ]);
+  });
+
+  it('is idempotent — a re-read advances last_seen but never adds or re-stamps', () => {
+    const t1 = '2026-10-05T00:00:00.000Z';
+    const t2 = '2026-10-06T00:00:00.000Z';
+    upsertListTags('35080', ['1000000', 'villaine'], t1);
+    upsertListTags('35080', ['1000000', 'villaine'], t2);
+
+    const rows = loadListTags('35080');
+    expect(rows).toHaveLength(2);
+    expect(rows.every(r => r.firstSeen === t1)).toBe(true);
+    expect(rows.every(r => r.lastSeen === t2)).toBe(true);
+  });
+
+  it('is a no-op for an empty tag list', () => {
+    upsertListTags('35080', [], '2026-10-05T00:00:00.000Z');
+    expect(loadListTags('35080')).toEqual([]);
+  });
+
+  it('keeps tags from other lists separate', () => {
+    upsertListTags('35080', ['villaine'], '2026-10-05T00:00:00.000Z');
+    upsertListTags('99999', ['sci-fi'], '2026-10-05T00:00:00.000Z');
+    expect(loadListTags('35080').map(r => r.tagName)).toEqual(['villaine']);
+    expect(loadListTags('99999').map(r => r.tagName)).toEqual(['sci-fi']);
+    getDb().prepare(`DELETE FROM list_tags WHERE list_id = '99999'`).run();
+  });
+
+  it('returns an empty list for a list whose tags were never seen', () => {
+    expect(loadListTags('424242')).toEqual([]);
+  });
+});
+

@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { loadAuthorCache } from './storage.js';
-import { getDb } from './db.js';
+import { streamRows } from './storage.ts';
+import { getDb } from './db.ts';
 
 export interface HarvestBuckets {
   total: number;
@@ -48,9 +48,18 @@ function fmtLine(label: string, n: number, total: number): string {
 }
 
 export async function runAuthorHarvestStatus(): Promise<void> {
-  const authorCache = await loadAuthorCache();
+  // Whole-dataset statistic: every author row is the input, but we only need
+  // two columns per row — no SELECT * and no ~960k-entry JS object.
+  const entries = streamRows<{ hasStats: number; lastSeen: string }>(`
+    SELECT CAST(
+        (COALESCE(num_ratings,0) <> 0 OR average_rating IS NOT NULL
+         OR COALESCE(num_reviews,0) <> 0 OR COALESCE(num_shelves,0) <> 0)
+      AS INTEGER) AS hasStats,
+      last_seen AS lastSeen
+    FROM authors
+  `);
   const buckets = computeHarvestBuckets(
-    Object.values(authorCache).map(e => ({ hasStats: !!(e.numRatings || e.averageRating || e.numReviews || e.numShelves), lastSeen: e.lastSeen }))
+    Array.from(entries, e => ({ hasStats: !!e.hasStats, lastSeen: e.lastSeen }))
   );
 
   console.log(chalk.cyan.bold('\n👤 Author harvest status:\n'));

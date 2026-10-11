@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { loadAuthorCache, iterateBooks, getAuthor, findAuthorBySlug, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { scrapeAuthorStats } from './scraper.js';
-import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.js';
+import { iterateBooks, getAuthor, getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, countBooks, countAuthors, recordAuthorScrapeFailure, clearAuthorScrapeFailure, AUTHOR_FAIL_LIMIT  , isRetiredAuthor } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { scrapeAuthorStats, authorScrapeRef, describeAuthorId } from './scraper.ts';
+import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.ts';
 
 export interface AuthorTopBooksOptions {
   minRatings?: string;
@@ -21,10 +21,7 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
   console.log(chalk.cyan.bold(`\n👤 Author Stats: capturing stats for the authors of the top ${n} books by ratings`));
   console.log(chalk.gray(`   Ratings filter: ${minRatings.toLocaleString()} - ${maxRatings === Infinity ? '∞' : maxRatings.toLocaleString()}`));
 
-  console.log(chalk.gray('   Loading author cache...'));
-  const authorCache = await loadAuthorCache();
-
-  console.log(chalk.gray(`   Loaded ${countBooks().toLocaleString()} books, ${Object.keys(authorCache).length.toLocaleString()} authors. Filtering and sorting...`));
+  console.log(chalk.gray(`   ${countBooks().toLocaleString()} books, ${countAuthors().toLocaleString()} authors in cache. Filtering and sorting...`));
 
   // 1. Stream the book table, keeping only the top `n` books by ratings (same
   //    range semantics as the histograms).
@@ -50,15 +47,20 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
     return;
   }
 
-  // 2. Distinct authors from those books (scrape each author only once per run)
-  const authors: { name: string; slug: string }[] = [];
-  const seenSlugs = new Set<string>();
+  // 2. Distinct authors from those books (scrape each author only once per run).
+  //    Only the top-n books' authors are ever resolved — a handful of indexed
+  //    row lookups, so there's no full ~960k-row load here.
+  const authors: { id: string; name: string; slug: string }[] = [];
+  const seenIds = new Set<string>();
   for (const book of topBooks) {
-    const entry = authorCache[book.author];
+    const entry = (book.authorId ? getAuthorById(String(book.authorId)) : undefined)
+      ?? (book.author ? getAuthor(book.author) : undefined);
     const slug = entry?.slug;
-    if (!slug || seenSlugs.has(slug)) continue;
-    seenSlugs.add(slug);
-    authors.push({ name: book.author, slug });
+    if (!slug || !entry?.id) continue;
+    const id = String(entry.id);
+    if (seenIds.has(id)) continue;
+    seenIds.add(id);
+    authors.push({ id, name: entry.name ?? book.author, slug });
   }
 
   console.log(chalk.gray(`   Top ${topBooks.length} books → ${authors.length} distinct authors.`));
@@ -77,9 +79,9 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
     let freshSkipped = 0;
     let failSkipped = 0;
     toScrape = authors.filter(a => {
-      const entry = authorCache[a.name] || Object.values(authorCache).find(e => e.slug === a.slug);
+      const entry = getAuthorById(a.id);
       if (!entry || entry.numRatings === undefined) return true;
-      if ((entry.failCount ?? 0) >= AUTHOR_FAIL_LIMIT) {
+      if (isRetiredAuthor(a.id)) {
         failSkipped++;
         return false;
       }
@@ -101,7 +103,7 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
   console.log(chalk.gray(`   ${toScrape.length} authors to scrape.\n`));
 
   let failed = 0;
-  let updated = 0;
+      let updated = 0;
   let totalInserted = 0;
   let totalEnriched = 0;
   const booksAtStart = countBooks();
@@ -109,67 +111,75 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
 
   for (let i = 0; i < toScrape.length; i++) {
     const author = toScrape[i];
+    // Anonymous crawls (no cookie) run at a faster but still polite cadence;
+    // GR_AUTHOR_DELAY_MS overrides either profile ("min,max"). Declared out here
+    // because every exit from this loop has to wait — retiring a page or failing
+    // to parse one still cost a Goodreads request.
+    const [authorDelayMin, authorDelayMax] = parseDelayRange(
+      process.env.GR_AUTHOR_DELAY_MS,
+      options.withCookie ? 2000 : 1000,
+      options.withCookie ? 5000 : 1800
+    );
     try {
-      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${author.name} (${author.slug})`));
+      console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${author.name} (${author.slug || '(mint, no slug yet)'})`));
       let failReason = 'no_stats_line';
       const result = await withConnectivityProbe(
-        () => scrapeAuthorStats(author.slug, (r) => { failReason = r; }, false, undefined, !!options.withCookie),
+        // Fall back to the id when the row is a mint with no slug yet, or
+        // buildAuthorListUrl would fetch `/author/list/null` and burn strikes.
+        () => scrapeAuthorStats(authorScrapeRef(author.slug, author.id), (r) => { failReason = r; }, false, undefined, !!options.withCookie),
         { label: `author top-books scan "${author.name}"` }
       );
       if (!result) {
         failed++;
-        console.log(chalk.yellow(`   ⚠️ No stats line found for ${author.name}`));
-        recordAuthorFailure(author.name, failReason);
+        console.log(chalk.yellow(`   ⚠️ No stats line found for ${describeAuthorId(author.id, author.name)}`));
+        recordAuthorScrapeFailure(author.id, failReason);
+        await delay(authorDelayMin, authorDelayMax);
         continue;
       }
       const stats = result.stats;
       totalInserted += result.booksInserted;
       totalEnriched += result.booksEnriched;
-      // Resolve the DB row key from the snapshot, then re-read fresh so we
-      // merge against current values (another process may have updated it).
-      const snapKey = authorCache[author.name]
-        ? author.name
-        : Object.keys(authorCache).find(k => authorCache[k].slug === author.slug);
-      let key = snapKey;
-      let entry = key ? getAuthor(key) : undefined;
-      if (!entry) {
-        const found = findAuthorBySlug(author.slug);
-        if (found) {
-          key = found.key;
-          entry = found.entry;
-        }
-      }
-      if (key && entry) {
-        const prevCatalogPages = entry.catalogPages;
-        if (result.catalogPages) entry.catalogPages = result.catalogPages;
-        entry.failCount = 0;
-        entry.lastError = undefined;
-        // Every successful scrape = "seen recently", so --minAge gates in the
-        // other scrapers can skip this author for the cooldown window.
-        entry.lastSeen = new Date().toISOString();
-        const prev = {
-          averageRating: entry.averageRating,
-          numRatings: entry.numRatings,
-          numReviews: entry.numReviews,
-          numShelves: entry.numShelves,
-        };
-        const changed = updateAuthorStats(entry, stats) || entry.catalogPages !== prevCatalogPages;
-        const fmt = (cur?: string, was?: string) =>
-          `${cur ?? 'n/a'}${was !== undefined && was !== cur ? chalk.gray(` (prev ${was})`) : ''}`;
-        console.log(
-          `   ${chalk.green.bold(fmt(stats.numRatings, prev.numRatings))} ratings · ` +
-          `${chalk.yellow(fmt(stats.numReviews, prev.numReviews))} reviews · ` +
-          `${chalk.cyan(fmt(stats.numShelves, prev.numShelves))} shelves · ` +
-          `Avg ${fmt(stats.averageRating, prev.averageRating)}`
-        );
-        if (changed) {
-          updated++;
-          upsertAuthor(key, entry);
-          console.log(chalk.green.bold(`   ✅ Author cache updated`));
-        } else {
-          upsertAuthor(key, entry);
-          console.log(chalk.gray(`   (No change - values already current or not greater)`));
-        }
+      // Re-read fresh so we merge against current values (another process may
+      // have updated this row since the snapshot was taken). Mint if the id
+      // isn't cached yet (e.g. books written after the cache snapshot).
+      const entry = getAuthorById(author.id) ?? {
+        id: author.id,
+        name: author.name,
+        slug: author.slug,
+        lastSeen: new Date().toISOString(),
+      };
+      const prevCatalogPages = entry.catalogPages;
+      if (result.catalogPages) entry.catalogPages = result.catalogPages;
+      clearAuthorScrapeFailure(author.id);
+      // Every successful scrape = "seen recently", so --minAge gates in the
+      // other scrapers can skip this author for the cooldown window.
+      entry.lastSeen = new Date().toISOString();
+      const prev = {
+        averageRating: entry.averageRating,
+        numRatings: entry.numRatings,
+        numReviews: entry.numReviews,
+        numShelves: entry.numShelves,
+      };
+      const changed = updateAuthorStats(entry, stats) || entry.catalogPages !== prevCatalogPages;
+      const fmt = (cur?: string, was?: string) =>
+        `${cur ?? 'n/a'}${was !== undefined && was !== cur ? chalk.gray(` (prev ${was})`) : ''}`;
+      console.log(
+        `   ${chalk.green.bold(fmt(stats.numRatings, prev.numRatings))} ratings · ` +
+        `${chalk.yellow(fmt(stats.numReviews, prev.numReviews))} reviews · ` +
+        `${chalk.cyan(fmt(stats.numShelves, prev.numShelves))} shelves · ` +
+        `Avg ${fmt(stats.averageRating, prev.averageRating)}` +
+        ` ${chalk.gray(`· slug ${entry.slug ?? '(none)'}`)}`
+      );
+      // Persist the page's canonical name/slug; ids can outlive their slugs.
+      if (stats.name) entry.name = stats.name;
+      if (stats.slug) entry.slug = stats.slug;
+      upsertAuthorById(author.id, entry);
+      upsertAuthorSlug(author.id, entry.slug, entry.name);
+      if (changed) {
+        updated++;
+        console.log(chalk.green.bold(`   ✅ Author cache updated`));
+      } else {
+        console.log(chalk.gray(`   (No change - values already current or not greater)`));
       }
     } catch (error) {
       // Network went down mid-run — aborts cleanly instead of black-marking
@@ -186,13 +196,6 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
       failed++;
       console.error(chalk.red.bold(`   ❌ Failed for ${author.name}: ${(error as any).message}`));
     }
-    // Anonymous crawls (no cookie) run at a faster but still polite cadence;
-    // GR_AUTHOR_DELAY_MS overrides either profile ("min,max").
-    const [authorDelayMin, authorDelayMax] = parseDelayRange(
-      process.env.GR_AUTHOR_DELAY_MS,
-      options.withCookie ? 2000 : 1000,
-      options.withCookie ? 5000 : 1800
-    );
     await delay(authorDelayMin, authorDelayMax);
   }
 

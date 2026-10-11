@@ -1,3 +1,4 @@
+import chalk from 'chalk';
 import fs from 'fs-extra';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -10,11 +11,11 @@ vi.hoisted(() => {
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 
-import { topStarLevel, parseRating, readingDays, renderStats, computeTagCounts, computeGenreVotes, computeGenreVoteByBook, renderTags, SectionContext } from './yearInBooks.js';
-import type { TagBookRow } from './storage.js';
-import { closeDb, getDb } from './db.js';
-import { upsertTagBooks, replaceGenreTagXref } from './storage.js';
-import { LibraryEntry } from './libraryExport.js';
+import { topStarLevel, parseRating, starBucket, renderRatings, readingDays, renderStats, computeTagCounts, computeGenreVotes, computeGenreVoteByBook, renderTags, SectionContext } from './yearInBooks.ts';
+import type { TagBookRow } from './storage.ts';
+import { closeDb, getDb } from './db.ts';
+import { upsertTagBooks, replaceGenreTagXref } from './storage.ts';
+import { LibraryEntry } from './libraryExport.ts';
 
 afterAll(() => {
   closeDb();
@@ -45,10 +46,27 @@ describe('parseRating', () => {
     expect(parseRating(entry('5'))).toBe(5);
     expect(parseRating(entry('4'))).toBe(4);
   });
+  it('parses fractional star ratings (Goodreads quarter-star data-rating values)', () => {
+    expect(parseRating(entry('3.75'))).toBe(3.75);
+    expect(parseRating(entry('4.25'))).toBe(4.25);
+  });
   it('returns undefined for missing or zero ratings', () => {
     expect(parseRating(entry(''))).toBeUndefined();
     expect(parseRating(entry('0'))).toBeUndefined();
     expect(parseRating(entry('n/a'))).toBeUndefined();
+  });
+});
+
+describe('starBucket', () => {
+  it('keeps whole stars as-is', () => {
+    expect(starBucket(1)).toBe(1);
+    expect(starBucket(3)).toBe(3);
+    expect(starBucket(5)).toBe(5);
+  });
+  it('rounds fractional ratings to the nearest whole star', () => {
+    expect(starBucket(3.75)).toBe(4);
+    expect(starBucket(4.25)).toBe(4);
+    expect(starBucket(4.75)).toBe(5);
   });
 });
 
@@ -65,6 +83,35 @@ describe('topStarLevel', () => {
   });
   it('returns 0 when nothing is rated', () => {
     expect(topStarLevel([entry(''), entry('0')])).toBe(0);
+  });
+  it('treats a fractional rating as the top level when it is the maximum', () => {
+    expect(topStarLevel([entry('3.75'), entry('3'), entry('2')])).toBe(3.75);
+    expect(topStarLevel([entry('4.25'), entry('4')])).toBe(4.25);
+  });
+  it('still ranks a higher integer above a fractional value', () => {
+    expect(topStarLevel([entry('5'), entry('4.75')])).toBe(5);
+    expect(topStarLevel([entry('4.75'), entry('4')])).toBe(4.75);
+  });
+});
+
+describe('renderRatings', () => {
+  it('buckets fractional ratings into a whole-star histogram but keeps the exact average', () => {
+    chalk.level = 0;
+    const lines = renderRatings([entry('5'), entry('3.75'), entry('4'), entry('2')]);
+    const starLine = lines[0];
+    expect(starLine).toContain('1 five-star');
+    expect(starLine).toContain('2 four-stars');
+    expect(starLine).toContain('1 two-star'); // rating '2' stays in the two-star bucket
+    expect(starLine).not.toContain('one-star');
+    expect(starLine).not.toContain('3.75');
+    // (5 + 3.75 + 4 + 2) / 4 = 3.6875
+    expect(lines.some(l => l.includes('Average rating: 3.69'))).toBe(true);
+  });
+  it('shows a lone quarter rating as a four-star bucket', () => {
+    chalk.level = 0;
+    const lines = renderRatings([entry('3.75')]);
+    expect(lines[0]).toContain('1 four-star');
+    expect(lines.some(l => l.includes('Average rating: 3.75'))).toBe(true);
   });
 });
 

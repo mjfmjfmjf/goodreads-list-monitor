@@ -2,11 +2,11 @@ import chalk from 'chalk';
 import * as cheerio from 'cheerio';
 import readline from 'readline';
 import { execSync } from 'child_process';
-import { getBook, upsertBook, syncAuthorsToCache } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { formatDate } from './utils.js';
-import { scrapeBookDetails } from './scraper.js';
-import { scrapeAndCacheBook } from './singleBook.js';
+import { getBook, upsertBook, syncAuthorsToCache } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { formatDate } from './utils.ts';
+import { scrapeBookDetails } from './scraper.ts';
+import { scrapeAndCacheBook } from './singleBook.ts';
 
 export interface ParsedBookData {
   title?: string;

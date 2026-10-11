@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { computeAuthorTopBookHistogram, buildAuthorBucketBuckets } from './authorTopBookHistogram.js';
-import type { CachedBook } from './storage.js';
+import { computeAuthorTopBookHistogram, buildAuthorBucketBuckets } from './authorTopBookHistogram.ts';
+import type { CachedBook } from './storage.ts';
 
 const book = (author: string, ratings: string, opts: { authorId?: string } = {}): CachedBook => ({
   id: Math.random().toString(36).slice(2),

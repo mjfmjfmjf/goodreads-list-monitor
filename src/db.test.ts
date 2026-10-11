@@ -7,7 +7,7 @@ vi.hoisted(() => {
 });
 
 import fs from 'fs-extra';
-import { checkpointCompleted, closeDb, getDb } from './db.js';
+import { checkpointCompleted, closeDb, getDb } from './db.ts';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 
@@ -48,6 +48,24 @@ describe('database lock observability', () => {
     stmt.run('t-1', 'now', 'now');
     stmt.run('t-2', 'now', 'now');
     expect(db.prepare('SELECT COUNT(*) AS c FROM genres WHERE name IN (?, ?)').get('t-1', 't-2')).toEqual({ c: 2 });
+  });
+});
+
+describe('schema', () => {
+  it('keys authors by id (primary key)', () => {
+    const db = getDb();
+    const row = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'authors'")
+      .get() as any;
+    expect(row.sql).toMatch(/id TEXT PRIMARY KEY/);
+  });
+
+  it('creates the author_slugs history ledger', () => {
+    const db = getDb();
+    const row = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'author_slugs'")
+      .get();
+    expect(row).toBeTruthy();
   });
 });
 

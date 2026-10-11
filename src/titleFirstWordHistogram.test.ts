@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeTitleFirstWordHistogram, extractFirstWord } from './titleFirstWordHistogram.js';
+import { computeTitleFirstWordHistogram, extractFirstWord } from './titleFirstWordHistogram.ts';
 
 describe('extractFirstWord', () => {
   it('lowercases and returns the first word', () => {

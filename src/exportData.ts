@@ -5,15 +5,23 @@ import path from 'path';
 import chalk from 'chalk';
 
 // Sanitized CSV+gzip export of the shareable library-data tables (books,
-// authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists,
-// popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state).
+// authors, author_slugs, tag_books, genres, genre_tag_xref, list_tags,
+// list_tag_walk_history, book_page, tag_stats, lists, popular_by_date_book,
+// tag_tail_scrapes, tag_tail_monitor_state).
 // Deliberately EXCLUDES config (live session cookies / userId), browser_scrape
 // and author_scrape_failures (operational scrape checkpoints), list_scrapes and
-// list_walk (crawl bookkeeping). Not network-bound; reads directly from the
-// local DB and streams to disk so the ~4M-row books table doesn't inflate memory.
+// list_walk (crawl bookkeeping), and the legacy list_tag_walks (superseded by
+// list_tags.from_directory, destined for removal). Not network-bound; reads
+// directly from the local DB and streams to disk so the ~4M-row books table
+// doesn't inflate memory.
 
 // Ordered list of tables to export; the order is the display/reporting order.
-export const EXPORT_TABLES = ['books', 'authors', 'tag_books', 'genres', 'genre_tag_xref', 'book_page', 'tag_stats', 'lists', 'popular_by_date_book', 'tag_tail_scrapes', 'tag_tail_monitor_state'] as const;
+// list_tag_walks is deliberately NOT here: it is the legacy per-(tag,list)
+// walk-membership table, kept only for crawlers started before the list_tags
+// unification, and it is being dropped — exporting it would produce a file with
+// no importer. list_tags carries the unified xref; list_tag_walk_history carries
+// the walk history (both exported and imported).
+export const EXPORT_TABLES = ['books', 'authors', 'author_slugs', 'tag_books', 'genres', 'genre_tag_xref', 'list_tags', 'list_tag_walk_history', 'book_page', 'tag_stats', 'lists', 'popular_by_date_book', 'tag_tail_scrapes', 'tag_tail_monitor_state'] as const;
 
 // While exporting a large table (books is 11M+ rows), emit a live row-count
 // tick every N rows so a multi-minute export doesn't look hung.
@@ -23,7 +31,22 @@ const EXPORT_PROGRESS_EVERY = 500_000;
 // session cookies/userId; the rest are operational scrape checkpoints and crawl
 // bookkeeping. Declared so a test can assert every table in the schema is either
 // exported or explicitly excluded — a new table then can't silently go missing.
-export const EXCLUDED_TABLES = ['config', 'author_scrape_failures', 'browser_scrape', 'list_scrapes', 'list_walk'] as const;
+export const EXCLUDED_TABLES = [
+  'config',
+  'author_scrape_failures',
+  'browser_scrape',
+  'list_scrapes',
+  'list_walk',
+  // Legacy per-(tag,list) walk membership, superseded by list_tags.from_directory
+  // and due to be dropped once pre-unification crawlers exit. Only written by
+  // those old crawlers; never exported (a receiver can't import it).
+  'list_tag_walks',
+  'authors_old_20261003',
+  'emrys_09_04_books',
+  'emrys_09_04_tags',
+  'emrys_books',
+  'emrys_tags',
+] as const;
 
 function pickle(value: unknown): string {
   if (value == null) return '';

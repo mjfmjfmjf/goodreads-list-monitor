@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeCumulativeGrid } from './ratingsByDateHistogram.js';
+import { computeCumulativeGrid } from './ratingsByDateHistogram.ts';
 
 const buckets = [
   { label: '10+', min: 10, max: Infinity },

@@ -1,10 +1,10 @@
 import chalk from 'chalk';
-import { scrapeShelfBooks } from './scraper.js';
-import { iterateBooks } from './storage.js';
-import { splitAuthorNames, authorFirstAndLast } from './bookMatch.js';
-import { matchesReviewed } from './libraryExport.js';
-import { getLibrary, reviewedInYear, charCounts, publishedCounts, missingLetters, missingPubYears, mostRecentReviewYear, firstCharBucket, parseYear } from './library.js';
-import { getYear, formatBookLink } from './utils.js';
+import { scrapeShelfBooks } from './scraper.ts';
+import { iterateBooks } from './storage.ts';
+import { splitAuthorNames, authorFirstAndLast } from './bookMatch.ts';
+import { matchesReviewed } from './libraryExport.ts';
+import { getLibrary, reviewedInYear, charCounts, publishedCounts, missingLetters, missingPubYears, mostRecentReviewYear, firstCharBucket, parseYear } from './library.ts';
+import { getYear, formatBookLink } from './utils.ts';
 
 export interface TagGapsOptions {
   pages?: string;

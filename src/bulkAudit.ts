@@ -1,9 +1,9 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
-import { runAudit, AuditOptions, AuditResult } from './auditor.js';
-import { ListEntry } from './tagConfig.js';
-import { formatDuration } from './utils.js';
+import { runAudit, AuditOptions, AuditResult } from './auditor.ts';
+import { ListEntry } from './tagConfig.ts';
+import { formatDuration } from './utils.ts';
 
 const DEFAULT_BULK_CONFIG_FILE = path.join(process.cwd(), 'bulkAuditConfig.json');
 

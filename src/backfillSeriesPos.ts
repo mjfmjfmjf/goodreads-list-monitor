@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { iterateBooks, getBook, upsertBook, countBooks } from './storage.js';
-import { parseSeriesPos } from './seriesPos.js';
+import { iterateBooks, getBook, upsertBook, countBooks } from './storage.ts';
+import { parseSeriesPos } from './seriesPos.ts';
 
 export async function runBackfillSeriesPos(): Promise<void> {
   const totalBooks = countBooks();

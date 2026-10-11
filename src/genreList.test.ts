@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import cheerio from 'cheerio';
-import { parseGenreListPage, type GenreListEntry } from './scraper.js';
+import { parseGenreListPage, type GenreListEntry } from './scraper.ts';
 
 function pageHtml(rows: Array<[string, string]>, next: boolean): string {
   const body = rows.map(([name, count]) => `

@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
-import { iterateBooks, streamRows } from './storage.js';
+import { getDb } from './db.ts';
+import { iterateBooks, streamRows } from './storage.ts';
 
 interface RatingBucket {
   label: string;
@@ -189,10 +189,12 @@ export interface CoverageCounts {
   work: number[];
   works: number[];
   field: number[];
+  worksWithField: number[];
   totalAll: number;
   totalWork: number;
   totalWorks: number;
   totalField: number;
+  totalWorksWithField: number;
 }
 
 export function buildCoverageCounts(
@@ -204,10 +206,12 @@ export function buildCoverageCounts(
   const work = new Array<number>(buckets.length).fill(0);
   const works = new Array<number>(buckets.length).fill(0);
   const field = new Array<number>(buckets.length).fill(0);
+  const worksWithField = new Array<number>(buckets.length).fill(0);
   let totalAll = 0;
   let totalWork = 0;
   let totalWorks = 0;
   let totalField = 0;
+  let totalWorksWithField = 0;
 
   for (const book of books) {
     const rawRatings = (book.ratings || '0').toString().replace(/,/g, '');
@@ -225,10 +229,16 @@ export function buildCoverageCounts(
     if (book.id && fieldIds.has(book.id)) {
       field[idx]++;
       totalField++;
+      // A distinct work whose representative edition also sits in the
+      // field-coverage cache (WORKS ∩ FIELD).
+      if (book.workRep) {
+        worksWithField[idx]++;
+        totalWorksWithField++;
+      }
     }
   }
 
-  return { all, work, works, field, totalAll, totalWork, totalWorks, totalField };
+  return { all, work, works, field, worksWithField, totalAll, totalWork, totalWorks, totalField, totalWorksWithField };
 }
 
 export function renderCoverageHistogram(c: CoverageCounts, buckets: RatingBucket[] = BUCKETS): string[] {
@@ -242,14 +252,17 @@ export function renderCoverageHistogram(c: CoverageCounts, buckets: RatingBucket
   const WW = Math.max(7, ...c.work.map(x => formatNum(x).length)); // header: WORK-ID
   const W2W = Math.max(7, ...c.works.map(x => formatNum(x).length)); // header: WORKS
   const FW = Math.max(7, ...c.field.map(x => formatNum(x).length)); // header: FIELD
+  const WWF = Math.max(7, ...c.worksWithField.map(x => formatNum(x).length)); // header: WORK+F
   const PW = Math.max(8, ...buckets.map((_, i) => pct(c.work[i], c.all[i]).length)); // header: %WORKID
   const P2W = Math.max(8, ...buckets.map((_, i) => pct(c.works[i], c.all[i]).length)); // header: %WORKS
   const FPW = Math.max(7, ...buckets.map((_, i) => pct(c.field[i], c.all[i]).length)); // header: %FIELD
-  const rule = '-'.repeat(LW + AW + WW + W2W + FW + PW + P2W + FPW + 6 * 2);
+  const PWF = Math.max(7, ...buckets.map((_, i) => pct(c.worksWithField[i], c.works[i]).length)); // header: %WORK+F
+  const rule = '-'.repeat(LW + AW + WW + W2W + FW + WWF + PW + P2W + FPW + PWF + 8 * 2);
 
   lines.push('');
   lines.push(chalk.cyan.bold('Book Cache Ratings Coverage by Subset'));
-  lines.push(chalk.gray('   ALL = cached books · WORK-ID = has a work id · WORKS = distinct works (de-duplicated) · FIELD = has a book_page field-coverage row'));
+  lines.push(chalk.gray('   ALL = cached books · WORK-ID = has a work id · WORKS = distinct works (de-duplicated) · FIELD = has a book_page field-coverage row · WORK+F = a distinct work whose representative edition also has a field-coverage row'));
+  lines.push(chalk.gray('   % columns = within-bracket coverage; %WORK+F is of the WORKS subset'));
   lines.push(chalk.gray(rule));
   lines.push(
     chalk.white(
@@ -258,9 +271,11 @@ export function renderCoverageHistogram(c: CoverageCounts, buckets: RatingBucket
       col('WORK-ID', WW) + ' | ' +
       col('WORKS', W2W) + ' | ' +
       col('FIELD', FW) + ' | ' +
+      col('WORK+F', WWF) + ' | ' +
       col('%WORKID', PW) + ' | ' +
       col('%WORKS', P2W) + ' | ' +
-      col('%FIELD', FPW)
+      col('%FIELD', FPW) + ' | ' +
+      col('%WORK+F', PWF)
     )
   );
   lines.push(chalk.gray(rule));
@@ -271,18 +286,20 @@ export function renderCoverageHistogram(c: CoverageCounts, buckets: RatingBucket
     const work = c.work[i];
     const works = c.works[i];
     const field = c.field[i];
+    const worksWithField = c.worksWithField[i];
     const allStr = all > 0 ? chalk.yellow(formatNum(all).padStart(AW)) : chalk.gray(formatNum(all).padStart(AW));
     const workStr = work > 0 ? chalk.green(formatNum(work).padStart(WW)) : chalk.gray(formatNum(work).padStart(WW));
     const worksStr = works > 0 ? chalk.green(formatNum(works).padStart(W2W)) : chalk.gray(formatNum(works).padStart(W2W));
     const fieldStr = field > 0 ? chalk.green(formatNum(field).padStart(FW)) : chalk.gray(formatNum(field).padStart(FW));
+    const wfStr = worksWithField > 0 ? chalk.green(formatNum(worksWithField).padStart(WWF)) : chalk.gray(formatNum(worksWithField).padStart(WWF));
     lines.push(
-      `${chalk.white(label)} | ${allStr} | ${workStr} | ${worksStr} | ${fieldStr} | ${chalk.cyan(pct(work, all).padStart(PW))} | ${chalk.cyan(pct(works, all).padStart(P2W))} | ${chalk.cyan(pct(field, all).padStart(FPW))}`
+      `${chalk.white(label)} | ${allStr} | ${workStr} | ${worksStr} | ${fieldStr} | ${wfStr} | ${chalk.cyan(pct(work, all).padStart(PW))} | ${chalk.cyan(pct(works, all).padStart(P2W))} | ${chalk.cyan(pct(field, all).padStart(FPW))} | ${chalk.cyan(pct(worksWithField, works).padStart(PWF))}`
     );
   }
 
   lines.push(chalk.gray(rule));
   lines.push(chalk.cyan.bold(
-    `Total: cache ${formatNum(c.totalAll)} | work-id ${formatNum(c.totalWork)} (${pct(c.totalWork, c.totalAll)} of cache) | works ${formatNum(c.totalWorks)} (${pct(c.totalWorks, c.totalAll)} of cache) | field ${formatNum(c.totalField)} (${pct(c.totalField, c.totalAll)} of cache)`
+    `Total: cache ${formatNum(c.totalAll)} | work-id ${formatNum(c.totalWork)} (${pct(c.totalWork, c.totalAll)} of cache) | works ${formatNum(c.totalWorks)} (${pct(c.totalWorks, c.totalAll)} of cache) | field ${formatNum(c.totalField)} (${pct(c.totalField, c.totalAll)} of cache) | work+field ${formatNum(c.totalWorksWithField)} (${pct(c.totalWorksWithField, c.totalWorks)} of works)`
   ));
   return lines;
 }

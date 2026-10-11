@@ -6,9 +6,9 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-gapgenre-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb, getDb } from './db.js';
-import { getGapGenres } from './gapGenreDiscovery.js';
-import { upsertGenres, upsertTagBooks, backfillTagPageEstimates } from './storage.js';
+import { closeDb, getDb } from './db.ts';
+import { getGapGenres } from './gapGenreDiscovery.ts';
+import { upsertGenres, upsertTagBooks, backfillTagPageEstimates } from './storage.ts';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 

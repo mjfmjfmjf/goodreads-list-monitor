@@ -1,9 +1,9 @@
 import chalk from 'chalk';
-import { loadState, getBook } from './storage.js';
-import type { BookCache } from './storage.js';
-import { findCommonMonitoredBooks, printCommonMonitoredBooks } from './commonMonitoredBooks.js';
-import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.js';
-import { getYear, formatBookLink } from './utils.js';
+import { loadState, getBook } from './storage.ts';
+import type { BookCache } from './storage.ts';
+import { findCommonMonitoredBooks, printCommonMonitoredBooks } from './commonMonitoredBooks.ts';
+import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.ts';
+import { getYear, formatBookLink } from './utils.ts';
 
 export interface CommonUnreviewedMonitoredOptions {
   limit?: string;

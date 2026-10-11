@@ -1,10 +1,10 @@
 import chalk from 'chalk';
-import { loadAuthorCache, iterateBooks } from './storage.js';
-import type { AuthorCacheEntry, CachedBook } from './storage.js';
-import { selectAuthors } from './authorTopStats.js';
-import type { SelectedAuthor, AuthorTopStatsOptions } from './authorTopStats.js';
-import { scrapeUserVoteBooks } from './scraper.js';
-import type { UserVoteEntry } from './scraper.js';
+import { iterateBooks, iterateAuthors, getAuthorById } from './storage.ts';
+import type { AuthorCacheEntry, CachedBook } from './storage.ts';
+import { selectAuthors } from './authorTopStats.ts';
+import type { SelectedAuthor, AuthorTopStatsOptions } from './authorTopStats.ts';
+import { scrapeUserVoteBooks } from './scraper.ts';
+import type { UserVoteEntry } from './scraper.ts';
 
 export interface RankedAuthor {
   name: string;
@@ -440,9 +440,7 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
   console.log(chalk.gray('------------------------------------------'));
 
   console.log(chalk.gray('   Loading author ranking...'));
-  const authorCache = await loadAuthorCache();
-  // Rank well past the cutoff so we can report where dropped authors landed.
-  const { authors: selected } = selectAuthors(authorCache, { sortBy, minRatings, limit: '1000000' });
+  const { authors: selected } = selectAuthors(iterateAuthors(), { sortBy, minRatings, limit: '1000000' });
   const rawRanked = dedupeAuthorsBySlug(selected);
 
   console.log(chalk.gray('   Resolving suggested books...'));
@@ -495,13 +493,19 @@ async function runAuthorListDiff(options: AuthorTopStatsOptions & { userVoteUrl?
   // stats were never captured — the latter must not get removal directions,
   // only a nudge to fetch their stats first.
   const entryById = new Map<string, AuthorCacheEntry>();
-  for (const entry of Object.values(authorCache)) {
-    if (entry.id) entryById.set(String(entry.id), entry);
-  }
   const verifiable: DroppedAuthor[] = [];
   const unverifiable: DroppedAuthor[] = [];
+  // Build a lookup map only for dropped authors — orders of magnitude smaller
+  // than ~960k; fall back to getAuthorById for misses (indexed PK).
   for (const d of dropped) {
-    (d.authorId && !authorStatsPresent(entryById.get(d.authorId)) ? unverifiable : verifiable).push(d);
+    if (!d.authorId) { unverifiable.push(d); continue; }
+    const cached = entryById.get(d.authorId) ?? getAuthorById(d.authorId);
+    if (cached) {
+      if (!entryById.has(d.authorId)) entryById.set(d.authorId, cached);
+      (authorStatsPresent(cached) ? verifiable : unverifiable).push(d);
+    } else {
+      unverifiable.push(d);
+    }
   }
 
   // From-scratch list: until the votes page has (roughly) a full list, treat

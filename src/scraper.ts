@@ -4,9 +4,9 @@ import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
-import { delay, fetchWithRetry, formatDate, httpCallInfo, isConnectivityError, isDbLockError, parseDelayRange } from './utils.js';
-import { loadConfig, loadAuthorCache, syncAuthorsToCache, findAuthorBySlug, upsertAuthor, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_SCRAPE_FAIL_LIMIT, persistShelfPageCount } from './storage.js';
-import type { AuthorStats } from './storage.js';
+import { delay, fetchWithRetry, formatDate, httpCallInfo, isConnectivityError, isDbLockError, parseDelayRange } from './utils.ts';
+import { loadConfig, syncAuthorsToCache, getAuthor, getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_FAIL_LIMIT, persistShelfPageCount, upsertListTags } from './storage.ts';
+import type { AuthorStats } from './storage.ts';
 import type { AxiosResponse } from 'axios';
 
 let structuralWarningIssued = false;
@@ -24,6 +24,13 @@ const failedAuthorPagesRun = new Set<string>();
 // A permanent 4xx (but not throttle-class 429, which is transient) means the
 // author page will not work on retry — only these count toward the persisted
 // three-strikes skip. 202/403/429/5xx/timeouts/redirect loops do not.
+//
+// This deliberately INCLUDES 400/404/410 (dead author pages). A dead page burns
+// a strike like any other permanent failure, so after AUTHOR_FAIL_LIMIT (3) runs
+// the author is filtered out of the queue for good and stops costing requests and
+// log lines. Permanent retirement was tried via an `authors.page_gone` column and
+// reverted: routing dead pages to it recorded NO strike, so nothing was ever
+// filtered out and the same authors re-404'd on every run forever.
 export function isPermanentAuthorPageFailure(error: any): boolean {
   const status = error?.response?.status;
   return typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
@@ -566,14 +573,44 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
   // Automatically sync authors to cache
   if (!opts?.skipAuthorSync) {
     try {
-      const authorCache = await loadAuthorCache();
-      await syncAuthorsToCache(uniqueBooks, authorCache);
+      // Empty run-scoped memo: syncAuthorsToCache does one indexed primary-key
+      // lookup per author on a miss, so there is no reason to materialize the
+      // whole ~960k-row authors table first (loadAuthorCache = ~1.3s + 390MB).
+      await syncAuthorsToCache(uniqueBooks, {});
     } catch (error) {
       // Ignore cache sync errors in scraper
     }
   }
 
   return uniqueBooks;
+}
+
+// The "Tags:" block in a list's right-hand stacked sidebar. Goodreads renders
+// each tag as `<a class="actionLinkLite" href="/list/show_tag/<tag>">`.
+//
+// The block is repeated on EVERY page of a list (verified live: pages 1 and 2 of
+// list/show/35080 serve a byte-identical tag set), so this is cheap to run per
+// page — the caller parses on each read and persists once, on page 1.
+//
+// Pure + unit-testable: takes the loaded page, returns the tag names in document
+// order with blanks/duplicates dropped.
+export function parseListTags($: cheerio.CheerioAPI): string[] {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+  $('a.actionLinkLite[href*="/list/show_tag/"]').each((_, el) => {
+    const $a = $(el);
+    const href = $a.attr('href') || '';
+    // Prefer the slug in the URL: it is the canonical, already-normalized form
+    // ("1000000", "goodreads-statistics"). The anchor text is a display string
+    // and can carry different casing or spacing.
+    const match = href.match(/\/list\/show_tag\/([^?#]+)/);
+    if (!match) return;
+    const slug = decodeURIComponent(match[1]).trim().replace(/\s+/g, '-').toLowerCase();
+    if (!slug || seen.has(slug)) return;
+    seen.add(slug);
+    tags.push(slug);
+  });
+  return tags;
 }
 
 export async function scrapeListBooks(listId: string, maxPages = Infinity): Promise<BookMetadata[]> {
@@ -604,6 +641,19 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
       console.log(chalk.gray(`   ${httpCallInfo(response.status, bodyLen, duration, ['listId', listId])} page=${page}`));
 
       const $ = cheerio.load(response.data);
+
+      // List tags repeat identically on every page, so persist exactly once —
+      // on the first page of the read. Still parsed on every page so a caller
+      // inspecting a later page sees the list's tags.
+      const listTags = parseListTags($);
+      if (page === 1 && listTags.length > 0) {
+        try {
+          upsertListTags(listId, listTags);
+        } catch (error) {
+          // Never fail a crawl over the optional tag record.
+          console.log(chalk.gray(`   (could not persist list tags for ${listId}: ${(error as any)?.message})`));
+        }
+      }
 
       // Try to show total page count on first page
       if (page === 1) {
@@ -712,8 +762,9 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
 
   // Automatically sync authors to cache
   try {
-    const authorCache = await loadAuthorCache();
-    await syncAuthorsToCache(uniqueBooks, authorCache);
+    // Empty run-scoped memo — see the same note in scrapeShelfBooks: a miss is
+    // resolved by one indexed PK lookup, not a full-table load.
+    syncAuthorsToCache(uniqueBooks, {});
   } catch (error) {
     // Ignore cache sync errors in scraper
   }
@@ -1264,10 +1315,19 @@ async function updateAuthorStatsFromPage($: cheerio.CheerioAPI, authorSlug: stri
   // arrived via an id-only ref); the passed ref is just a fallback.
   const slugForLookup = stats.slug || authorSlug;
   // Single-row read/merge/write: no full-cache snapshot involved.
-  const found = findAuthorBySlug(slugForLookup);
-  if (found && updateAuthorStats(found.entry, stats)) {
-    upsertAuthor(found.key, found.entry);
-  }
+  const id = extractAuthorId(slugForLookup);
+  const entry = getAuthorById(id) ?? {
+    id,
+    name: stats.name,
+    slug: slugForLookup,
+    lastSeen: new Date().toISOString(),
+  };
+  updateAuthorStats(entry, stats);
+  // Persist the page's canonical name/slug; ids can outlive their slugs.
+  if (stats.name) entry.name = stats.name;
+  if (stats.slug) entry.slug = stats.slug;
+  upsertAuthorById(id, entry);
+  upsertAuthorSlug(id, entry.slug, entry.name);
 }
 
 export function parseAuthorListBooks($: cheerio.CheerioAPI, authorSlug?: string): AuthorListBook[] {
@@ -1329,7 +1389,7 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
     return { id };
   }
   const priorFailure = loadAuthorScrapeFailure(authorId);
-  if (priorFailure && (priorFailure.failCount ?? 0) >= AUTHOR_SCRAPE_FAIL_LIMIT) {
+  if (priorFailure && (priorFailure.failCount ?? 0) >= AUTHOR_FAIL_LIMIT) {
     console.log(chalk.gray(`   ⏭️ Skipping author page ${authorId} — ${priorFailure.failCount} consecutive scrape failures (last: ${priorFailure.lastError ?? 'n/a'}).`));
     return { id };
   }
@@ -1366,7 +1426,7 @@ export async function scrapeBookByAuthorPage(id: string, authorSlug: string, tit
     if (isPermanentAuthorPageFailure(error)) {
       recordAuthorScrapeFailure(authorId, String((error as any).code || `HTTP ${(error as any).response?.status}`));
       failedAuthorPagesRun.add(authorId);
-      console.log(chalk.gray(`      ↳ Permanent failure — recorded strike ${((loadAuthorScrapeFailure(authorId)?.failCount) ?? '?')}/${AUTHOR_SCRAPE_FAIL_LIMIT} for author ${authorId}; skipped for the rest of this run.`));
+      console.log(chalk.gray(`      ↳ Permanent failure — recorded strike ${((loadAuthorScrapeFailure(authorId)?.failCount) ?? '?')}/${AUTHOR_FAIL_LIMIT} for author ${authorId}; skipped for the rest of this run.`));
     } else {
       console.log(chalk.gray(`      ↳ Transient failure — not counted as a strike (may clear with a cooldown).`));
     }
@@ -1407,8 +1467,44 @@ export function extractAuthorId(authorRef: string): string {
   return first || authorRef;
 }
 
-function buildAuthorListUrl(authorRef: string, sort?: string, page?: number): string {
+// The reference to hand the author scraper: the author ID, always.
+//
+// Our `authors.slug` is DISPLAY ONLY, so it must never go into a URL. Goodreads
+// resolves the slug itself — `/author/list/<id>` 301-redirects to
+// `/author/list/<id>.<Canonical_Slug>` — so the id-only form is both canonical
+// and one failure mode cheaper:
+//
+//   * a stale/wrong/degenerate stored slug 404s immediately with no redirect to
+//     save us. The live table has real examples (`16470125._`), plus "Last, First"
+//     and "(Editor)" forms carried over from book pages.
+//   * verified live: the 301 preserves `?page=` and `?sort=` (so multi-page and
+//     sorted crawls are unaffected) and returns 200 for live authors.
+//
+// This mirrors the redesign's core rule — ID is identity, name/slug are display.
+export function authorScrapeRef(slug: string | undefined | null, id: string): string {
+  return id;
+}
+
+// A trustworthy label for a log line. The author ID is the identity and the only
+// field guaranteed present; the name is a human hint that may be absent (a
+// mint-only row), or wrong (a book-page "Last, First" / "(Editor)" string), so it
+// goes in parentheses and never stands in for the id.
+export function describeAuthorId(id: string, name?: string | null): string {
+  return name ? `authorId=${id} (${name})` : `authorId=${id}`;
+}
+
+export function buildAuthorListUrl(authorRef: string, sort?: string, page?: number): string {
+  // Tolerates an "<id>.<slug>" ref so legacy callers still work, but only the
+  // numeric id ever reaches the URL — see authorScrapeRef.
   const id = extractAuthorId(authorRef);
+  // An empty/null/non-numeric ref would silently become `/author/list/null` — a
+  // guaranteed 404 that reads like a real scrape failure and burns the author's
+  // strike budget. Fail loudly instead so the caller records a self-inflicted
+  // error. Goodreads author ids are numeric (verified: 0 exceptions across the
+  // live table), so this rejects nothing real.
+  if (!id || !/^\d+$/.test(id)) {
+    throw new Error(`bad author reference ${JSON.stringify(authorRef)} (resolved id ${JSON.stringify(id)})`);
+  }
   const params: string[] = [];
   if (sort) params.push(`sort=${sort}`);
   if (page && page > 1) params.push(`page=${page}`);
@@ -1433,10 +1529,21 @@ export async function scrapeAuthorStats(
 
     const start = Date.now();
     const response = await fetchWithRetry(url, { headers, timeout: TIMEOUT });
-    const authorPageCall = httpCallInfo(response.status, String(response.data).length, Date.now() - start, ['authorId', authorSlug]);
+    const bodyLen = String(response.data).length;
+    const authorPageCall = httpCallInfo(response.status, bodyLen, Date.now() - start, ['authorId', authorSlug]);
     const $ = cheerio.load(response.data);
     const stats = parseAuthorStats($);
     if (!stats.averageRating && !stats.numRatings && !stats.numReviews && !stats.numShelves) {
+      // A 200 with a plausible page but no stats block is usually NOT a parser
+      // miss: Goodreads redirects a non-author id to a /user/show/ profile (or
+      // serves a throttle/interstitial). Surface the final URL after redirects
+      // and the page title so the cause is obvious instead of looking like a
+      // parse failure.
+      const finalUrl = (response.request as any)?.res?.responseUrl as string | undefined;
+      const title = $('title').text().trim().replace(/\s+/g, ' ').slice(0, 80);
+      const redirectNote = finalUrl && finalUrl !== url ? ` redirects→${finalUrl}` : '';
+      const titleNote = title ? ` title="${title}"` : '';
+      console.log(chalk.yellow(`   ⚠️ No stats line parsed (${authorPageCall}) for ${describeAuthorId(extractAuthorId(authorSlug))}${redirectNote}${titleNote}`));
       onError?.('no_stats_line');
       return undefined;
     }
@@ -1505,8 +1612,22 @@ export async function scrapeAuthorStats(
     // (and avoid marking the author as a "failure" — the author isn't at fault,
     // the network is). Mirrors how scrapeTopShelves surfaces these to the walkers.
     if (isConnectivityError(error)) throw error;
-    const reason = String((error as any).code || (error as any).message || error);
-    console.error(chalk.yellow(`   ⚠️ Author stats fetch failed for ${authorSlug}: ${reason}`));
+    // Carry the HTTP status into the reason. axios labels EVERY 4xx as
+    // `ERR_BAD_REQUEST`, so the code alone cannot tell a definitive "no such
+    // author" 404/410 (which outranks the throttling-vs-defect question and is
+    // worth a heavier strike) from a 403 that may just be a block. The status is
+    // also what the log line already shows, so ledger and log now agree.
+    const status = (error as any)?.response?.status;
+    const reason = status
+      ? `HTTP ${status} ${String((error as any).code || (error as any).message || error)}`
+      : String((error as any).code || (error as any).message || error);
+    console.error(
+      chalk.yellow(
+        // `reason` already carries the status (it has to, so strikeWeight can
+        // tell a 404 from a 403), so it is not repeated here.
+        `   ⚠️ Author stats fetch failed for ${describeAuthorId(extractAuthorId(authorSlug))}: ${reason}`
+      )
+    );
     onError?.(reason);
     return undefined;
   }
@@ -1542,7 +1663,6 @@ export function acceptAuthorListMatch(details: { title?: string } & Record<strin
 export async function scrapeBookDetails(bookId: string, titleHint?: string, authorHint?: string, authorSlugHint?: string): Promise<Partial<BookMetadata> & { isFailed?: boolean }> {
   const url = `https://www.goodreads.com/book/show/${bookId}`;
   const config = await loadConfig();
-  const authorCache = await loadAuthorCache();
 
   async function fetchAndParse(useCookie: boolean): Promise<Partial<BookMetadata>> {
     const headers: any = { 
@@ -1583,7 +1703,9 @@ export async function scrapeBookDetails(bookId: string, titleHint?: string, auth
   // Determine effective author slug
   let effectiveSlug = authorSlugHint;
   if (!effectiveSlug && authorHint) {
-    effectiveSlug = authorCache[authorHint]?.slug;
+    // Resolve name → slug in SQL (name = ? ORDER BY last_seen DESC LIMIT 1)
+    // instead of building a ~960k-entry object just to linear-scan it.
+    effectiveSlug = getAuthor(authorHint)?.slug;
   }
 
   // 1. Try Author Page first if we have a slug - very reliable summary view

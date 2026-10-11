@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
-import { runTagDiscovery } from './discovery.js';
-import { getKnownShelfPages } from './storage.js';
-import { delay, isConnectivityError, withConnectivityProbe } from './utils.js';
+import { getDb } from './db.ts';
+import { runTagDiscovery } from './discovery.ts';
+import { getKnownShelfPages } from './storage.ts';
+import { delay, isConnectivityError, withConnectivityProbe } from './utils.ts';
 
 export interface GapGenreDiscoveryOptions {
   count?: string;

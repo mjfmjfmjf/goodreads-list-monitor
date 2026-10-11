@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { authorExtractor, publisherExtractor, groupRatedRows, groupFavoriteAuthors, groupFavoritePublishers } from './favoriteAuthors.js';
-import { LibraryEntry } from './libraryExport.js';
+import { authorExtractor, publisherExtractor, groupRatedRows, groupFavoriteAuthors, groupFavoritePublishers } from './favoriteAuthors.ts';
+import { LibraryEntry } from './libraryExport.ts';
 
 function entry(overrides: Partial<LibraryEntry> = {}): LibraryEntry {
   return {
@@ -35,6 +35,20 @@ describe('parseRating behavior via groupRatedRows', () => {
     expect(result.rows[0].books).toBe(3);
     expect(result.rows[0].avg).toBe(4);
     expect(Object.fromEntries(result.rows[0].stars)).toEqual({ 5: 1, 4: 1, 3: 1 });
+  });
+
+  it('buckets a fractional rating into its rounded star but keeps the exact average', () => {
+    const result = groupRatedRows(
+      [
+        entry({ id: '1', myRating: '3.75' }),
+        entry({ id: '2', myRating: '4' })
+      ],
+      authorExtractor
+    );
+    expect(result.reviewedBooks).toBe(2);
+    expect(result.rows[0].books).toBe(2);
+    expect(result.rows[0].avg).toBe(3.875); // (3.75 + 4) / 2
+    expect(Object.fromEntries(result.rows[0].stars)).toEqual({ 4: 2 }); // 3.75 rounds to the 4★ column, never a 3.75 column
   });
 
   it('skips unrated books (0 or empty My Rating)', () => {

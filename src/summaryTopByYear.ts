@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { iterateBooks } from './storage.js';
-import { getYear } from './utils.js';
+import { iterateBooks } from './storage.ts';
+import { getYear } from './utils.ts';
 
 async function summarizeTopByYear() {
   // Map to store: year -> { maxRatings: number, book: any }

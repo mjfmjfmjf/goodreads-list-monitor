@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { iterateBooks, countBooks } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { stripTitleSuffix } from './utils.js';
+import { iterateBooks, countBooks } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { stripTitleSuffix } from './utils.ts';
 
 export interface TitleCharRow {
   char: string;

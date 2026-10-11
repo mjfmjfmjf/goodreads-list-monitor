@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterAll } from 'vitest';
-import { computeFieldStats, formatCoverageLine, runFieldCoverage } from './fieldCoverage.js';
+import { computeFieldStats, formatCoverageLine, runFieldCoverage, REPORTED_TABLES, IGNORED_TABLES } from './fieldCoverage.ts';
 import chalk from 'chalk';
 
 vi.hoisted(() => {
@@ -7,7 +7,7 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-fieldcoverage-test-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb, getDb } from './db.js';
+import { closeDb, getDb } from './db.ts';
 
 afterAll(() => {
   closeDb();
@@ -110,6 +110,45 @@ describe('runFieldCoverage', () => {
     expect(latest).toContain('09-12');
   });
 
+  it('prints the list-tag harvest section with known/tagged/remaining', async () => {
+    const db = getDb();
+    db.exec('DELETE FROM list_scrapes; DELETE FROM list_tags; DELETE FROM lists;');
+    const now = '2026-10-07T00:00:00Z';
+    db.prepare(
+      'INSERT INTO list_scrapes (list_id, list_name, first_scraped, last_scraped) VALUES (?, ?, ?, ?)'
+    ).run('10', 'A', now, now);
+    db.prepare(
+      'INSERT INTO list_scrapes (list_id, list_name, first_scraped, last_scraped) VALUES (?, ?, ?, ?)'
+    ).run('20', 'B', now, now);
+    db.prepare(
+      'INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen) VALUES (?, ?, ?, ?)'
+    ).run('10', 'fiction', now, now);
+    db.prepare(
+      'INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen) VALUES (?, ?, ?, ?)'
+    ).run('10', 'classics', now, now);
+    db.prepare(
+      'INSERT INTO lists (list_id, title) VALUES (?, ?)'
+    ).run('30', 'Monitored');
+
+    chalk.level = 0;
+    const out = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runFieldCoverage();
+    const lines = out.mock.calls.map((c) => c.join(' '));
+    out.mockRestore();
+
+    const header = lines.find((l) => l.includes('List-tag harvest coverage'));
+    expect(header).toBeTruthy();
+    const known = lines.find((l) => l.includes('known lists'));
+    expect(known).toContain('3'); // list_scrapes 10, 20 + lists 30
+    const tagged = lines.find((l) => l.includes('tagged'));
+    expect(tagged).toContain('1'); // only list 10 carries tags
+    expect(tagged).toContain('33.3%');
+    expect(tagged).toContain('2 remaining');
+    const tagRows = lines.find((l) => l.includes('tag rows'));
+    expect(tagRows).toContain('2'); // fiction + classics
+    expect(tagRows).toContain('2 distinct tags');
+  });
+
   it('shows distinct publisher/format/language counts in the book-page section', async () => {
     const db = getDb();
     const now = '2026-09-10T00:00:00Z';
@@ -129,5 +168,15 @@ describe('runFieldCoverage', () => {
     expect(lines.find((l) => l.startsWith('  publisher'))).toContain('2 distinct'); // Penguin, Harper
     expect(lines.find((l) => l.startsWith('  format'))).toContain('2 distinct'); // Hardcover, Paperback
     expect(lines.find((l) => l.startsWith('  language'))).toContain('2 distinct'); // English, Spanish
+  });
+});
+
+describe('table accounting', () => {
+  it('accounts for every schema table in REPORTED_TABLES or IGNORED_TABLES', () => {
+    const db = getDb();
+    const schemaTables = (db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).all() as { name: string }[]).map(r => r.name);
+    const covered = new Set<string>([...REPORTED_TABLES, ...IGNORED_TABLES]);
+    expect(schemaTables.filter(t => !covered.has(t))).toEqual([]);
+    for (const t of REPORTED_TABLES) expect([...IGNORED_TABLES]).not.toContain(t);
   });
 });

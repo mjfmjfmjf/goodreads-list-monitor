@@ -1,85 +1,94 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { checkUpdates, performIngest } from './monitor.js';
-import { runAudit, runTagAudit } from './auditor.js';
-import { generateTagConfig } from './tagConfig.js';
-import { runTagDiscovery, runBulkTagDiscovery } from './discovery.js';
-import { runGapGenreTagDiscovery } from './gapGenreDiscovery.js';
-import { runNewTagWalker } from './newTagWalker.js';
-import { computeGenrePairings } from './genrePairings.js';
-import { computeTagPairings } from './tagPairings.js';
-import { runQueueDiscovery } from './queueDiscovery.js';
-import { generateBulkConfig } from './bulkConfig.js';
-import { runBulkAudit } from './bulkAudit.js';
-import { scrapeAndCacheBook } from './singleBook.js';
-import { addBookFromBuffer } from './addBook.js';
-import { removeBookFromCache } from './removeBook.js';
-import { runCheckQueue } from './checkQueue.js';
-import { runSummaryByYear } from './summary.js';
-import { runSummaryRatings } from './summaryRatings.js';
-import { runRatingsHistogram, runRatingsCoverageHistogram } from './summaryHistogram.js';
-import { runBooksAddedHistogram } from './booksAddedHistogram.js';
-import { runRatingsByDateHistogram } from './ratingsByDateHistogram.js';
-import { runSummarySeriesPos } from './summarySeriesPos.js';
-import { runDumpList } from './dumpList.js';
-import { runBestOfYear } from './bestOfYear.js';
-import { runGenBestOfYearConfig } from './bestOfYearConfig.js';
-import { runFieldCoverage } from './fieldCoverage.js';
-import { runBookPageGaps } from './bookPageGaps.js';
-import { runGenreList } from './genreList.js';
-import { runMonitorYearlyHighlyRatedLists } from './monitorYearlyHighlyRatedLists.js';
-import { runMonitorTopRatedList } from './monitorTopRatedList.js';
-import { runMonitorTopStandalones } from './monitorTopStandalones.js';
-import { runDbReadBook } from './dbReadBook.js';
-import { exportBooksAndAuthors, printExportResult } from './exportData.js';
-import { importData, printImportResult } from './importData.js';
-import { analyzeCsv, printAnalysis } from './csvAnalyze.js';
-import { runAuthorHarvestStatus } from './authorHarvestStatus.js';
-import { runTitleCharHistogram } from './titleCharHistogram.js';
-import { runTitleFirstWordHistogram } from './titleFirstWordHistogram.js';
-import { runTagHistogram } from './tagHistogram.js';
-import { runTagCoverage } from './tagCoverage.js';
-import { runTagRecentMonitor } from './tagRecentMonitor.js';
-import { runTagFirstPagePicks } from './tagFirstPagePicks.js';
-import { runBackfillSeriesPos } from './backfillSeriesPos.js';
-import { runBackfillPages } from './backfillPages.js';
-import { runAvgHistogram } from './summaryAvgHistogram.js';
-import { runAuthorTopBooks } from './authorTopBooks.js';
-import { runAuthorTopStats } from './authorTopStats.js';
-import { runAuthorTopBookHistogram } from './authorTopBookHistogram.js';
-import { runAuthorNewestYearHistogram } from './authorNewestYearHistogram.js';
-import { runAuthorGapHistogram } from './authorGapHistogram.js';
-import { runAuthorOrphans } from './authorOrphans.js';
-import { runAuthorListDiff } from './authorListDiff.js';
-import { runAuthorRescan } from './authorRescan.js';
-import { runAuthorRecent } from './authorRecent.js';
-import { runAuthorOne, runAuthorOneFile } from './authorOne.js';
-import { runAuthorDedupe } from './authorDedupe.js';
-import { runBrowserBookScrape } from './browserBookScrape.js';
-import { runBrowserLogin } from './browserSession.js';
-import { runListWalker } from './listWalker.js';
-import { runListTagWalker } from './listTagWalker.js';
-import { runListPopularWalker } from './listPopularWalker.js';
-import { runListTagHarvest } from './listTagHarvest.js';
-import { runPopularByDate } from './popularByDate.js';
-import { runTagWalkBooks } from './tagWalkBooks.js';
-import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
-import { runBooks } from './books.js';
-import { runLibraryQuery } from './library.js';
-import { runYearInBooks } from './yearInBooks.js';
-import { runLifeInBooks } from './lifeInBooks.js';
-import { runFavoriteAuthors } from './favoriteAuthors.js';
-import { runPublisherStats } from './publisherStats.js';
-import { runPublisherCatalog } from './publisherCatalog.js';
-import { runShelfStats } from './shelfStats.js';
-import { runCommonMonitoredBooks } from './commonMonitoredBooks.js';
-import { runCommonUnreviewedMonitoredBooks } from './commonUnreviewedMonitoredBooks.js';
-import { runTagGaps, runCacheGaps } from './tagGaps.js';
-import { runNextBooks } from './nextBooks.js';
-import { runBookSweep } from './bookSweep.js';
-import { runReadme, runColorLegend } from './readme.js';
-import { loadState, saveState, loadConfig } from './storage.js';
-import { backupDb, getDb } from './db.js';
+import { checkUpdates, performIngest } from './monitor.ts';
+import { runAudit, runTagAudit } from './auditor.ts';
+import { generateTagConfig } from './tagConfig.ts';
+import { runTagDiscovery, runBulkTagDiscovery } from './discovery.ts';
+import { runGapGenreTagDiscovery } from './gapGenreDiscovery.ts';
+import { runNewTagWalker } from './newTagWalker.ts';
+import { computeGenrePairings } from './genrePairings.ts';
+import { computeTagPairings } from './tagPairings.ts';
+import { runQueueDiscovery } from './queueDiscovery.ts';
+import { generateBulkConfig } from './bulkConfig.ts';
+import { runBulkAudit } from './bulkAudit.ts';
+import { scrapeAndCacheBook } from './singleBook.ts';
+import { addBookFromBuffer } from './addBook.ts';
+import { removeBookFromCache } from './removeBook.ts';
+import { runCheckQueue } from './checkQueue.ts';
+import { runSummaryByYear } from './summary.ts';
+import { runSummaryRatings } from './summaryRatings.ts';
+import { runRatingsHistogram, runRatingsCoverageHistogram } from './summaryHistogram.ts';
+import { runBooksAddedHistogram } from './booksAddedHistogram.ts';
+import { runRatingsByDateHistogram } from './ratingsByDateHistogram.ts';
+import { runSummarySeriesPos } from './summarySeriesPos.ts';
+import { runDumpList } from './dumpList.ts';
+import { runBestOfYear } from './bestOfYear.ts';
+import { runGenBestOfYearConfig } from './bestOfYearConfig.ts';
+import { runFieldCoverage } from './fieldCoverage.ts';
+import { runBookPageGaps } from './bookPageGaps.ts';
+import { runGenreList } from './genreList.ts';
+import { runMonitorYearlyHighlyRatedLists } from './monitorYearlyHighlyRatedLists.ts';
+import { runMonitorTopRatedList } from './monitorTopRatedList.ts';
+import { runMonitorTopStandalones } from './monitorTopStandalones.ts';
+import { runDbReadBook } from './dbReadBook.ts';
+import { exportBooksAndAuthors, printExportResult } from './exportData.ts';
+import { importData, printImportResult } from './importData.ts';
+import { analyzeCsv, printAnalysis } from './csvAnalyze.ts';
+import { runAuthorHarvestStatus } from './authorHarvestStatus.ts';
+import { runTitleCharHistogram } from './titleCharHistogram.ts';
+import { runTitleFirstWordHistogram } from './titleFirstWordHistogram.ts';
+import { runTagHistogram } from './tagHistogram.ts';
+import { runTagCoverage } from './tagCoverage.ts';
+import { runTagRecentMonitor } from './tagRecentMonitor.ts';
+import { runTagFirstPagePicks } from './tagFirstPagePicks.ts';
+import { runBackfillSeriesPos } from './backfillSeriesPos.ts';
+import { runBackfillPages } from './backfillPages.ts';
+import { runAvgHistogram } from './summaryAvgHistogram.ts';
+import { runAuthorTopBooks } from './authorTopBooks.ts';
+import { runAuthorTopStats } from './authorTopStats.ts';
+import { runAuthorTopBookHistogram } from './authorTopBookHistogram.ts';
+import { runAuthorNewestYearHistogram } from './authorNewestYearHistogram.ts';
+import { runAuthorGapHistogram } from './authorGapHistogram.ts';
+import { runAuthorOrphans } from './authorOrphans.ts';
+import { runAuthorRoles } from './authorRoles.ts';
+import { runAuthorRekey } from './authorRekey.ts';
+import { runAuthorMint, reportAuthorMint } from './authorMint.ts';
+import { runAuthorListDiff } from './authorListDiff.ts';
+import { runAuthorRescan } from './authorRescan.ts';
+import { runAuthorRecent } from './authorRecent.ts';
+import { runAuthorOne, runAuthorOneFile } from './authorOne.ts';
+import { runAuthorDedupe } from './authorDedupe.ts';
+import { runBrowserBookScrape } from './browserBookScrape.ts';
+import { runBrowserLogin } from './browserSession.ts';
+import { runListWalker } from './listWalker.ts';
+import { runListTagWalker } from './listTagWalker.ts';
+import { runListPopularWalker } from './listPopularWalker.ts';
+import { runListTagBackfill } from './listTagBackfill.ts';
+import { runListTagStats } from './listTagStats.ts';
+import { runListTags } from './listTags.ts';
+import { runNextTagWalk } from './nextTagWalk.ts';
+import { runListTagHarvest } from './listTagHarvest.ts';
+import { runPopularByDate } from './popularByDate.ts';
+import { runTagWalkBooks } from './tagWalkBooks.ts';
+import { runSummaryTop, runSummaryBottom } from './summaryTopRated.ts';
+import { runBooks } from './books.ts';
+import { runLibraryQuery } from './library.ts';
+import { runYearInBooks } from './yearInBooks.ts';
+import { runLifeInBooks } from './lifeInBooks.ts';
+import { runFavoriteAuthors } from './favoriteAuthors.ts';
+import { runPublisherStats } from './publisherStats.ts';
+import { runPublisherCatalog } from './publisherCatalog.ts';
+import { runFacetCatalog, isFacetName } from './facetCatalog.ts';
+import { runAuthorLedgerMigrate } from './authorLedgerMigrate.ts';
+import { runShelfStats } from './shelfStats.ts';
+import { runCommonMonitoredBooks } from './commonMonitoredBooks.ts';
+import { runCommonUnreviewedMonitoredBooks } from './commonUnreviewedMonitoredBooks.ts';
+import { runTagGaps, runCacheGaps } from './tagGaps.ts';
+import { runNextBooks } from './nextBooks.ts';
+import { runBookSweep } from './bookSweep.ts';
+import { runReadme, runColorLegend } from './readme.ts';
+import { loadState, saveState, loadConfig } from './storage.ts';
+import { backupDb, getDb } from './db.ts';
 
 const program = new Command();
 
@@ -156,7 +165,7 @@ program
 
 program
   .command('ratings-coverage-histogram')
-  .description('Ratings histogram split by coverage subset: ALL cached books vs books with a work id vs books present in the book_page field-coverage cache, with within-bracket coverage % (reveals whether coverage favors popular books)')
+  .description('Ratings histogram split by coverage subset: ALL cached books vs books with a work id vs distinct works vs books present in the book_page field-coverage cache, plus distinct works that also have field coverage (WORK+F, % of the WORKS subset), with within-bracket coverage %')
   .action(async () => {
     try {
       await runRatingsCoverageHistogram();
@@ -595,6 +604,71 @@ Examples:
   });
 
 program
+  .command('author-rekey')
+  .description('One-off migration: collapse same-id name-variant rows in the authors table into one id-keyed row and backfill the author_slugs history ledger. Dry run by default; pass --apply to migrate (make a manual copy of goodreads.db first). Keeps the old table as authors_old_<stamp> for rollback. Opens the DB raw, so a pre-rekey name-PK database can still run it.')
+  .addHelpText('after', `
+Examples:
+  $ npm run author-rekey
+  $ npm run author-rekey -- --apply
+  $ GOODREADS_DB_PATH=/tmp/gr-rehearsal.db ./authorRekey.sh --apply`)
+  .option('--apply', 'Perform the migration. Without it, only report what would change.')
+  .action((options) => {
+    try {
+      runAuthorRekey(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to re-key authors:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-ledger-migrate')
+  .description(
+    'One-off §4 migration: merge authors.fail_count/last_error into the author_scrape_failures ledger (taking MAX, so a strike recorded in either place survives) and drop all three legacy columns. Merging rather than discarding is deliberate: the two ledgers barely overlap (live DB 569 ids legacy-only, 721 ledger-only), so dropping the legacy counts re-admitted 519 never-crawled authors the old counter had already retired and made a --sortBy topRatings queue GROW instead of shrink. Dry run by default; pass --apply. MUST be run with all crawlers stopped. Idempotent: safe to re-run.'
+  )
+  .addHelpText('after', `
+Examples:
+  $ ./authorLedgerMigrate.sh              # report the blast radius, write nothing
+  $ ./authorLedgerMigrate.sh --apply     # merge + drop (crawlers stopped)
+  $ GOODREADS_DB_PATH=/tmp/gr-rehearsal.db ./authorLedgerMigrate.sh --apply`)
+  .option('--apply', 'Perform the migration. Without it, only report what would change.')
+  .action((options) => {
+    try {
+      runAuthorLedgerMigrate(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to migrate the author strike ledger:'), (error as any).message);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('author-mint')
+  .description(
+    'Offline backfill-mint: create a minimal authors row (id + best-known name, slug NULL) for every books.author_id that has no authors row yet. Dry run by default; pass --apply. Offline and fast (seconds) versus author-orphans --scrape, which mints the same ids over the network at ~2s each (~8 days for the backlog). Needs no crawl running to be correct, but stop other crawlers first — it is a large burst of writes.'
+  )
+  .addHelpText(
+    'after',
+    `
+Examples:
+  $ npm run author-mint
+  $ npm run author-mint -- --apply
+
+After minting, scrape the new rows with:
+  ./authorRescan.sh --multiPage --onlyUntouched --sortBy topRatings --minRatings 0 --limit 500000
+
+Minted rows have no stats and no slug until their author page is scraped; that
+scrape is what writes the canonical name/slug and the author_slugs ledger row.`
+  )
+  .option('--apply', 'Perform the mint. Without it, only report what would be created.')
+  .action((options) => {
+    try {
+      const result = runAuthorMint(options);
+      reportAuthorMint(result);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to mint authors:'), (error as any).message);
+    }
+  });
+
+program
   .command('author-orphans')
   .description('List authors that appear in the book cache but have no author-cache entry, ordered by their highest-rated book (by rating count). Read-only (no network) unless --scrape. Add --inspect to also print a per-orphan browser URL and bucket each as multi-author / no author id / genuinely missing. Add --scrape to ingest the "genuinely missing" orphans (those with an authorId) into the author cache; combine with --multiPage to crawl each author\'s full catalog.')
   .addHelpText('after', `
@@ -624,6 +698,30 @@ Examples:
       await runAuthorOrphans(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to list author orphans:'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-roles')
+  .description('Rank the contributor roles Goodreads appends to author strings ("Vincenzo Bellini(Composer)", "John Joseph Adams(Editor)") — parsed from books.author text against a curated role vocabulary, so org-name parens like "(USA)" do not count. Read-only local query; no network.')
+  .addHelpText('after', `
+Examples:
+  $ ./authorRoles.sh                     # roles by book count (top 40)
+  $ ./authorRoles.sh --limit 100         # more roles
+  $ ./authorRoles.sh --min-books 500     # only roles on 500+ books
+  $ ./authorRoles.sh --role composer             # books credited as Composer
+  $ ./authorRoles.sh --role editor --authors     # authors credited as Editor, ranked
+  $ ./authorRoles.sh --all                # unfiltered candidates (tune the vocabulary)`)
+  .option('--role <name>', 'Detail mode: list the books (or with --authors, the authors) credited with this role')
+  .option('--authors', 'With --role: aggregate by author instead of listing books')
+  .option('--all', 'Skip the role-vocabulary filter and show every paren candidate')
+  .option('--limit <number>', 'How many rows to show (default 40)')
+  .option('--min-books <number>', 'Summary only: only roles on at least this many books (default 1)')
+  .action(async (options) => {
+    try {
+      await runAuthorRoles({ role: options.role, authors: !!options.authors, all: !!options.all, limit: options.limit, minBooks: options.minBooks });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to report author roles:'), (error as any).message);
     }
   });
 
@@ -733,20 +831,24 @@ Examples:
 
 program
   .command('browser-book-scrape')
-  .description('Harvest rich per-book fields (genres, publisher, ISBNs, ratings-by-star, currently-reading, editions, …) for prioritized /book/show pages. Default: books with the most ratings that are missing genres. Headed Chromium by default (logged-in session, WAF-safe, adds editions count); --engine axios for the faster SSR fallback when Goodreads isn\'t throttling the axios transport.')
+  .description('Harvest rich per-book fields (genres, publisher, ISBNs, ratings-by-star, currently-reading, editions, …) for prioritized /book/show pages. Default: books with the most ratings that are missing genres. --candidate coverage-gap targets work-representative editions (books.is_work_rep) that have no book_page row — the exact "works without field coverage" gap the ratingsCoverageHistogram WORK+F column reveals — most ratings first. Headed Chromium by default (logged-in session, WAF-safe, adds editions count); --engine axios for the faster SSR fallback when Goodreads isn\'t throttling the axios transport.')
   .addHelpText('after', `
 Examples:
   $ npm run browser-book-scrape -- --limit 20
   $ npm run browser-book-scrape -- --limit 100 --minRatings 100000 --sort ratingsDesc
+  $ npm run browser-book-scrape -- --candidate coverage-gap --limit 1000
+  $ npm run browser-book-scrape -- --candidate coverage-gap --limit 300000   (most ratings first)
   $ npm run browser-book-scrape -- --skip-has genres,work-id --sort random --limit 5
   $ npm run browser-book-scrape -- --engine axios --limit 20   (SSR path when axios isn't throttled)
   $ npm run browser-book-scrape -- --dryRun --limit 10
   $ ./browserBookScrape.sh --limit 50
+  $ ./scrapeCoverageGaps.sh --limit 50            (same as --candidate coverage-gap)
   $ GOODREADS_STRICT_THROTTLE=1 npm run browser-book-scrape -- --limit 5   (abort on 202/403)
 Resume: books already scraped (browser_scrape.status=ok) are skipped unless --force.
 Throttling: 202/403 → 60s cooldown + 1 retry; abort after 2 consecutive throttles (--maxConsecutiveThrottles).`)
   .option('--limit <number>', 'Number of books to scrape (default 10)', '10')
   .option('--minRatings <number>', 'Only target books with at least this many ratings')
+  .option('--candidate <source>', 'Candidate source: default (skip-has criteria) or coverage-gap (work reps with no book_page row, most ratings first)', 'default')
   .option('--skip-has <criteria>', 'Only target books MISSING all of these: genres|work-id|tags (default genres)', 'genres')
   .option('--sort <order>', 'Backlog order: ratingsDesc (default), ratingsAsc, random', 'ratingsDesc')
   .option('--engine <engine>', 'Fetch engine: browser (default, headed Chromium, logged-in, adds editions count) or axios (SSR fallback)', 'browser')
@@ -756,6 +858,7 @@ Throttling: 202/403 → 60s cooldown + 1 retry; abort after 2 consecutive thrott
   .option('--maxConsecutiveThrottles <number>', 'Give up after this many consecutive throttled books (default 2; 0 = keep going)', '2')
   .action(async (options) => {
     try {
+      const candidateSource = String(options.candidate ?? 'default');
       const skipHas = String(options.skipHas).split(',').map((s: string) => s.trim()).filter(Boolean);
       await runBrowserBookScrape({
         limit: parseInt(options.limit, 10),
@@ -763,6 +866,7 @@ Throttling: 202/403 → 60s cooldown + 1 retry; abort after 2 consecutive thrott
         skipHas,
         sort: options.sort,
         engine: options.engine,
+        candidateSource: candidateSource === 'coverage-gap' ? 'coverage-gap' : 'default',
         dryRun: !!options.dryRun,
         force: !!options.force,
         cooldownMs: options.cooldownMs !== undefined ? parseInt(options.cooldownMs, 10) : undefined,
@@ -907,6 +1011,107 @@ NOT recorded as fully scraped. Set --skip-days 0 to disable skipping.`)
       });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run popular-lists walk:'), (error as any).message);
+    }
+  });
+
+program
+  .command('list-tag-backfill')
+  .description('Work down the list-tag backlog: find every list the DB knows about that has no row in the list_tags table, then read ONLY page 1 of each one (books + authors, and its Tags: block) in RANDOM order, with the usual pacing between lists. Re-run until the queue is empty.')
+  .addHelpText('after', `
+Examples:
+  $ ./listTagBackfill.sh                      # tag every known list that has no tags yet
+  $ ./listTagBackfill.sh --limit 200          # just the next 200
+  $ ./listTagBackfill.sh --dryRun             # show the queue in random order, read nothing
+Candidate lists are the union of list_scrapes + lists + list_walk, minus any list
+that already has a list_tags row. Order is randomized on purpose: the backlog is
+mostly dead list ids from years of crawls, and walking them in id order re-hits
+the same 404 cluster first every run. A list that fails to read is counted and
+skipped, never fatal — only a connectivity outage aborts the run.`)
+  .option('--limit <number>', 'Stop after this many lists (default: the whole queue)')
+  .option('--dryRun', 'List the queue in random order but fetch nothing')
+  .action(async (options) => {
+    try {
+      await runListTagBackfill({
+        limit: options.limit !== undefined ? parseInt(options.limit, 10) : undefined,
+        dryRun: !!options.dryRun,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run list tag backfill:'), (error as any).message);
+    }
+  });
+
+program
+  .command('list-tag-stats')
+  .description('Rank list_tags by how many lists carry each tag — the most-used tags on the lists this DB knows about. Read-only local query; no network.')
+  .addHelpText('after', `
+Examples:
+  $ ./listTagStats.sh                  # top 25 tags by list count
+  $ ./listTagStats.sh --limit 100      # top 100
+  $ ./listTagStats.sh --limit 10 --min-lists 5   # only tags on 5+ lists
+  $ ./listTagStats.sh --exclude-walked    # hide tags you have already walked`)
+  .option('--limit <number>', 'How many tags to show (default 25)')
+  .option('--min-lists <number>', 'Only count tags carried by at least this many lists (default 1)')
+  .option('--exclude-walked', 'Hide tags already used as a Listopia walk tag (tags you have already enumerated lists through)')
+  .action(async (options) => {
+    try {
+      await runListTagStats({ limit: options.limit, minLists: options.minLists, excludeWalked: !!options.excludeWalked });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run list tag stats:'), (error as any).message);
+    }
+  });
+
+program
+  .command('list-tags')
+  .description('Bare list of tags → number of lists, straight from the list_tags xref (no bars, ages, or walk notes — see list-tag-stats for the annotated report). Read-only local query; no network.')
+  .addHelpText('after', `
+Examples:
+  $ ./listTags.sh                  # top 30 tags by list count
+  $ ./listTags.sh --limit 100      # top 100
+  $ ./listTags.sh --limit 10`)
+  .option('--limit <number>', 'How many tags to show (default 30)')
+  .action(async (options) => {
+    try {
+      await runListTags({ limit: options.limit });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run list tags:'), (error as any).message);
+    }
+  });
+
+program
+  .command('next-tag-walk')
+  .description('Walk every Listopia list tag that has never been walked, biggest first (the ./listTagStats.sh --exclude-walked ranking, most lists then ties by name, walked-tag history excluded). Each tag gets the full list-tag-walk: every list under it, books + authors.')
+  .addHelpText('after', `
+Examples:
+  $ ./walkNextTag.sh                        # walk ALL unwalked tags, biggest first, default --skip-days 100
+  $ ./walkNextTag.sh --skip-days 30         # skip lists fully scraped within 30d
+  $ ./walkNextTag.sh --min-lists 5          # only consider tags on 5+ lists
+  $ ./walkNextTag.sh --dryRun               # list the unwalked tags in walk order, crawl nothing
+  $ caffeinate -is ./walkNextTag.sh         # keep the Mac awake during the whole run
+Walk: the SAME engine as list-tag-walk, with the tag auto-chosen per the
+listTagStats ranking. Lists fully scraped to the end within the last --skip-days
+days (default 100) are skipped via list_scrapes; --list-max-pages crawls are
+partial and NOT recorded as fully scraped. Each tag's walk + membership is
+recorded when its walk STARTS, so a crash resumes with the next unwalked tag.
+Nothing to pick = all tags walked; re-walk one with ./listTagWalk.sh <tag>.
+Throttling: same 60s cooldown + 1 retry + 2-consecutive abort behavior as list-tag-walk.`)
+  .option('--min-lists <number>', 'Only consider tags carried by this many lists or more (default 1)')
+  .option('--skip-days <number>', 'Skip lists whose last full scrape is younger than this many days (default 100; 0 = never skip)', '100')
+  .option('--page-start <number>', 'Tag-index page to start at (default 1)', '1')
+  .option('--page-end <number>', 'Tag-index page to stop at, inclusive; default reads all pages to the end')
+  .option('--list-max-pages <number>', 'Stop each individual list crawl after this many pages (default: whole list)')
+  .option('--dryRun', 'Pick and print the next tag, but crawl nothing')
+  .action(async (options) => {
+    try {
+      await runNextTagWalk({
+        minLists: options.minLists !== undefined ? parseInt(options.minLists, 10) : undefined,
+        skipDays: parseInt(options.skipDays, 10),
+        pageStart: parseInt(options.pageStart, 10),
+        pageEnd: options.pageEnd !== undefined ? parseInt(options.pageEnd, 10) : undefined,
+        listMaxPages: options.listMaxPages !== undefined ? parseInt(options.listMaxPages, 10) : undefined,
+        dryRun: !!options.dryRun,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run next-tag-walk:'), (error as any).message);
     }
   });
 
@@ -1197,6 +1402,60 @@ Examples:
   });
 
 program
+  .command('book-languages')
+  .description('Top book languages by number of books, average rating, or total ratings, computed from the cached books + browser book-page scrapes (language lives in book_page). Editions of the same work collapse into one work. Use --minRatings to only count works with at least that many ratings, and --minBooks to skip rare entries.')
+  .addHelpText('after', `
+Examples:
+  $ ./bookLanguages.sh --help
+  $ ./bookLanguages.sh --limit 20
+  $ ./bookLanguages.sh --sortBy totalRatings --minBooks 50
+  $ npm run book-languages -- --minRatings 1000 --raw`)
+  .option('--limit <number>', 'Number of top entries to show (default 25)', '25')
+  .option('--sortBy <field>', 'Sort: books (default), avgRating, totalRatings', 'books')
+  .option('--minRatings <number>', 'Only count works with at least this many ratings (default 0)', '0')
+  .option('--minBooks <number>', 'Minimum number of distinct works an entry must have (default 1)', '1')
+  .option('--raw', 'Keep case/whitespace variants as separate entries instead of folding them')
+  .action(async (options) => {
+    if (!isFacetName('language')) {
+      console.error(chalk.red.bold('Error: unknown facet'));
+      process.exit(1);
+    }
+    try {
+      await runFacetCatalog('language', options);
+    } catch (error) {
+      console.error(chalk.red.bold('Error running book-languages:'), error);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('book-formats')
+  .description('Top book formats by number of books, average rating, or total ratings, computed from the cached books + browser book-page scrapes (format lives in book_page). Editions of the same work collapse into one work, and case/whitespace variants ("Paperback" vs "paperback ") fold together unless --raw is passed.')
+  .addHelpText('after', `
+Examples:
+  $ ./bookFormats.sh --help
+  $ ./bookFormats.sh --limit 20
+  $ ./bookFormats.sh --sortBy totalRatings --minBooks 50
+  $ npm run book-formats -- --minRatings 1000 --raw`)
+  .option('--limit <number>', 'Number of top entries to show (default 25)', '25')
+  .option('--sortBy <field>', 'Sort: books (default), avgRating, totalRatings', 'books')
+  .option('--minRatings <number>', 'Only count works with at least this many ratings (default 0)', '0')
+  .option('--minBooks <number>', 'Minimum number of distinct works an entry must have (default 1)', '1')
+  .option('--raw', 'Keep case/whitespace variants as separate entries instead of folding them')
+  .action(async (options) => {
+    if (!isFacetName('format')) {
+      console.error(chalk.red.bold('Error: unknown facet'));
+      process.exit(1);
+    }
+    try {
+      await runFacetCatalog('format', options);
+    } catch (error) {
+      console.error(chalk.red.bold('Error running book-formats:'), error);
+      process.exit(1);
+    }
+  });
+
+program
   .command('publisher-catalog')
   .description('Top publishers by number of books or by average star rating, computed from the cached books + browser book-page scrapes (publisher lives in book_page). Editions of the same work collapse into one work per publisher. Use --minRatings to only count works with at least that many ratings, and --minBooks to skip publishers with too few works.')
   .addHelpText('after', `
@@ -1402,7 +1661,7 @@ Examples:
 
 program
   .command('export-data <basename>')
-  .description('Export the library-data tables (books, authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state) as timestamped, gzipped CSV files for sharing. Sanitized: config (live session cookies), browser_scrape / author_scrape_failures checkpoints, and list_scrapes / list_walk bookkeeping are EXCLUDED. basename is a mandatory identifier, e.g. mjf. Writes to the current directory by default.')
+  .description('Export the library-data tables (books, authors, author_slugs, tag_books, genres, genre_tag_xref, list_tags, list_tag_walk_history, book_page, tag_stats, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state) as timestamped, gzipped CSV files for sharing. Sanitized: config (live session cookies), browser_scrape / author_scrape_failures checkpoints, list_scrapes / list_walk bookkeeping, and the legacy list_tag_walks are EXCLUDED. basename is a mandatory identifier, e.g. mjf. Writes to the current directory by default.')
   .option('--out <dir>', 'Output directory (default: current directory)', '')
   .addHelpText('after', `
 Examples:
@@ -1426,15 +1685,18 @@ Examples:
 
 program
   .command('import-data')
-  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, tag_books, genres, genre_tag_xref, book_page, tag_stats, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad (book_page and popular_by_date_book keep the newest scrape per row; lists seen_book_ids are union-merged). Config, browser_scrape, author_scrape_failures, list_scrapes, and list_walk are not exported and not imported. Updates the schema automatically (current spec).')
+  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, author_slugs, tag_books, genres, genre_tag_xref, list_tags, list_tag_walk_history, book_page, tag_stats, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad (book_page and popular_by_date_book keep the newest scrape per row; lists seen_book_ids are union-merged; list_tags keep from_sidebar/from_directory provenance; author_slugs never move first_seen/last_seen backwards; list_tag_walk_history keeps the earliest first_walked and latest last_walked). Config, browser_scrape, author_scrape_failures, list_scrapes, list_walk, and the legacy list_tag_walks are not exported and not imported. Updates the schema automatically (current spec).')
   .option('--books <file>', 'Path to the books .csv.gz file')
   .option('--authors <file>', 'Path to the authors .csv.gz file')
+  .option('--authorSlugs <file>', 'Path to the author_slugs .csv.gz file (slug-history ledger; first_seen keeps earliest, last_seen keeps latest)')
   .option('--tagBooks <file>', 'Path to the tag_books .csv.gz file')
   .option('--genres <file>', 'Path to the genres .csv.gz file')
   .option('--xref <file>', 'Path to the genre_tag_xref .csv.gz file')
   .option('--bookPage <file>', 'Path to the book_page .csv.gz file (browser-scraped page details; newest scraped_at wins)')
   .option('--tagStats <file>', 'Path to the tag_stats .csv.gz file (shelf crawl state)')
   .option('--lists <file>', 'Path to the lists .csv.gz file (list discovery/ingest state; seen_book_ids unioned)')
+  .option('--listTags <file>', 'Path to the list_tags .csv.gz file (unified list-tag xref; from_sidebar/from_directory provenance preserved)')
+  .option('--listTagWalkHistory <file>', 'Path to the list_tag_walk_history .csv.gz file (walk-history ledger; earliest first_walked, latest last_walked, larger num_walks/num_lists)')
   .option('--popularByDate <file>', 'Path to the popular_by_date_book .csv.gz file (rank snapshots; newest scraped_at wins)')
   .option('--tagTails <file>', 'Path to the tag_tail_scrapes .csv.gz file (tag-recent-monitor progress; newest last_scraped wins)')
   .option('--tagTailState <file>', 'Path to the tag_tail_monitor_state .csv.gz file (in-flight monitor run state)')
@@ -1449,19 +1711,22 @@ Examples:
   .action(async (options) => {
     try {
       const policy = options.ratingPolicy === 'update' ? 'update' : 'keep';
-      const files = [options.books, options.authors, options.tagBooks, options.genres, options.xref, options.bookPage, options.tagStats, options.lists, options.popularByDate, options.tagTails, options.tagTailState].filter(Boolean);
+      const files = [options.books, options.authors, options.authorSlugs, options.tagBooks, options.genres, options.xref, options.bookPage, options.tagStats, options.lists, options.listTags, options.listTagWalkHistory, options.popularByDate, options.tagTails, options.tagTailState].filter(Boolean);
       for (const f of files) {
         printAnalysis(await analyzeCsv(f));
       }
       const counts = await importData(getDb(), {
         booksFile: options.books,
         authorsFile: options.authors,
+        authorSlugsFile: options.authorSlugs,
         tagBooksFile: options.tagBooks,
         genresFile: options.genres,
         xrefFile: options.xref,
         bookPageFile: options.bookPage,
         tagStatsFile: options.tagStats,
         listsFile: options.lists,
+        listTagsFile: options.listTags,
+        listTagWalkHistoryFile: options.listTagWalkHistory,
         popularByDateFile: options.popularByDate,
         tagTailsFile: options.tagTails,
         tagTailStateFile: options.tagTailState,

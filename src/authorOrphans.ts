@@ -1,8 +1,9 @@
 import chalk from 'chalk';
-import { loadAuthorCache, iterateBooks, findAuthorBySlug, upsertAuthor, updateAuthorStats, recordAuthorFailure, AUTHOR_FAIL_LIMIT, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures, AUTHOR_SCRAPE_FAIL_LIMIT } from './storage.js';
-import type { CachedBook, AuthorCache, AuthorCacheEntry } from './storage.js';
-import { scrapeAuthorStats } from './scraper.js';
-import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.js';
+import { iterateBooks, iterateAuthors, getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, loadScrapeFailures, loadStrikeMap, AUTHOR_FAIL_LIMIT } from './storage.ts';
+import type { CachedBook, AuthorCache, AuthorCacheEntry } from './storage.ts';
+import { authorPairs } from './authorTopStats.ts';
+import { scrapeAuthorStats, describeAuthorId } from './scraper.ts';
+import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.ts';
 
 
 export interface AuthorOrphan {
@@ -84,7 +85,7 @@ export function authorListUrl(o: Pick<AuthorOrphan, 'authorId'>): string | undef
 // don't list the same real author twice (e.g. "John  Green" and "John Green").
 export function selectAuthorOrphans(
   books: Iterable<CachedBook>,
-  authorCache: AuthorCache
+  authorModels: AuthorCache | Iterable<AuthorCacheEntry>
 ): { orphans: AuthorOrphan[]; knownSlugs: Map<string, string> } {
   // (authorId?) -> { rawName, topTitle, topRatings }
   const byId = new Map<string, { rawName: string; topTitle: string; topRatings: number }>();
@@ -94,8 +95,10 @@ export function selectAuthorOrphans(
   // reported as a fresh orphan. This is what prevents the "John  Green" false
   // positive: the same id 1406384 already lives in the cache.
   const knownByAuthorId = new Map<string, string>();
-  for (const entry of Object.values(authorCache)) {
+  const knownNames = new Set<string>();
+  for (const [, entry] of authorPairs(authorModels)) {
     if (entry.id) knownByAuthorId.set(String(entry.id), entry.slug);
+    if (entry.name) knownNames.add(entry.name);
   }
 
   for (const book of books) {
@@ -104,8 +107,8 @@ export function selectAuthorOrphans(
     // Already a known author-cache key (raw or whitespace-normalized), OR the
     // same authorId is hosted there. Covers both the "John  Green" (has id)
     // and "Michael  Grant" + missing authorId (no id to match) false orphans.
-    if (authorCache[raw]) continue;
-    if (authorCache[normalizeAuthorName(raw)]) continue;
+    if (knownNames.has(raw)) continue;
+    if (knownNames.has(normalizeAuthorName(raw))) continue;
     const r = parseRatings(book);
     if (book.authorId && knownByAuthorId.has(String(book.authorId))) continue;
     const id = book.authorId ?? raw;
@@ -154,13 +157,15 @@ export function applyOrphanFilters(
 // This is the cross-run dedup signal: those aren't really "missing".
 export function annotateKnownSlugs(
   orphans: AuthorOrphan[],
-  authorCache: AuthorCache
+  authorModels: AuthorCache | Iterable<AuthorCacheEntry>
 ): void {
-  // Phase 0: we can't resolve authorId -> slug without network/DB slug store,
-  // so only flag exact name-key matches (already excluded) — left as a no-op
-  // placeholder until the authorId->slug resolution ships (Phase 1).
+  // Streamed id set so an orphan with an authorId already hosted in the author
+  // table isn't really "missing" — without materializing the whole ~960k-row
+  // cache object.
+  const knownIds = new Set<string>();
+  for (const [, entry] of authorPairs(authorModels)) knownIds.add(String(entry.id));
   for (const o of orphans) {
-    o.knownSlug = !!authorCache[o.normalizedName];
+    o.knownSlug = !!o.authorId && knownIds.has(String(o.authorId));
   }
 }
 
@@ -206,7 +211,7 @@ export async function runOrphanScrape(
   let skipped = 0;
   for (const o of candidates) {
     const fail = loadAuthorScrapeFailure(o.authorId!);
-    if (fail && (fail.failCount ?? 0) >= AUTHOR_SCRAPE_FAIL_LIMIT) {
+    if (fail && (fail.failCount ?? 0) >= AUTHOR_FAIL_LIMIT) {
       skipped++;
       continue;
     }
@@ -221,7 +226,7 @@ export async function runOrphanScrape(
 
   let failed = 0;
   let noStats = 0;
-  let updated = 0;
+      let updated = 0;
   let totalInserted = 0;
   let totalEnriched = 0;
   const start = Date.now();
@@ -246,11 +251,10 @@ export async function runOrphanScrape(
       );
       if (!result) {
         noStats++;
-        console.log(chalk.yellow(`   ⚠️ No stats line found for ${orphan.normalizedName}`));
+        console.log(chalk.yellow(`   ⚠️ No stats line found for ${describeAuthorId(authorId, orphan.rawName)}`));
         recordAuthorScrapeFailure(authorId, failReason);
-        recordAuthorFailure(fallbackNameFromSlug(authorId), failReason);
         const strikes = loadAuthorScrapeFailure(authorId)?.failCount ?? 1;
-        console.log(chalk.gray(`      ↳ Consecutive failure ${strikes}/${AUTHOR_SCRAPE_FAIL_LIMIT}${strikes >= AUTHOR_SCRAPE_FAIL_LIMIT ? ' — skipped for future runs' : ''}`));
+        console.log(chalk.gray(`      ↳ Consecutive failure ${strikes}/${AUTHOR_FAIL_LIMIT}${strikes >= AUTHOR_FAIL_LIMIT ? ' — skipped for future runs' : ''}`));
         await delay(authorDelayMin, authorDelayMax);
         continue;
       }
@@ -261,19 +265,19 @@ export async function runOrphanScrape(
       totalEnriched += result.booksEnriched;
 
       const slug = stats.slug || authorId;
-      const id = slug.split('.')[0];
+      const id = authorId;
       const name = stats.name || fallbackNameFromSlug(slug);
 
-      const found = findAuthorBySlug(slug);
-      const key = found?.key ?? name;
-      const entry: AuthorCacheEntry = found?.entry ?? {
+      const entry: AuthorCacheEntry = getAuthorById(id) ?? {
         id,
+        name,
         slug,
         lastSeen: new Date().toISOString(),
         firstSeen: new Date().toISOString(),
       };
-      entry.failCount = 0;
-      entry.lastError = undefined;
+      entry.name = stats.name || entry.name || name;
+      entry.slug = stats.slug || entry.slug || slug;
+      clearAuthorScrapeFailure(authorId);
       // Every successful scrape = "seen recently", so --minAge gates in the
       // other scrapers can skip this author for the cooldown window.
       entry.lastSeen = new Date().toISOString();
@@ -288,14 +292,15 @@ export async function runOrphanScrape(
         `${chalk.yellow(fmt(stats.numReviews, entry.numReviews))} reviews · ` +
         `${chalk.cyan(fmt(stats.numShelves, entry.numShelves))} shelves · ` +
         `Avg ${fmt(stats.averageRating, entry.averageRating)}` +
+        ` ${chalk.gray(`· slug ${entry.slug ?? '(none)'}`)}` +
         (result.catalogPages ? chalk.gray(` · ~${result.catalogPages} catalog page${result.catalogPages === 1 ? '' : 's'}`) : '')
       );
+      upsertAuthorById(id, entry);
+      upsertAuthorSlug(id, entry.slug, entry.name);
       if (changed) {
         updated++;
-        upsertAuthor(key, entry);
-        console.log(chalk.green.bold(`   ✅ Author cache updated (${key})`));
+        console.log(chalk.green.bold(`   ✅ Author cache updated (${id})`));
       } else {
-        upsertAuthor(key, entry);
         console.log(chalk.gray(`   (No change - values already current)`));
       }
     } catch (error) {
@@ -336,9 +341,7 @@ const CATEGORY_COLOR: Record<OrphanCategory, (s: string) => string> = {
 };
 
 export async function runAuthorOrphans(options: AuthorOrphansOptions = {}): Promise<void> {
-  const authorCache = await loadAuthorCache();
-
-  const { orphans } = selectAuthorOrphans(iterateBooks(), authorCache);
+  const { orphans } = selectAuthorOrphans(iterateBooks(), iterateAuthors());
   const scrape = !!options.scrape;
 
   if (scrape) {
@@ -350,7 +353,7 @@ export async function runAuthorOrphans(options: AuthorOrphansOptions = {}): Prom
   }
 
   const filtered = applyOrphanFilters(orphans, options);
-  annotateKnownSlugs(filtered, authorCache);
+  annotateKnownSlugs(filtered, iterateAuthors());
   const inspect = !!options.inspect;
 
   console.log(chalk.cyan.bold('\n📇 Book-cache authors missing from the author cache'));
@@ -377,9 +380,9 @@ export async function runAuthorOrphans(options: AuthorOrphansOptions = {}): Prom
   // Surface orphan ids that have failed to scrape enough times that a --scrape
   // run would skip them — so the user knows why those "missing" authors won't
   // be auto-fetched.
-  const skipFailures = loadScrapeFailures().filter(f => (f.failCount ?? 0) >= AUTHOR_SCRAPE_FAIL_LIMIT);
+  const skipFailures = loadScrapeFailures().filter(f => (f.failCount ?? 0) >= AUTHOR_FAIL_LIMIT);
   if (skipFailures.length > 0) {
-    console.log(chalk.gray(`   Skipped on --scrape: ${chalk.yellow(formatNum(skipFailures.length))} author id${skipFailures.length === 1 ? '' : 's'} previously failed to scrape (≥${AUTHOR_SCRAPE_FAIL_LIMIT} strikes) — use a higher --limit or inspect manually`));
+    console.log(chalk.gray(`   Skipped on --scrape: ${chalk.yellow(formatNum(skipFailures.length))} author id${skipFailures.length === 1 ? '' : 's'} previously failed to scrape (≥${AUTHOR_FAIL_LIMIT} strikes) — use a higher --limit or inspect manually`));
   }
   console.log(chalk.gray(`   Legend: ${CATEGORY_COLOR.concat('multi-author (concat string)')} · ${CATEGORY_COLOR['no-id']('no author id')} · ${CATEGORY_COLOR.missing('genuinely missing, scrapeable')}`));
 

@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { LibraryExport, LibraryEntry } from './libraryExport.js';
+import { LibraryExport, LibraryEntry } from './libraryExport.ts';
 import {
   getLibrary,
   readInYear,
@@ -14,13 +14,13 @@ import {
   renderPublishedYearLines,
   parseYear,
   CharField
-} from './library.js';
-import { getBook, loadGenreTagXref, loadTagBooks } from './storage.js';
-import type { BookCache, TagBookRow } from './storage.js';
-import { getYear, formatBookLink } from './utils.js';
-import { groupFavoriteAuthors } from './favoriteAuthors.js';
-import { maybeSyncLiveReads, fetchLiveYearReads } from './reviewListSync.js';
-import { loadConfig } from './storage.js';
+} from './library.ts';
+import { getBook, loadGenreTagXref, loadTagBooks } from './storage.ts';
+import type { BookCache, TagBookRow } from './storage.ts';
+import { getYear, formatBookLink } from './utils.ts';
+import { groupFavoriteAuthors } from './favoriteAuthors.ts';
+import { maybeSyncLiveReads, fetchLiveYearReads } from './reviewListSync.ts';
+import { loadConfig } from './storage.ts';
 
 export interface YearInBooksOptions {
   year?: string;
@@ -120,6 +120,13 @@ export function parseRating(entry: LibraryEntry): number | undefined {
   return v;
 }
 
+// A rating is *displayed* at its rounded star level — Goodreads now allows
+// quarter-star ratings (data-rating="3.75"), which read as 4★ in a whole-star
+// histogram — while every numeric summary keeps the exact value for averages.
+export function starBucket(rating: number): number {
+  return Math.max(1, Math.min(5, Math.round(rating)));
+}
+
 function exampleText(entries: LibraryEntry[], bucketOf: (entry: LibraryEntry) => string): Map<string, string> {
   const map = new Map<string, string>();
   const sorted = [...entries].sort((a, b) => a.dateRead.localeCompare(b.dateRead));
@@ -187,7 +194,8 @@ export function renderRatings(entries: LibraryEntry[]): string[] {
     const rating = parseRating(entry);
     if (rating === undefined) continue;
     ratings.push(rating);
-    hist.set(rating, (hist.get(rating) || 0) + 1);
+    const bucket = starBucket(rating);
+    hist.set(bucket, (hist.get(bucket) || 0) + 1);
   }
 
   if (ratings.length === 0) {
@@ -257,16 +265,26 @@ export function renderDistribution(ctx: SectionContext): string[] {
 }
 
 export function topStarLevel(entries: LibraryEntry[]): number {
-  for (let star = 5; star >= 1; star--) {
-    if (entries.some(entry => parseRating(entry) === star)) return star;
+  let top = 0;
+  for (const entry of entries) {
+    const rating = parseRating(entry);
+    if (rating !== undefined && rating > top) top = rating;
   }
-  return 0;
+  return top;
+}
+
+function fmtStar(star: number): string {
+  return Number.isInteger(star) ? String(star) : star.toFixed(2).replace(/0+$/, '');
+}
+
+function starLabel(star: number): string {
+  return Number.isInteger(star) && STAR_LABELS[star] ? STAR_LABELS[star] : `${fmtStar(star)}-star`;
 }
 
 function topRatedTitle(entries: LibraryEntry[]): string {
   const star = topStarLevel(entries);
   if (star === 0) return '⭐ Five-star books';
-  return `⭐ ${STAR_LABELS[star] ?? `${star}-star`} books`;
+  return `⭐ ${starLabel(star)} books`;
 }
 
 async function renderTopRated(ctx: SectionContext): Promise<string[]> {
@@ -277,7 +295,7 @@ async function renderTopRated(ctx: SectionContext): Promise<string[]> {
   const rated = entries.filter(entry => parseRating(entry) === star);
   const lines: string[] = [];
   if (star < 5) {
-    lines.push(chalk.gray(`   (no five-star ratings — showing your top-rated ${star}-star books instead)`));
+    lines.push(chalk.gray(`   (no five-star ratings — showing your top-rated ${starLabel(star)} books instead)`));
   }
 
   rated.forEach((entry, i) => {

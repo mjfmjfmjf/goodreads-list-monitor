@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeSeriesPosHistogram } from './summarySeriesPos.js';
+import { computeSeriesPosHistogram } from './summarySeriesPos.ts';
 
 describe('computeSeriesPosHistogram', () => {
   const book = (title: string, seriesPos?: number) => ({ title, seriesPos });

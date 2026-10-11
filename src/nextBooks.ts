@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { scrapeShelfBooks } from './scraper.js';
-import { matchesReviewed } from './libraryExport.js';
-import { getLibrary } from './library.js';
-import { getYear, formatBookLink } from './utils.js';
+import { scrapeShelfBooks } from './scraper.ts';
+import { matchesReviewed } from './libraryExport.ts';
+import { getLibrary } from './library.ts';
+import { getYear, formatBookLink } from './utils.ts';
 
 export interface NextBooksOptions {
   pages?: string;

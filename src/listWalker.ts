@@ -1,9 +1,9 @@
 import chalk from 'chalk';
 import { BrowserContext, Page } from 'playwright';
 import { createInterface } from 'readline';
-import { getDb } from './db.js';
-import { getBook, CachedBook } from './storage.js';
-import { withDbLockRetry, httpCallInfo } from './utils.js';
+import { getDb } from './db.ts';
+import { getBook, CachedBook } from './storage.ts';
+import { withDbLockRetry, httpCallInfo } from './utils.ts';
 import {
   getBrowserContext,
   processBook,
@@ -14,13 +14,13 @@ import {
   pace,
   cooldown,
   CheckpointRow,
-} from './browserBookScrape.js';
+} from './browserBookScrape.ts';
 import {
   ChainLink,
   MAX_LIST_PAGE_NUMBER,
   parseListPage,
   resolveNextChainLink,
-} from './listPageParse.js';
+} from './listPageParse.ts';
 
 const MIN_USABLE_LIST_HTML = 1000;
 const MAX_EMPTY_FETCHES = Math.max(1, Number(process.env.GOODREADS_MAX_EMPTY_FETCHES) || 3);

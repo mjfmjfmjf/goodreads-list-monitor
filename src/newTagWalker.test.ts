@@ -6,12 +6,12 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-newtag-${process.pid}-${Date.now()}.db`;
 });
 
-vi.mock('./scraper.js', () => ({
+vi.mock('./scraper.ts', () => ({
   scrapeTopShelves: vi.fn(),
   scrapeShelfBooks: vi.fn(),
 }));
 
-vi.mock('./utils.js', () => ({
+vi.mock('./utils.ts', () => ({
   delay: vi.fn(async () => {}),
   isConnectivityError: vi.fn(() => false),
   isDbLockError: vi.fn(() => false),
@@ -19,10 +19,10 @@ vi.mock('./utils.js', () => ({
   connectivityProbeDefaults: vi.fn(() => ({ waitMs: 1, probes: 1 })),
 }));
 
-import { closeDb, getDb } from './db.js';
-import { scrapeShelfBooks, scrapeTopShelves } from './scraper.js';
-import { getBook, persistShelfPageCount, upsertBook, upsertTagBooks } from './storage.js';
-import { loadScrapedTagSet, isTagScraped, runNewTagWalker } from './newTagWalker.js';
+import { closeDb, getDb } from './db.ts';
+import { scrapeShelfBooks, scrapeTopShelves } from './scraper.ts';
+import { getBook, persistShelfPageCount, upsertBook, upsertTagBooks } from './storage.ts';
+import { loadScrapedTagSet, isTagScraped, runNewTagWalker } from './newTagWalker.ts';
 
 const mockTopShelves = vi.mocked(scrapeTopShelves);
 const mockShelfBooks = vi.mocked(scrapeShelfBooks);

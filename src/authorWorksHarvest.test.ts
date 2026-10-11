@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import * as cheerio from 'cheerio';
-import { computeAuthorPageMerge, type AuthorPageBookRow } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { parseAuthorListBooks } from './scraper.js';
+import { computeAuthorPageMerge, type AuthorPageBookRow } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { parseAuthorListBooks } from './scraper.ts';
 
 const existingBook = (overrides: Partial<CachedBook> = {}): CachedBook => ({
   id: '15553789',

@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { getBook, deleteBook } from './storage.js';
+import { getBook, deleteBook } from './storage.ts';
 
 export async function removeBookFromCache(bookIds: string[]): Promise<void> {
   let removedCount = 0;

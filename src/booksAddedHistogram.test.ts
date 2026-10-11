@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dayBuckets, weekBuckets, monthBuckets } from './booksAddedHistogram.js';
+import { dayBuckets, weekBuckets, monthBuckets } from './booksAddedHistogram.ts';
 
 type Bucket = ReturnType<typeof dayBuckets>[number];
 

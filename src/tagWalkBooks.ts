@@ -7,9 +7,9 @@ import {
   closeBrowserContext,
   cooldown,
   pace,
-} from './browserBookScrape.js';
-import { listHtmlUsable, shouldSkipBook } from './listWalker.js';
-import { httpCallInfo } from './utils.js';
+} from './browserBookScrape.ts';
+import { listHtmlUsable, shouldSkipBook } from './listWalker.ts';
+import { httpCallInfo } from './utils.ts';
 
 export interface TagWalkBooksOptions {
   tag: string;

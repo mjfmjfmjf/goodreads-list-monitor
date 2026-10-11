@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { queryBookWithAuthor, formatNum, formatAvg, formatBookDetail } from './dbReadBook.js';
-import type { BookRow, AuthorRow, BookWithAuthor } from './dbReadBook.js';
+import { queryBookWithAuthor, formatNum, formatAvg, formatBookDetail } from './dbReadBook.ts';
+import type { BookRow, AuthorRow, BookWithAuthor } from './dbReadBook.ts';
 
 function fakeDb(books: Record<string, BookRow>, authors: Record<string, AuthorRow[]>) {
   return {

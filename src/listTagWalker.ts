@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { scrapeListsByTag, scrapeListBooks, TagListEntry } from './scraper.js';
-import { countAuthors, loadListScrape, syncBooksToCache, upsertListScrape, type BookCache } from './storage.js';
-import { delay, isConnectivityError, withConnectivityProbe } from './utils.js';
+import { scrapeListsByTag, scrapeListBooks, TagListEntry } from './scraper.ts';
+import { countAuthors, loadListScrape, syncBooksToCache, upsertListScrape, recordListTagMembership, recordListTagWalkHistory, type BookCache } from './storage.ts';
+import { delay, isConnectivityError, withConnectivityProbe } from './utils.ts';
 
 export interface ListTagWalkerOptions {
   tag: string;
@@ -68,6 +68,27 @@ export async function runListTagWalker(options: ListTagWalkerOptions): Promise<L
     return [];
   }
 
+  // Record that every enumerated list was reached THROUGH this tag, up front —
+  // before the skipDays loop. The tag genuinely produced each of these lists
+  // whether or not we re-read the list page, and a mature tag's walk is
+  // overwhelmingly skipped lists, so waiting until after a crawl meant the skip
+  // `continue` at the loop top bypassed the write entirely (a `christian` walk
+  // recorded 27 of 828 lists — exactly the ones it crawled, walked_at ==
+  // last_scraped). Autocommit upserts, no network, ~828 statements per tag.
+  // Membership goes to the unified xref (list_tags, from_directory = 1); the
+  // tag-level history row counts the walk and remembers how many lists it found.
+  try {
+    recordListTagMembership(tag, lists.map((l) => l.id));
+  } catch (error) {
+    // Never fail a walk over this bookkeeping row.
+  }
+  try {
+    recordListTagWalkHistory(tag, lists.length);
+  } catch (error) {
+    // Same: history is a report nicety, not the crawl's job.
+  }
+  console.log(chalk.gray(`   🏷️  Recorded walk of "${tag}" — ${lists.length.toLocaleString()} lists → list_tags (from_directory) + list_tag_walk_history`));
+
   // Don't load the full book cache (5.6M+ rows, several GB in JS memory) — the
   // SQLite row is the merge source of truth inside syncBooksToCache (getBook),
   // so an empty in-run cache is enough; it accumulates only this run's books.
@@ -105,6 +126,11 @@ export async function runListTagWalker(options: ListTagWalkerOptions): Promise<L
 
     const outcome = await syncBooksToCache(books, bookCache);
     const authorsAdded = countAuthors() - authorsBefore;
+
+    // Walk membership (recordListTagMembership) was already recorded for this list at
+    // enumeration time — see the up-front loop above. It deliberately does NOT
+    // depend on getting this far: the skip path never reaches this point, and a
+    // failed crawl doesn't un-produce the list from the tag.
 
     // Only a crawl that went all the way to the end counts as "scraped".
     // An explicit --list-max-pages cap means the list is only partially read.

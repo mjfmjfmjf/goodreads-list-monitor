@@ -1,10 +1,10 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
-import { iterateBooks, countBooks } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { SERIES_POS_MULTI } from './seriesPos.js';
-import { scrapeUserVoteBooks } from './scraper.js';
-import type { UserVoteEntry } from './scraper.js';
+import { getDb } from './db.ts';
+import { iterateBooks, countBooks } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { SERIES_POS_MULTI } from './seriesPos.ts';
+import { scrapeUserVoteBooks } from './scraper.ts';
+import type { UserVoteEntry } from './scraper.ts';
 
 export const MIN_RATINGS = 10000;
 export const LIST_SIZE = 100;

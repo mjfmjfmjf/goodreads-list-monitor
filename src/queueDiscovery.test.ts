@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pruneCandidates, isAlreadyOnList, resolveListWorkIds, candidatePassesRequireWorkId } from './queueDiscovery.js';
-import type { CachedBook } from './storage.js';
+import { pruneCandidates, isAlreadyOnList, resolveListWorkIds, candidatePassesRequireWorkId } from './queueDiscovery.ts';
+import type { CachedBook } from './storage.ts';
 
 const book = (over: Partial<CachedBook> = {}): CachedBook => ({
   id: 'x',

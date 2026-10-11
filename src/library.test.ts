@@ -16,8 +16,8 @@ import {
   renderCharCountLines,
   renderPublishedYearLines,
   renderMissingLines
-} from './library.js';
-import { LibraryExport, LibraryEntry } from './libraryExport.js';
+} from './library.ts';
+import { LibraryExport, LibraryEntry } from './libraryExport.ts';
 
 function entry(overrides: Partial<LibraryEntry> = {}): LibraryEntry {
   return {

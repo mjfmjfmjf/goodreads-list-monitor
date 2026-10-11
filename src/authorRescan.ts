@@ -1,10 +1,10 @@
 import chalk from 'chalk';
-import { loadAuthorCache, getAuthor, upsertAuthor, updateAuthorStats, countBooks, recordAuthorFailure, AUTHOR_FAIL_LIMIT, type AuthorCacheEntry } from './storage.js';
-import { selectAuthors, wasAuthorPageScraped } from './authorTopStats.js';
-import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.js';
-import { scrapeAuthorStats } from './scraper.js';
-import { getDb } from './db.js';
-import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.js';
+import { iterateAuthors, countAuthors, getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, countBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_FAIL_LIMIT, strikeWeight, type AuthorCacheEntry , isRetiredAuthor } from './storage.ts';
+import { selectAuthors, authorPairs, wasAuthorPageScraped } from './authorTopStats.ts';
+import type { AuthorTopStatsOptions, SelectedAuthor } from './authorTopStats.ts';
+import { scrapeAuthorStats, authorScrapeRef } from './scraper.ts';
+import { getDb } from './db.ts';
+import { delay, isConnectivityError, parseDelayRange, withConnectivityProbe } from './utils.ts';
 
 export interface AuthorRescanOptions extends AuthorTopStatsOptions {
   minAge?: string;
@@ -16,6 +16,51 @@ export interface AuthorRescanOptions extends AuthorTopStatsOptions {
   sort?: string;
   minYear?: string;
   minBookYear?: string;
+}
+
+// An author is "statless" when no author-page count and no average ever parsed
+// for it — i.e. it is a minted row or a scrape that came back empty. This is
+// the --rescanMissing predicate.
+const isStatless = (entry: AuthorCacheEntry): boolean =>
+  !entry.numRatings && !entry.averageRating && !entry.numReviews && !entry.numShelves;
+
+// `topRatings`/`newestYear` order by the author's BOOKS in the books table, not
+// by author-page stats — which are still 0 for exactly the never-scraped authors
+// these paths exist to grind.
+export function isBookBasedSort(sortBy: string): boolean {
+  return sortBy === 'topRatings' || sortBy === 'newestYear';
+}
+
+// The sort key for one author under a given sortBy. Book-based sorts read the
+// `loadAuthorBookStats` aggregation; everything else reads the author-page field.
+export function authorSortValue(
+  entry: AuthorCacheEntry,
+  sortBy: string,
+  bookStats?: Record<string, AuthorBookStats>
+): number {
+  if (sortBy === 'topRatings') return bookStats?.[entry.id]?.topRatings ?? 0;
+  if (sortBy === 'newestYear') return bookStats?.[entry.id]?.newestYear ?? 0;
+  if (sortBy === 'averageRating') return parseFloat(entry.averageRating || '0');
+  if (sortBy === 'ratingsRate') return entry.ratingsRate ?? 0;
+  return parseNum((entry as any)[sortBy]);
+}
+
+// Shared descending comparator. Ties break on the author's top-book rating
+// (book-based sorts), then author-page numRatings, then name — so the order is
+// total and stable rather than dependent on object key insertion.
+export function compareAuthorsBySort(
+  a: SelectedAuthor,
+  b: SelectedAuthor,
+  sortBy: string
+): number {
+  const byValue = b.value - a.value;
+  if (byValue !== 0) return byValue;
+  if (isBookBasedSort(sortBy)) {
+    const byTop =
+      ((b.entry as any).__topRatings ?? 0) - ((a.entry as any).__topRatings ?? 0);
+    if (byTop !== 0) return byTop;
+  }
+  return parseNum(b.entry.numRatings) - parseNum(a.entry.numRatings) || a.name.localeCompare(b.name);
 }
 
 // --rescanMissingField maps a Goodreads author-page count field name to the
@@ -49,6 +94,7 @@ const parseYear = (published?: string): number | null => {
 // published ≥ that year (and ≥ minRatings ratings), so an author qualifies only
 // if they have at least one "recent enough" book. `newestYear` sorts by the
 // newest qualifying book year (recent books first).
+//
 export interface MultiPageSelectionOptions {
   limit: number;
   sortBy: string;
@@ -66,21 +112,35 @@ export interface AuthorBookStats {
 }
 
 // SQL-side aggregation of the books table — O(books) in the DB, O(distinct
-// authors) in JS, per-AuthorCacheEntry-sized. With minBookYear/minRatings
-// bounds, only books that clear BOTH gates are counted, so `.newestYear` is the
-// newest qualifying book and `.topRatings` its rating. Years above a future
-// ceiling are dropped: Goodreads encodes some BCE works as positive years
-// (e.g. 2600), which otherwise outrank genuinely recent books.
+// authors) in JS, per-AuthorCacheEntry-sized.
+//
+// The year range only ever gated `newest`, but it used to gate `top` and `books`
+// too. `published` is the literal string 'Unknown' for 8,780,422 of 11,578,563
+// books (75.8%), so requiring a parseable year for the whole aggregation made
+// any author whose books are all 'Unknown' produce no stats row at all — and
+// `selectMultiPageAuthors` drops book-based-sort authors with no stats row. That
+// made `--sortBy topRatings` structurally blind to 236,411 of the 236,804
+// never-crawled authors (99.84%): the grind came up with ~597 candidates and
+// reported "done" while 236k were invisible. Only `newest` is a year, so only
+// `newest` needs the year range.
+//
+// Years above a future ceiling are dropped from `newest`: Goodreads encodes some
+// BCE works as positive years (e.g. 2600), which otherwise outrank genuinely
+// recent books. `--minBookYear N` still narrows `top`/`books` as well — that is
+// the documented job of that flag ("only count books published ≥ N").
 export function loadAuthorBookStats(minBookYear = 0, minRatings = 0): Record<string, AuthorBookStats> {
+  console.log(chalk.gray(`   Loading author book stats (minBookYear=${minBookYear}, minRatings=${minRatings})...`));
+  const t0 = Date.now();
   const futureCeil = new Date().getFullYear() + 5;
-  const cond = `(published GLOB '[0-9][0-9][0-9][0-9]*'
-                 AND CAST(substr(published, 1, 4) AS INTEGER) BETWEEN @minYear AND @maxYear
-                 AND ratings >= @minRatings)`;
+  const ratingCond = `ratings >= @minRatings`;
+  const yearCond = `(published GLOB '[0-9][0-9][0-9][0-9]*'
+                   AND CAST(substr(published, 1, 4) AS INTEGER) BETWEEN @minYear AND @maxYear)`;
+  const bookCond = minBookYear > 0 ? `(${ratingCond} AND ${yearCond})` : ratingCond;
   const rows = getDb()
     .prepare(`SELECT author_id AS id,
-                     MAX(CASE WHEN ${cond} THEN ratings END) AS top,
-                     MAX(CASE WHEN ${cond} THEN CAST(substr(published, 1, 4) AS INTEGER) END) AS newest,
-                     COUNT(CASE WHEN ${cond} THEN 1 END) AS books
+                     MAX(CASE WHEN ${bookCond} THEN ratings END) AS top,
+                     MAX(CASE WHEN ${bookCond} AND ${yearCond} THEN CAST(substr(published, 1, 4) AS INTEGER) END) AS newest,
+                     COUNT(CASE WHEN ${bookCond} THEN 1 END) AS books
               FROM books
               WHERE author_id IS NOT NULL AND author_id != ''
               GROUP BY author_id`)
@@ -91,61 +151,76 @@ export function loadAuthorBookStats(minBookYear = 0, minRatings = 0): Record<str
       map[row.id] = { topRatings: row.top ?? 0, newestYear: row.newest ?? 0, books: row.books ?? 0 };
     }
   }
+  console.log(chalk.gray(`   Loaded ${Object.keys(map).length.toLocaleString()} author book stats in ${((Date.now()-t0)/1000).toFixed(1)}s`));
   return map;
 }
 
 export function selectMultiPageAuthors(
-  authorCache: Record<string, AuthorCacheEntry>,
+  authorModels: Record<string, AuthorCacheEntry> | Iterable<AuthorCacheEntry>,
   opts: MultiPageSelectionOptions,
 ): SelectedAuthor[] {
-  const valueOf = (entry: AuthorCacheEntry): number => {
-    if (opts.sortBy === 'topRatings') return opts.bookStats?.[entry.id]?.topRatings ?? 0;
-    if (opts.sortBy === 'newestYear') return opts.bookStats?.[entry.id]?.newestYear ?? 0;
-    if (opts.sortBy === 'averageRating') return parseFloat(entry.averageRating || '0');
-    if (opts.sortBy === 'ratingsRate') return entry.ratingsRate ?? 0;
-    return parseNum((entry as any)[opts.sortBy]);
-  };
-  const bookBased = opts.sortBy === 'topRatings' || opts.sortBy === 'newestYear';
-  return Object.entries(authorCache)
-    .filter(([, entry]) => {
-      const stats = opts.bookStats?.[entry.id];
-      const filterRatings = bookBased ? (stats?.topRatings ?? 0) : parseNum(entry.numRatings);
-      // Book-based sorts require the author to actually have a qualifying book.
-      if (bookBased && !stats) return false;
-      if (opts.missingField) {
-        // Re-scrub a partially-parsed author: avg proves the author page was
-        // scraped, but the requested count field never came through (a singular
-        // "1 rating" missed by a plural-only regex, a shelves widget that didn't
-        // render, or a genuine 0). Rows with no stats at all belong to
-        // --rescanMissing, not this path.
-        const prop = MISSING_FIELD_PROPS[opts.missingField];
-        if (!entry.averageRating) return false;
-        if (parseNum((entry as any)[prop]) > 0) return false;
-        return filterRatings >= opts.minRatings && filterRatings <= opts.maxRatings;
-      }
+  const bookBased = isBookBasedSort(opts.sortBy);
+  const selected: SelectedAuthor[] = [];
+  for (const [id, entry] of authorPairs(authorModels)) {
+    const stats = opts.bookStats?.[entry.id];
+    const filterRatings = bookBased ? (stats?.topRatings ?? 0) : parseNum(entry.numRatings);
+    // Book-based sorts require the author to actually have a qualifying book.
+    if (bookBased && !stats) continue;
+    // Offline throttle lever: drop the 1-book tail before any request is made.
+    if (opts.missingField) {
+      // Re-scrub a partially-parsed author: avg proves the author page was
+      // scraped, but the requested count field never came through (a singular
+      // "1 rating" missed by a plural-only regex, a shelves widget that didn't
+      // render, or a genuine 0). Rows with no stats at all belong to
+      // --rescanMissing, not this path.
+      const prop = MISSING_FIELD_PROPS[opts.missingField];
+      if (!entry.averageRating) continue;
+      if (parseNum((entry as any)[prop]) > 0) continue;
+      if (!(filterRatings >= opts.minRatings && filterRatings <= opts.maxRatings)) continue;
+    } else {
       const isMultiPage = !entry.catalogPages || entry.catalogPages >= 2;
-      if (opts.onlyUntouched && entry.catalogPages && entry.catalogPages >= 2) return false;
-      return isMultiPage && filterRatings >= opts.minRatings && filterRatings <= opts.maxRatings;
-    })
-    .map(([name, entry]) => ({ name, entry, value: valueOf(entry) }))
-    .sort((a, b) => {
-      const byValue = b.value - a.value;
-      if (byValue !== 0) return byValue;
-      // Within the same sort value (e.g. all authored in the same newest year),
-      // prefer the more popular qualifying book rather than falling through to
-      // the author-page numRatings (which is still 0 for untouched authors) and
-      // then lexical order.
-      if (bookBased) {
-        const byTop = (opts.bookStats?.[b.entry.id]?.topRatings ?? 0) - (opts.bookStats?.[a.entry.id]?.topRatings ?? 0);
-        if (byTop !== 0) return byTop;
-      }
-      return parseNum(b.entry.numRatings) - parseNum(a.entry.numRatings) || a.name.localeCompare(b.name);
-    })
-    .slice(0, opts.limit);
+      if (opts.onlyUntouched && entry.catalogPages && entry.catalogPages >= 2) continue;
+      if (!isMultiPage) continue;
+      if (!(filterRatings >= opts.minRatings && filterRatings <= opts.maxRatings)) continue;
+    }
+    selected.push({ id, name: entry.name ?? id, entry, value: authorSortValue(entry, opts.sortBy, opts.bookStats) });
+  }
+  selected.sort((a, b) => compareAuthorsBySort(a, b, opts.sortBy));
+  return selected.slice(0, opts.limit);
+}
+
+// Candidates for --rescanMissing: every author with no author-page stats yet,
+// ordered by book popularity and sliced by --limit.
+//
+// Unlike the --multiPage path this does NOT gate on catalogPages, and a book-based
+// sort puts authors with no book rows at the bottom instead of dropping them —
+// the point is to grind *everyone* statless, and an author-page-only row (no
+// books at all) is still statless and still worth a scrape.
+export function selectStatlessAuthors(
+  authorModels: Record<string, AuthorCacheEntry> | Iterable<AuthorCacheEntry>,
+  opts: MultiPageSelectionOptions,
+): SelectedAuthor[] {
+  const bookBased = isBookBasedSort(opts.sortBy);
+  const selected: SelectedAuthor[] = [];
+  for (const [id, entry] of authorPairs(authorModels)) {
+    if (!isStatless(entry)) continue;
+    const filterRatings = bookBased
+      ? (opts.bookStats?.[entry.id]?.topRatings ?? 0)
+      : parseNum(entry.numRatings);
+    if (!(filterRatings >= opts.minRatings && filterRatings <= opts.maxRatings)) continue;
+    selected.push({ id, name: entry.name ?? id, entry, value: authorSortValue(entry, opts.sortBy, opts.bookStats) });
+  }
+  selected.sort((a, b) => compareAuthorsBySort(a, b, opts.sortBy));
+  return selected.slice(0, opts.limit);
 }
 
 export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promise<void> {
-  const authorCache = await loadAuthorCache();
+  const startTs = Date.now();
+  console.log(chalk.cyan.bold(`\n👤 Author Rescan starting...`));
+  console.log(chalk.gray(`   Options: multiPage=${!!options.multiPage} onlyUntouched=${!!options.onlyUntouched} sortBy=${options.sortBy || '(default)'} limit=${options.limit || '(default)'} minAge=${options.minAge || 0} minRatings=${options.minRatings ?? 'any'} maxRatings=${options.maxRatings ?? 'any'} rescanMissing=${!!options.rescanMissing} rescanMissingField=${options.rescanMissingField || 'n/a'} minBookYear=${options.minBookYear || 0}`));
+
+  console.log(chalk.gray('   Counting authors...'));
+  console.log(chalk.gray(`   ${countAuthors().toLocaleString()} authors in cache`));
 
   const sortBy = (options.sortBy || 'numRatings') as string;
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
@@ -163,11 +238,26 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
   let effectiveSortBy = sortBy;
 
   if (options.rescanMissing) {
-    // Select all authors missing stats, then apply minAge
-    authors = Object.entries(authorCache)
-      .filter(([, entry]) => !entry.numRatings && !entry.averageRating && !entry.numReviews && !entry.numShelves)
-      .map(([name, entry]) => ({ name, entry, value: 0 }));
-    console.log(chalk.cyan.bold(`\n👤 Author Rescan: scanning authors with no stats (limit ${limit})`));
+    // Every statless author, ordered by book popularity, sliced by --limit.
+    // This path used to map all of them with value 0 and apply neither a sort
+    // nor a slice, so `--rescanMissing --limit 100` scraped the entire ~222k
+    // tail in arbitrary insertion order while the header claimed "limit 100".
+    const minRatingsMissing = options.minRatings !== undefined ? parseNum(options.minRatings) : 0;
+    const maxRatingsMissing = options.maxRatings !== undefined ? parseNum(options.maxRatings) : Infinity;
+    // The CLI hands us --sortBy's commander default ('numRatings') even when the
+    // user never typed it, and every statless author has numRatings 0 — so that
+    // order is a no-op that would tie the whole tail together. Auto-upgrade to
+    // book popularity, the same way --minBookYear upgrades topRatings below.
+    effectiveSortBy = sortBy === 'numRatings' ? 'topRatings' : sortBy;
+    bookStats = isBookBasedSort(effectiveSortBy) ? loadAuthorBookStats(0, minRatingsMissing) : undefined;
+    authors = selectStatlessAuthors(iterateAuthors(), {
+      limit,
+      sortBy: effectiveSortBy,
+      minRatings: minRatingsMissing,
+      maxRatings: maxRatingsMissing,
+      ...(bookStats ? { bookStats } : {}),
+    });
+    console.log(chalk.cyan.bold(`\n👤 Author Rescan: scanning authors with no stats (top ${limit} by ${effectiveSortBy === 'topRatings' ? 'top book ratings' : effectiveSortBy})`));
   } else if (options.rescanMissingField) {
     const field = options.rescanMissingField.toLowerCase();
     if (!(field in MISSING_FIELD_PROPS)) {
@@ -179,10 +269,10 @@ export async function runAuthorRescan(options: AuthorRescanOptions = {}): Promis
     // (and ≥ minRatings) for the topRatings/newestYear sorts, exactly like the
     // multiPage path below.
     const minBookYear = options.minBookYear !== undefined ? parseNum(options.minBookYear) : 0;
-    const bookBased = sortBy === 'topRatings' || sortBy === 'newestYear';
+    const bookBased = isBookBasedSort(sortBy);
     bookStats = (bookBased || minBookYear > 0) ? loadAuthorBookStats(minBookYear, minRatings) : undefined;
     effectiveSortBy = sortBy === 'topRatings' && minBookYear > 0 ? 'newestYear' : sortBy;
-    authors = selectMultiPageAuthors(authorCache, {
+    authors = selectMultiPageAuthors(iterateAuthors(), {
       limit,
       sortBy: effectiveSortBy,
       minRatings,
@@ -210,10 +300,10 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
     // (and ≥ minRatings), driving a bookStats aggregation shared by topRatings
     // and newestYear sorts. Authors with no qualifying book are excluded.
     const minBookYear = options.minBookYear !== undefined ? parseNum(options.minBookYear) : 0;
-    const bookBased = sortBy === 'topRatings' || sortBy === 'newestYear';
+    const bookBased = isBookBasedSort(sortBy);
     bookStats = (bookBased || minBookYear > 0) ? loadAuthorBookStats(minBookYear, minRatings) : undefined;
     effectiveSortBy = sortBy === 'topRatings' && minBookYear > 0 ? 'newestYear' : sortBy;
-    authors = selectMultiPageAuthors(authorCache, {
+    authors = selectMultiPageAuthors(iterateAuthors(), {
       limit,
       sortBy: effectiveSortBy,
       minRatings,
@@ -228,7 +318,7 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
       effectiveSortBy;
     console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping multi-page authors${untouchedOnly ? ' (never crawled)' : ''} (Top ${limit} by ${sortLabel}, ≥${minRatings.toLocaleString()} ratings${minBookYear > 0 ? `, books from ${minBookYear}+` : ''})`));
   } else {
-      const selected = selectAuthors(authorCache, options);
+      const selected = selectAuthors(iterateAuthors(), options);
       authors = selected.authors;
       missingField = selected.missingField;
       console.log(chalk.cyan.bold(`\n👤 Author Rescan: re-scraping stats for ${authors.length} authors (Top ${limit} by ${sortBy})`));
@@ -251,8 +341,9 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
     const toScrape: SelectedAuthor[] = [];
     let minAgeSkipped = 0;
     let failSkipped = 0;
+    // One ledger, one threshold. Loaded once (the table is small) instead of a
     for (const a of authors) {
-      if ((a.entry.failCount ?? 0) >= AUTHOR_FAIL_LIMIT) {
+      if (isRetiredAuthor(a.id)) {
         failSkipped++;
         continue;
       }
@@ -271,13 +362,25 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
     let failed = 0;
     let updated = 0;
     let noStats = 0;
-    let totalInserted = 0;
+    // Retired THIS run (reached the limit). Distinct from the pre-filtered
+    // `failSkipped`, which counts authors already retired before we started.
+    let strikeRetired = 0;
+        let totalInserted = 0;
     let totalEnriched = 0;
     const booksAtStart = countBooks();
     const start = Date.now();
   
     for (let i = 0; i < toScrape.length; i++) {
-      const { name, entry: snapshotEntry, value } = toScrape[i];
+      const { id, name, entry: snapshotEntry, value } = toScrape[i];
+      // Anonymous crawls (no cookie) run at a faster but still polite cadence;
+      // GR_AUTHOR_DELAY_MS overrides either profile ("min,max"). Declared out here
+      // (not inside the try) because BOTH the dead-page branch and the tail of the
+      // loop have to wait: retiring an author still cost one Goodreads request.
+      const [authorDelayMin, authorDelayMax] = parseDelayRange(
+        process.env.GR_AUTHOR_DELAY_MS,
+        options.withCookie ? 2000 : 1000,
+        options.withCookie ? 5000 : 1800
+      );
       try {
         // Show the value this author was sorted on (e.g. topRatings=N,
         // numRatings=N, averageRating=X) so the ordering isn't a guessing game.
@@ -296,22 +399,38 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
               ? ` topRatings=${statsEntry.topRatings.toLocaleString('en-US')}`
               : ` books=${statsEntry.books}`)
           : '';
+        // A mint-only row (author-mint) has no slug yet. The scraper needs *a*
+        // reference, and the id is always valid, so fall back to it — passing a
+        // NULL slug used to build `/author/list/null`, a guaranteed 404 that
+        // burned all five strikes and then skipped the author forever.
+        const scrapeRef = snapshotEntry.slug || id;
+        const slugShown = snapshotEntry.slug || '(mint, no slug yet)';
         // Prior consecutive failures persist (failCount) so repeat attempts are
         // obvious; authors at the limit are already filtered out up front.
-        const failCount = snapshotEntry.failCount ?? 0;
+        const failCount = loadAuthorScrapeFailure(id)?.failCount ?? 0;
         const failSuffix = failCount > 0 ? ` failCount=${failCount}` : '';
-        console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${snapshotEntry.slug})${sortSuffix}${bookSuffix}${failSuffix}`));
+        console.log(chalk.white.bold(`[${i + 1}/${toScrape.length}] Author: ${name} (${slugShown})${sortSuffix}${bookSuffix}${failSuffix}`));
         let failReason = 'no_stats_line';
         const result = await withConnectivityProbe(
-          () => scrapeAuthorStats(snapshotEntry.slug, (r) => { failReason = r; }, crawlAllPages, listSort, !!options.withCookie),
+          () => scrapeAuthorStats(authorScrapeRef(snapshotEntry.slug, id), (r) => { failReason = r; }, crawlAllPages, listSort, !!options.withCookie),
           { label: `author scan "${name}"` }
         );
         if (!result) {
           noStats++;
-          console.log(chalk.yellow(`   ⚠️ No stats line found for ${name}`));
-          recordAuthorFailure(name, failReason);
-          const strikes = getAuthor(name)?.failCount ?? (snapshotEntry.failCount ?? 0) + 1;
-          console.log(chalk.gray(`      ↳ Consecutive failure ${strikes}/${AUTHOR_FAIL_LIMIT}${strikes >= AUTHOR_FAIL_LIMIT ? ' — skipped for future runs' : ''}`));
+          // `scrapeAuthorStats` logs the reason itself (with HTTP status/bytes
+          // for a parse miss, or the status for an HTTP error), so record the
+          // strike here without repeating the message.
+          recordAuthorScrapeFailure(id, failReason);
+          const n = loadAuthorScrapeFailure(id)?.failCount ?? 1;
+          const retired = n >= AUTHOR_FAIL_LIMIT;
+          const weight = strikeWeight(failReason);
+          console.log(
+            chalk.gray(
+              `      ↳ ${weight > 1 ? `${failReason} counts ${weight} strikes — ` : ''}` +
+              `Consecutive failure ${n}/${AUTHOR_FAIL_LIMIT}${retired ? ' — skipped for future runs' : ''}`
+            )
+          );
+          if (retired) strikeRetired++;
         } else {
           const stats = result.stats;
           totalInserted += result.booksInserted;
@@ -333,11 +452,10 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
           }
           // Re-read fresh so we merge against current values (another process
           // may have updated this row since the snapshot was taken).
-          const entry = getAuthor(name) ?? snapshotEntry;
+          const entry = getAuthorById(id) ?? snapshotEntry;
           const prevCatalogPages = entry.catalogPages;
           if (result.catalogPages) entry.catalogPages = result.catalogPages;
-          entry.failCount = 0;
-          entry.lastError = undefined;
+          clearAuthorScrapeFailure(id);
           // Every successful scrape (stats moved, catalog was extended, or the
           // page was identical) = "seen recently", so the other scrapers' --minAge
           // gate can skip it for the cooldown window.
@@ -348,21 +466,33 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
             numReviews: entry.numReviews,
             numShelves: entry.numShelves,
           };
-          const changed = updateAuthorStats(entry, stats) || entry.catalogPages !== prevCatalogPages;
+          const prevSlug = entry.slug;
+          const statsChanged = updateAuthorStats(entry, stats);
+          const catalogChanged = entry.catalogPages !== prevCatalogPages;
           const fmt = (cur?: string, was?: string) =>
             `${cur ?? 'n/a'}${was !== undefined && was !== cur ? chalk.gray(` (prev ${was})`) : ''}`;
           console.log(
             `   ${chalk.green.bold(fmt(stats.numRatings, prev.numRatings))} ratings · ` +
             `${chalk.yellow(fmt(stats.numReviews, prev.numReviews))} reviews · ` +
             `${chalk.cyan(fmt(stats.numShelves, prev.numShelves))} shelves · ` +
-            `Avg ${fmt(stats.averageRating, prev.averageRating)}`
+            `Avg ${fmt(stats.averageRating, prev.averageRating)}` +
+            ` ${chalk.gray(`· slug ${prevSlug ?? '(none)'}`)}`
           );
-          if (changed) {
+          // Persist the page's canonical name/slug; ids can outlive their slugs.
+          if (stats.name) entry.name = stats.name;
+          if (stats.slug) entry.slug = stats.slug;
+          upsertAuthorById(id, entry);
+          upsertAuthorSlug(id, entry.slug, entry.name);
+          // A newly-discovered slug IS a cache change even when every stat is
+          // identical, so it must count toward `updated` and be reported.
+          const slugChanged = !!entry.slug && entry.slug !== prevSlug;
+          if (slugChanged) {
+            console.log(chalk.green.bold(`   🔄 Slug changed: ${prevSlug ?? '(none)'} → ${entry.slug}`));
+          }
+          if (statsChanged || catalogChanged || slugChanged) {
             updated++;
-            upsertAuthor(name, entry);
             console.log(chalk.green.bold(`   ✅ Author cache updated`));
           } else {
-            upsertAuthor(name, entry);
             console.log(chalk.gray(`   (No change - values already current or not greater)`));
           }
         }
@@ -375,24 +505,19 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
           console.error(chalk.red.bold(`\n🛑 Aborting author scan: network error (${(error as any).code} — ${(error as any).message}).`));
           console.error(chalk.red.bold(`   Progress is saved to the DB; re-run when your connection is back.`));
           const duration = ((Date.now() - start) / 1000).toFixed(1);
-          console.log(chalk.cyan.bold(`\n🏁 Aborted. Processed ${i} of ${toScrape.length} authors, updated ${updated} (${noStats} no stats line, ${failed} failures, ${minAgeSkipped} skipped by --minAge, ${duration}s).`));
+          const totalDuration = ((Date.now() - startTs) / 1000).toFixed(1);
+          console.log(chalk.cyan.bold(`\n🏁 Aborted. Processed ${i} of ${toScrape.length} authors, updated ${updated} (${noStats} no result, ${failed} failures, ${strikeRetired} retired at ≥${AUTHOR_FAIL_LIMIT} strikes, ${minAgeSkipped} skipped by --minAge, ${duration}s; total run ${totalDuration}s).`));
           return;
         }
         failed++;
         console.error(chalk.red.bold(`   ❌ Failed for ${name}: ${(error as any).message}`));
       }
-      // Anonymous crawls (no cookie) run at a faster but still polite cadence;
-      // GR_AUTHOR_DELAY_MS overrides either profile ("min,max").
-      const [authorDelayMin, authorDelayMax] = parseDelayRange(
-        process.env.GR_AUTHOR_DELAY_MS,
-        options.withCookie ? 2000 : 1000,
-        options.withCookie ? 5000 : 1800
-      );
       await delay(authorDelayMin, authorDelayMax);
   }
 
   const duration = ((Date.now() - start) / 1000).toFixed(1);
+  const totalDuration = ((Date.now() - startTs) / 1000).toFixed(1);
   const booksAtEnd = countBooks();
-  console.log(chalk.cyan.bold(`\n🏁 Done. Processed ${toScrape.length} authors, updated ${updated} (${noStats} no stats line, ${failed} failures, ${minAgeSkipped} skipped by --minAge, ${duration}s).`));
+  console.log(chalk.cyan.bold(`\n🏁 Done. Processed ${toScrape.length} authors, updated ${updated} (${noStats} no result, ${failed} failures, ${strikeRetired} retired at ≥${AUTHOR_FAIL_LIMIT} strikes, ${minAgeSkipped} skipped by --minAge, ${duration}s; total run ${totalDuration}s).`));
   console.log(chalk.cyan.bold(`📚 Books harvested: +${totalInserted.toLocaleString()} new · ${totalEnriched.toLocaleString()} enriched · cache ${booksAtStart.toLocaleString()} → ${booksAtEnd.toLocaleString()}`));
 }

@@ -1,8 +1,8 @@
 import chalk from 'chalk';
-import { scrapeAllUserLists, scrapeListBooks, scrapeBookDetails, ListMetadata, BookMetadata } from './scraper.js';
-import { loadState, saveState, syncBooksToCache, getBook, upsertBook, loadAuthorCache, syncAuthorsToCache, type State, type ListState, type CachedBook, type BookCache } from './storage.js';
-import { delay, formatDate, formatBookLink } from './utils.js';
-import { appendToLog } from './logger.js';
+import { scrapeAllUserLists, scrapeListBooks, scrapeBookDetails, ListMetadata, BookMetadata } from './scraper.ts';
+import { loadState, saveState, syncBooksToCache, getBook, upsertBook, syncAuthorsToCache, type State, type ListState, type CachedBook, type BookCache, type AuthorCache } from './storage.ts';
+import { delay, formatDate, formatBookLink } from './utils.ts';
+import { appendToLog } from './logger.ts';
 
 // Removed books were seen on this list on a past run, so their metadata is
 // usually already in SQLite even though the in-run BookCache is empty (the
@@ -28,7 +28,9 @@ export async function performIngest(userId: string, force = false): Promise<void
   // SQLite row is the merge source of truth inside syncBooksToCache (getBook),
   // so an empty in-run cache suffices; it accumulates only this run's books.
   const bookCache: BookCache = {};
-  const authorCache = await loadAuthorCache();
+  // Run-scoped memo only — syncAuthorsToCache resolves misses with one
+  // indexed PK lookup, so there is no need to load the whole authors table.
+  const authorCache: AuthorCache = {};
   state.userId = userId;
 
   console.log(chalk.cyan.bold(`🚀 Starting initial ingest for user ${userId}...`));
@@ -93,7 +95,9 @@ export async function checkUpdates(userId: string): Promise<void> {
   const state = await loadState();
   // Same as performIngest: empty in-run book cache; DB row is the merge source.
   const bookCache: BookCache = {};
-  const authorCache = await loadAuthorCache();
+  // Run-scoped memo only — syncAuthorsToCache resolves misses with one
+  // indexed PK lookup, so there is no need to load the whole authors table.
+  const authorCache: AuthorCache = {};
   state.userId = userId;
 
   console.log(chalk.cyan.bold(`🚀 Starting update check for user ${userId}...`));

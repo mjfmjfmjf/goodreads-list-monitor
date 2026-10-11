@@ -8,7 +8,7 @@ import {
   parseListTitle,
   resolveNextChainLink,
   parseListStats,
-} from './listPageParse.js';
+} from './listPageParse.ts';
 
 const ROW = (pos: number, id: number, title: string) => `
 <tr itemscope="" itemtype="http://schema.org/Book">

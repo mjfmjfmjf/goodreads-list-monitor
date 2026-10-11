@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as cheerio from 'cheerio';
-import { extractAuthorId, acceptAuthorListMatch, findOnAuthorPage, extractShelfPageLinks, isPermanentAuthorPageFailure, parseTagListPage, parseAuthorStats, reanchorShelfPage } from './scraper.js';
+import { extractAuthorId, acceptAuthorListMatch, findOnAuthorPage, extractShelfPageLinks, isPermanentAuthorPageFailure, parseTagListPage, parseAuthorStats, reanchorShelfPage, parseListTags } from './scraper.ts';
 
 describe('extractAuthorId', () => {
   it('returns the bare id as-is', () => {
@@ -143,11 +143,18 @@ describe('parseTagListPage', () => {
 });
 });
 
+// A dead author page (400/404/410) counts as a PERMANENT failure and burns a
+// strike, exactly like any other 4xx. That is deliberate: after AUTHOR_FAIL_LIMIT
+// (3) runs the author is filtered out of the crawl queue for good, so a dead id
+// costs three requests total and then stops appearing. The reverted
+// `authors.page_gone` retirement tried to skip that, but recorded NO strike — so
+// nothing was ever filtered out and every dead author re-404'd on every run.
 describe('isPermanentAuthorPageFailure', () => {
   it('counts client-side 4xx statuses as permanent (won\'t change on retry)', () => {
     expect(isPermanentAuthorPageFailure({ response: { status: 400 } })).toBe(true);
     expect(isPermanentAuthorPageFailure({ response: { status: 403 } })).toBe(true);
     expect(isPermanentAuthorPageFailure({ response: { status: 404 } })).toBe(true);
+    expect(isPermanentAuthorPageFailure({ response: { status: 410 } })).toBe(true);
   });
 
   it('does not count throttle-class, transient, or amorphous errors', () => {
@@ -159,6 +166,11 @@ describe('isPermanentAuthorPageFailure', () => {
     expect(isPermanentAuthorPageFailure({ code: 'ERR_FR_TOO_MANY_REDIRECTS' })).toBe(false);
     expect(isPermanentAuthorPageFailure({ code: 'ECONNABORTED' })).toBe(false);
     expect(isPermanentAuthorPageFailure({})).toBe(false);
+  });
+
+  it('still treats an unlisted client-side 4xx as permanent', () => {
+    expect(isPermanentAuthorPageFailure({ response: { status: 401 } })).toBe(true);
+    expect(isPermanentAuthorPageFailure({ response: { status: 451 } })).toBe(true);
   });
 });
 
@@ -269,5 +281,71 @@ describe('reanchorShelfPage', () => {
   it('re-anchors at most once — a second refusal means the footers disagree, so bail', () => {
     expect(reanchorShelfPage(11, 9, true)).toBeNull();
     expect(reanchorShelfPage(11, 0, false)).toBeNull(); // nonsense footer
+  });
+});
+
+describe('parseListTags', () => {
+  // Real markup from list/show/35080.One_Million_Ratings_ — the "Tags:" block in
+  // the right-hand stacked sidebar, repeated on every page of the list.
+  const tagsBlock = `
+    <div class="stacked">
+      <div>253 books &middot; 1,099 voters</div>
+      <div>
+        Tags:
+        <a class="actionLinkLite" href="/list/show_tag/1000000">1000000</a>,
+        <a class="actionLinkLite" href="/list/show_tag/goodreads-statistics">goodreads-statistics</a>,
+        <a class="actionLinkLite" href="/list/show_tag/million">million</a>,
+        <a class="actionLinkLite" href="/list/show_tag/million-ratings">million-ratings</a>,
+        <a class="actionLinkLite" href="/list/show_tag/most-popular">most-popular</a>,
+        <a class="actionLinkLite" href="/list/show_tag/most-rated">most-rated</a>,
+        <a class="actionLinkLite" href="/list/show_tag/most-ratings">most-ratings</a>,
+        <a class="actionLinkLite" href="/list/show_tag/popular">popular</a>,
+        <a class="actionLinkLite" href="/list/show_tag/ratings">ratings</a>,
+        <a class="actionLinkLite" href="/list/show_tag/top-ratings">top-ratings</a>,
+        <a class="actionLinkLite" href="/list/show_tag/villaine">villaine</a>
+      </div>
+    </div>`;
+
+  it('reads every tag in document order', () => {
+    expect(parseListTags(cheerio.load(tagsBlock))).toEqual([
+      '1000000', 'goodreads-statistics', 'million', 'million-ratings',
+      'most-popular', 'most-rated', 'most-ratings', 'popular', 'ratings',
+      'top-ratings', 'villaine',
+    ]);
+  });
+
+  it('returns nothing for a list with no Tags block', () => {
+    expect(parseListTags(cheerio.load('<div class="stacked"><div>10 books</div></div>'))).toEqual([]);
+  });
+
+  it('dedupes a tag repeated on the same page', () => {
+    const html = `
+      <a class="actionLinkLite" href="/list/show_tag/fiction">fiction</a>
+      <a class="actionLinkLite" href="/list/show_tag/fiction">fiction</a>`;
+    expect(parseListTags(cheerio.load(html))).toEqual(['fiction']);
+  });
+
+  it('uses the URL slug, not the anchor text, and normalizes case and spacing', () => {
+    // The slug is canonical; the display string can differ in case or spacing.
+    const html = `
+      <a class="actionLinkLite" href="/list/show_tag/Science-Fiction">  Science Fiction </a>
+      <a class="actionLinkLite" href="/list/show_tag/most  rated">most rated</a>`;
+    expect(parseListTags(cheerio.load(html))).toEqual(['science-fiction', 'most-rated']);
+  });
+
+  it('leaves underscores alone — Goodreads slugs use hyphens, and folding _ to - would merge distinct tags', () => {
+    const html = `<a class="actionLinkLite" href="/list/show_tag/Science_Fiction">x</a>`;
+    expect(parseListTags(cheerio.load(html))).toEqual(['science_fiction']);
+  });
+
+  it('ignores actionLinkLite links that are not list tags', () => {
+    // Same class, different href family (e.g. the "(votes)" style links).
+    const html = `<a class="actionLinkLite" href="/list/show/35080">Other list</a>`;
+    expect(parseListTags(cheerio.load(html))).toEqual([]);
+  });
+
+  it('handles percent-encoded slugs', () => {
+    const html = `<a class="actionLinkLite" href="/list/show_tag/100%25%20off">100% off</a>`;
+    expect(parseListTags(cheerio.load(html))).toEqual(['100%-off']);
   });
 });

@@ -1,10 +1,10 @@
 import chalk from 'chalk';
 import * as cheerio from 'cheerio';
 import fs from 'fs';
-import { iterateBooks, getBook, upsertBook, loadConfig } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { fetchWithRetry, formatBookLink, httpCallInfo } from './utils.js';
-import { extractWorkId } from './scraper.js';
+import { iterateBooks, getBook, upsertBook, loadConfig } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { fetchWithRetry, formatBookLink, httpCallInfo } from './utils.ts';
+import { extractWorkId } from './scraper.ts';
 
 const LOG_FILE = 'bookSweep.log';
 

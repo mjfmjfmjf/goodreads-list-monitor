@@ -6,14 +6,14 @@ vi.hoisted(() => {
 });
 
 import chalk from 'chalk';
-import { closeDb, getDb } from './db.js';
+import { closeDb, getDb } from './db.ts';
 import {
   buildRatingBuckets,
   bucketIndexFor,
   buildCoverageCounts,
   renderCoverageHistogram,
   runRatingsCoverageHistogram,
-} from './summaryHistogram.js';
+} from './summaryHistogram.ts';
 
 afterAll(() => {
   closeDb();
@@ -45,29 +45,34 @@ describe('buildCoverageCounts', () => {
     expect(c.totalWork).toBe(4);
     expect(c.totalWorks).toBe(3);
     expect(c.totalField).toBe(2);
+    expect(c.totalWorksWithField).toBe(1);
 
     const big = bucketIndexFor(5_500_000);
     expect(c.all[big]).toBe(1);
     expect(c.work[big]).toBe(1);
     expect(c.works[big]).toBe(1);
     expect(c.field[big]).toBe(1);
+    expect(c.worksWithField[big]).toBe(1);
 
     const nearBig = bucketIndexFor(4_000_000);
     expect(c.all[nearBig]).toBe(1);
     expect(c.work[nearBig]).toBe(1);
     expect(c.works[nearBig]).toBe(0);
+    expect(c.worksWithField[nearBig]).toBe(0);
 
     const mid = bucketIndexFor(550_000);
     expect(c.all[mid]).toBe(2);
     expect(c.work[mid]).toBe(1);
     expect(c.works[mid]).toBe(1);
     expect(c.field[mid]).toBe(1);
+    expect(c.worksWithField[mid]).toBe(0);
 
     const zero = bucketIndexFor(0);
     expect(c.all[zero]).toBe(1);
     expect(c.work[zero]).toBe(1);
     expect(c.works[zero]).toBe(1);
     expect(c.field[zero]).toBe(0);
+    expect(c.worksWithField[zero]).toBe(0);
   });
 });
 
@@ -76,16 +81,18 @@ describe('renderCoverageHistogram', () => {
     chalk.level = 0;
     const buckets = [{ label: 'Anything', min: 0, max: Infinity }];
     const lines = renderCoverageHistogram(
-      { all: [10], work: [6], works: [5], field: [2], totalAll: 10, totalWork: 6, totalWorks: 5, totalField: 2 },
+      { all: [10], work: [6], works: [4], field: [2], worksWithField: [1], totalAll: 10, totalWork: 6, totalWorks: 4, totalField: 2, totalWorksWithField: 1 },
       buckets
     );
     const out = lines.join('\n');
     expect(out).toContain('Book Cache Ratings Coverage by Subset');
     expect(out).toContain('RATING BRACKET');
+    expect(out).toContain('WORK+F');
     expect(out).toContain('60.0%');
-    expect(out).toContain('50.0%');
+    expect(out).toContain('40.0%');
     expect(out).toContain('20.0%');
-    expect(out).toContain('Total: cache 10 | work-id 6 (60.0% of cache) | works 5 (50.0% of cache) | field 2 (20.0% of cache)');
+    expect(out).toContain('25.0%');
+    expect(out).toContain('Total: cache 10 | work-id 6 (60.0% of cache) | works 4 (40.0% of cache) | field 2 (20.0% of cache) | work+field 1 (25.0% of works)');
   });
 });
 
@@ -115,5 +122,6 @@ describe('runRatingsCoverageHistogram', () => {
     expect(footer).toContain('work-id 2');
     expect(footer).toContain('works 2');
     expect(footer).toContain('field 1');
+    expect(footer).toContain('work+field 1 (50.0% of works)'); // b1 is the only work-rep also present in book_page
   });
 });

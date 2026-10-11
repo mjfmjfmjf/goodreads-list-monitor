@@ -1,9 +1,8 @@
 import chalk from 'chalk';
-import { scrapeShelfBooks } from './scraper.js';
-import { computeTagCoverage, loadTagCoverageInputs } from './tagCoverage.js';
+import { scrapeShelfBooks } from './scraper.ts';
+import { computeTagCoverage, loadTagCoverageInputs } from './tagCoverage.ts';
 import {
   getMeasuredShelfPages,
-  loadAuthorCache,
   loadRecentTagTailScrapes,
   loadTagAnchors,
   loadTagTailState,
@@ -12,8 +11,9 @@ import {
   syncBooksToCache,
   upsertTagTailScrape,
   TagTailState,
-} from './storage.js';
-import { delay, isConnectivityError, withConnectivityProbe } from './utils.js';
+  type AuthorCache,
+} from './storage.ts';
+import { delay, isConnectivityError, withConnectivityProbe } from './utils.ts';
 
 export interface TagRecentMonitorOptions {
   limit?: string | number;
@@ -177,7 +177,7 @@ export async function runTagRecentMonitor(options: TagRecentMonitorOptions = {})
 
   // One author cache for the whole run — scrapeShelfBooks runs with
   // skipAuthorSync, so every author minted is counted by our own sync.
-  const authorCache = loadAuthorCache();
+  const authorCache: AuthorCache = {};
 
   let processed = 0;
   let skipped = 0;

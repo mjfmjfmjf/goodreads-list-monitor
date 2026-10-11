@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeTagCoverage, SHELF_HARVEST_BOOK_CAP } from './tagCoverage.js';
-import type { TagBookRow } from './storage.js';
+import { computeTagCoverage, SHELF_HARVEST_BOOK_CAP } from './tagCoverage.ts';
+import type { TagBookRow } from './storage.ts';
 
 const row = (tag: string, book: string): TagBookRow => ({
   tagName: tag,

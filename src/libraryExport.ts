@@ -1,9 +1,9 @@
 import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
-import { normalizeTitle, normalizeAuthor } from './utils.js';
-import { getBook, upsertBook } from './storage.js';
-import type { BookCache } from './storage.js';
+import { normalizeTitle, normalizeAuthor } from './utils.ts';
+import { getBook, upsertBook } from './storage.ts';
+import type { BookCache } from './storage.ts';
 
 const REQUIRED_COLUMNS = ['Book Id', 'Title', 'Author', 'Exclusive Shelf', 'Date Read', 'My Review', 'My Rating', 'Number of Pages', 'Publisher', 'Bookshelves'];
 

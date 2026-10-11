@@ -3,7 +3,7 @@ import {
   splitCsvLine, decodeBookRow, decodeAuthorRow, mergeBook, mergeAuthor, mergeTags,
   decodeTagBookRow, decodeGenreRow, decodeXrefRow, decodeBookPageRow, decodeTagStatsRow, decodeListRow, mergeSeenIds,
   parseCsvRecords, decodePopularByDateRow, decodeTagTailRow, decodeTagTailStateRow,
-} from './importData.js';
+} from './importData.ts';
 
 describe('parseCsvRecords', () => {
   it('keeps a quoted field with an embedded newline in one record', () => {
@@ -46,7 +46,7 @@ describe('decodeBookRow', () => {
       id: '1', title: 'Animal Farm', author: 'George Orwell', authorId: '3706',
       ratings: 4784802, avgRating: 4.03, published: '1945', pages: 141, seriesPos: 2,
       genres: ['Fiction', 'Classics'], workId: '2207778', isBad: null, tags: undefined,
-      requiresAuth: 1, failCount: 3, firstSeen: '2026-01-01',
+      requiresAuth: 1, failCount: 3, firstSeen: '2026-01-01', lastUpdated: undefined,
     });
   });
   it('returns null when id is missing', () => {
@@ -54,15 +54,15 @@ describe('decodeBookRow', () => {
   });
 });
 
-const authorHeaders = ['name', 'id', 'slug', 'last_seen', 'first_seen', 'average_rating', 'num_ratings', 'num_reviews', 'num_shelves', 'catalog_pages', 'fail_count', 'last_error', 'ratings_rate'];
+const authorHeaders = ['name', 'id', 'slug', 'last_seen', 'first_seen', 'average_rating', 'num_ratings', 'num_reviews', 'num_shelves', 'catalog_pages', 'ratings_rate'];
 
 describe('decodeAuthorRow', () => {
   it('decodes typed author fields', () => {
-    const row = decodeAuthorRow(authorHeaders, ['George Orwell', '3706', '3706.George_Orwell', '2026-08-28', '2026-08-01', '4.13', '11249733', '365731', '19310363', '46', '2', null, '312.5']);
+    const row = decodeAuthorRow(authorHeaders, ['George Orwell', '3706', '3706.George_Orwell', '2026-08-28', '2026-08-01', '4.13', '11249733', '365731', '19310363', '46', '312.5', '0']);
     expect(row).toEqual({
       name: 'George Orwell', id: '3706', slug: '3706.George_Orwell', lastSeen: '2026-08-28', firstSeen: '2026-08-01',
       averageRating: 4.13, numRatings: 11249733, numReviews: 365731, numShelves: 19310363,
-      catalogPages: 46, failCount: 2, lastError: undefined, ratingsRate: 312.5,
+      catalogPages: 46, ratingsRate: 312.5,
     });
   });
 });
@@ -123,19 +123,18 @@ describe('mergeBook', () => {
   });
 
   it('keeps an existing requires_auth/fail_count and prefers older first_seen', () => {
-    const e = { title: 'Known', author: 'A', requiresAuth: 1, failCount: 2, firstSeen: '2026-01-01' };
-    const { merged, changed } = mergeBook(e, { id: '1', title: 'Known', author: 'A', requiresAuth: 1, failCount: 5, firstSeen: '2026-02-01' });
+    const e = { title: 'Known', author: 'A', requiresAuth: 1, firstSeen: '2026-01-01' };
+    const { merged, changed } = mergeBook(e, { id: '1', title: 'Known', author: 'A', requiresAuth: 1, firstSeen: '2026-02-01' });
     expect(merged.requiresAuth).toBe(1);
-    expect(merged.failCount).toBe(2); // nonzero local count wins over imported
     expect(merged.firstSeen).toBe('2026-01-01');
     expect(changed).toBe(false);
   });
 
   it('adopts requires_auth/fail_count/first_seen when the DB row is blank or new', () => {
-    expect(mergeBook(undefined, { id: '1', requiresAuth: 1, failCount: 3, firstSeen: '2026-01-01' }).merged)
-      .toMatchObject({ requiresAuth: 1, failCount: 3, firstSeen: '2026-01-01' });
-    expect(mergeBook({ requiresAuth: 0, failCount: 0, firstSeen: null }, { id: '1', requiresAuth: 1, failCount: 3, firstSeen: '2026-01-01' }).merged)
-      .toMatchObject({ requiresAuth: 1, failCount: 3, firstSeen: '2026-01-01' });
+    expect(mergeBook(undefined, { id: '1', requiresAuth: 1, firstSeen: '2026-01-01' }).merged)
+      .toMatchObject({ requiresAuth: 1, firstSeen: '2026-01-01' });
+    expect(mergeBook({ requiresAuth: 0, firstSeen: null }, { id: '1', requiresAuth: 1, firstSeen: '2026-01-01' }).merged)
+      .toMatchObject({ requiresAuth: 1, firstSeen: '2026-01-01' });
   });
 });
 
@@ -155,13 +154,6 @@ describe('mergeAuthor', () => {
     const inc = { name: 'n', id: '9', slug: '9.known', lastSeen: '2026-08-28', firstSeen: '2026-08-01' };
     const out = mergeAuthor(existing, inc);
     expect(out.firstSeen).toBe('2026-08-01');
-  });
-
-  it('keeps a nonzero local fail_count over an imported one', () => {
-    const out = mergeAuthor({ id: '9', slug: '9.known', lastSeen: '2026-01-01', failCount: 2 }, { name: 'n', id: '9', slug: '9.known', lastSeen: '2026-08-28', failCount: 5 });
-    expect(out.failCount).toBe(2);
-    const out2 = mergeAuthor({ id: '9', slug: '9.known', lastSeen: '2026-01-01', failCount: 0 }, { name: 'n', id: '9', slug: '9.known', lastSeen: '2026-08-28', failCount: 5 });
-    expect(out2.failCount).toBe(5);
   });
 });
 

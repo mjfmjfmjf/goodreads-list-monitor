@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CachedBook } from './storage.js';
-import { isStandalone, resortVotedBooks } from './monitorTopStandalones.js';
-import type { UserVoteEntry } from './scraper.js';
+import type { CachedBook } from './storage.ts';
+import { isStandalone, resortVotedBooks } from './monitorTopStandalones.ts';
+import type { UserVoteEntry } from './scraper.ts';
 
 function book(id: string, over: Partial<CachedBook> = {}): CachedBook {
   return {

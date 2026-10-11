@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { resolveRemovedBookDetails } from './monitor.js';
-import type { BookCache, CachedBook } from './storage.js';
+import { resolveRemovedBookDetails } from './monitor.ts';
+import type { BookCache, CachedBook } from './storage.ts';
 
 function row(id: string, title: string, author = 'Some Author'): CachedBook {
   return {

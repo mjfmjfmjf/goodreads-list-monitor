@@ -1,5 +1,5 @@
-import { CachedBook } from './storage.js';
-import { stripTitleSuffix } from './utils.js';
+import { CachedBook } from './storage.ts';
+import { stripTitleSuffix } from './utils.ts';
 
 export type MatchField = 'title' | 'authorLast' | 'authorFirst';
 

@@ -1,8 +1,8 @@
 import chalk from 'chalk';
 import * as cheerio from 'cheerio';
-import { loadConfig } from './storage.js';
-import { delay, fetchWithRetry } from './utils.js';
-import { USER_AGENT } from './scraper.js';
+import { loadConfig } from './storage.ts';
+import { delay, fetchWithRetry } from './utils.ts';
+import { USER_AGENT } from './scraper.ts';
 
 const TIMEOUT = 30000;
 

@@ -2,7 +2,7 @@ import { createGunzip } from 'node:zlib';
 import { createReadStream, openSync, readSync, closeSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import chalk from 'chalk';
-import { recomputeWorkReps } from './db.js';
+import { recomputeWorkReps } from './db.ts';
 
 // Importer for the sanitized CSV+gzip exports produced by exportData.
 // Policy (per existing merge conventions in storage.ts):
@@ -255,9 +255,9 @@ export interface AuthorImportRow {
   numReviews?: number | null;
   numShelves?: number | null;
   catalogPages?: number | null;
-  failCount?: number | null;
-  lastError?: string;
   ratingsRate?: number | null;
+  // Durable per-author flag (author page permanently gone). Round-trips through
+  // export; the strike ledger deliberately does not (it is operational state).
 }
 
 export function decodeAuthorRow(headers: string[], fields: (string | null)[]): AuthorImportRow | null {
@@ -278,8 +278,6 @@ export function decodeAuthorRow(headers: string[], fields: (string | null)[]): A
     numReviews: toInt(get('num_reviews')),
     numShelves: toInt(get('num_shelves')),
     catalogPages: toInt(get('catalog_pages')),
-    failCount: toInt(get('fail_count')),
-    lastError: get('last_error') ?? undefined,
     ratingsRate: toFloat(get('ratings_rate')),
   };
 }
@@ -394,6 +392,9 @@ export interface ImportCounts {
   bookPagesInserted: number; bookPagesUpdated: number; bookPagesSkipped: number;
   tagStatsInserted: number; tagStatsUpdated: number;
   listsInserted: number; listsUpdated: number;
+  listTagsInserted?: number; listTagsUpdated?: number;
+  authorSlugsInserted?: number; authorSlugsUpdated?: number;
+  listTagWalkHistoryInserted?: number; listTagWalkHistoryUpdated?: number;
   popularByDateInserted: number; popularByDateUpdated: number; popularByDateSkipped: number;
   tagTailsInserted: number; tagTailsUpdated: number;
   tagTailStateInserted: number; tagTailStateUpdated: number;
@@ -495,30 +496,34 @@ export async function importAuthorsFile(
 ): Promise<{ total: number }> {
   const upsertStmt = db.prepare(`
     INSERT INTO authors
-      (name, id, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, fail_count, last_error, ratings_rate)
+      (id, name, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, ratings_rate)
     VALUES
-      (@name, @id, @slug, @lastSeen, @firstSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @failCount, @lastError, @ratingsRate)
-    ON CONFLICT(name) DO UPDATE SET
-      id=excluded.id, slug=excluded.slug, last_seen=excluded.last_seen,
+      (@id, @name, @slug, @lastSeen, @firstSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @ratingsRate)
+    ON CONFLICT(id) DO UPDATE SET
+      name=excluded.name, slug=excluded.slug, last_seen=excluded.last_seen,
       first_seen=COALESCE(authors.first_seen, excluded.first_seen),
       average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
       num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
-      catalog_pages=excluded.catalog_pages, fail_count=excluded.fail_count, last_error=excluded.last_error,
+      catalog_pages=excluded.catalog_pages,
       ratings_rate=excluded.ratings_rate
   `);
 
-  const find = db.prepare('SELECT * FROM authors WHERE name = ?');
+  const find = db.prepare('SELECT * FROM authors WHERE id = ?');
   const toWrite: any[] = [];
   let total = 0;
   await readCsvGz(authorsFile, (headers, fields) => {
     const row = decodeAuthorRow(headers, fields);
     if (!row) return;
+    // Identity is the Goodreads id; fall back to the slug prefix for legacy
+    // exports that predate the id column.
+    const id = row.id ?? (row.slug ? row.slug.split('.')[0] : undefined);
+    if (!id) return;
     total++;
-    const existing = find.get(row.name) as any;
+    const existing = find.get(id) as any;
     const mergedAuthor = mergeAuthor(existing as any, row as AuthorImportRow);
     toWrite.push({
-      name: row.name,
-      id: mergedAuthor.id,
+      id,
+      name: (existing?.name as string) || row.name,
       slug: mergedAuthor.slug,
       lastSeen: mergedAuthor.lastSeen,
       firstSeen: mergedAuthor.firstSeen ?? null,
@@ -527,8 +532,6 @@ export async function importAuthorsFile(
       numReviews: mergedAuthor.numReviews,
       numShelves: mergedAuthor.numShelves,
       catalogPages: mergedAuthor.catalogPages,
-      failCount: mergedAuthor.failCount ?? 0,
-      lastError: mergedAuthor.lastError ?? null,
       ratingsRate: mergedAuthor.ratingsRate ?? null,
       isNew: !existing,
     });
@@ -542,6 +545,90 @@ export async function importAuthorsFile(
     }
   });
   tx();
+  return { total };
+}
+
+// ── author_slugs import (slug-history ledger) ──────────────────────
+// PK (author_id, slug). The ledger records every (id, slug) form an author's
+// page carried, first_seen being the earliest and last_seen the latest; a
+// re-import must never move those timestamps backwards or forwards wrongly, so
+// first_seen keeps the older and last_seen the newer of the two sides. name is
+// fill-blank-only (the slug row's canonical name, kept from whichever side saw
+// it first).
+export interface AuthorSlugImportRow {
+  authorId: string;
+  slug: string;
+  name?: string;
+  firstSeen?: string;
+  lastSeen?: string;
+}
+
+export function decodeAuthorSlugRow(headers: string[], fields: (string | null)[]): AuthorSlugImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const authorId = get('author_id');
+  const slug = get('slug');
+  if (!authorId || !slug) return null;
+  return {
+    authorId,
+    slug,
+    name: get('name') ?? undefined,
+    firstSeen: get('first_seen') ?? undefined,
+    lastSeen: get('last_seen') ?? undefined,
+  };
+}
+
+export async function importAuthorSlugsFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const upsert = db.prepare(`
+    INSERT INTO author_slugs (author_id, slug, name, first_seen, last_seen)
+    VALUES (@authorId, @slug, @name, @firstSeen, @lastSeen)
+    ON CONFLICT(author_id, slug) DO UPDATE SET
+      name=CASE WHEN author_slugs.name IS NULL OR author_slugs.name = '' THEN excluded.name ELSE author_slugs.name END,
+      first_seen=CASE
+        WHEN excluded.first_seen IS NULL OR excluded.first_seen = '' THEN author_slugs.first_seen
+        WHEN author_slugs.first_seen IS NULL OR author_slugs.first_seen > excluded.first_seen THEN excluded.first_seen
+        ELSE author_slugs.first_seen END,
+      last_seen=CASE
+        WHEN excluded.last_seen IS NULL OR excluded.last_seen = '' THEN author_slugs.last_seen
+        WHEN author_slugs.last_seen IS NULL OR author_slugs.last_seen < excluded.last_seen THEN excluded.last_seen
+        ELSE author_slugs.last_seen END
+  `);
+  const find = db.prepare('SELECT * FROM author_slugs WHERE author_id = ? AND slug = ?');
+  let batch: { authorId: string; slug: string; name: string | null; firstSeen: string; lastSeen: string; isNew: boolean }[] = [];
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodeAuthorSlugRow(headers, fields);
+    if (!row) return;
+    total++;
+    const existing = find.get(row.authorId, row.slug) as any;
+    batch.push({
+      authorId: row.authorId,
+      slug: row.slug,
+      name: row.name || null,
+      firstSeen: row.firstSeen || new Date().toISOString(),
+      lastSeen: row.lastSeen || new Date().toISOString(),
+      isNew: !existing,
+    });
+    if (batch.length >= 20_000) { flush(); batch = []; }
+  });
+  flush();
+
+  function flush(): void {
+    const tx = db.transaction((rows: typeof batch) => {
+      for (const p of rows) {
+        upsert.run(p);
+        if (p.isNew) (counts as any).authorSlugsInserted = ((counts as any).authorSlugsInserted || 0) + 1;
+        else (counts as any).authorSlugsUpdated = ((counts as any).authorSlugsUpdated || 0) + 1;
+      }
+    });
+    tx(batch);
+  }
   return { total };
 }
 
@@ -1240,7 +1327,7 @@ export async function importTagTailStateFile(
 // Fill-blank-only for authors (status fields like last_seen are always updated).
 export interface ExistingAuthor {
   id?: string; slug?: string; lastSeen?: string; firstSeen?: string; averageRating?: number | null; numRatings?: number | null;
-  numReviews?: number | null; numShelves?: number | null; catalogPages?: number | null; failCount?: number | null; lastError?: string; ratingsRate?: number | null;
+  numReviews?: number | null; numShelves?: number | null; catalogPages?: number | null; ratingsRate?: number | null;
 }
 export function mergeAuthor(existing: ExistingAuthor | undefined, inc: AuthorImportRow): ExistingAuthor {
   const pickStr = (e: string | undefined, i: string | undefined, fb: string) => !isBlank(e) ? e! : (!isBlank(i) ? i! : fb);
@@ -1255,8 +1342,6 @@ export function mergeAuthor(existing: ExistingAuthor | undefined, inc: AuthorImp
     numReviews: pickNum2(existing?.numReviews ?? null, inc.numReviews ?? null),
     numShelves: pickNum2(existing?.numShelves ?? null, inc.numShelves ?? null),
     catalogPages: pickNum2(existing?.catalogPages ?? null, inc.catalogPages ?? null),
-    failCount: pickNum2(existing?.failCount ?? null, inc.failCount ?? null),
-    lastError: existing?.lastError ?? inc.lastError,
     ratingsRate: pickNum2(existing?.ratingsRate ?? null, inc.ratingsRate ?? null),
   };
 }
@@ -1270,6 +1355,9 @@ export interface ImportOptions {
   bookPageFile?: string;
   tagStatsFile?: string;
   listsFile?: string;
+  listTagsFile?: string;
+  authorSlugsFile?: string;
+  listTagWalkHistoryFile?: string;
   popularByDateFile?: string;
   tagTailsFile?: string;
   tagTailStateFile?: string;
@@ -1279,8 +1367,8 @@ export async function importData(
   db: import('better-sqlite3').Database,
   options: ImportOptions
 ): Promise<ImportCounts> {
-  if (!options.booksFile && !options.authorsFile && !options.tagBooksFile && !options.genresFile && !options.xrefFile && !options.bookPageFile && !options.tagStatsFile && !options.listsFile && !options.popularByDateFile && !options.tagTailsFile && !options.tagTailStateFile) {
-    throw new Error('Provide at least one of --books, --authors, --tagBooks, --genres, --xref, --bookPage, --tagStats, --lists, --popularByDate, --tagTails, or --tagTailState file paths.');
+  if (!options.booksFile && !options.authorsFile && !options.tagBooksFile && !options.genresFile && !options.xrefFile && !options.bookPageFile && !options.tagStatsFile && !options.listsFile && !options.listTagsFile && !options.authorSlugsFile && !options.listTagWalkHistoryFile && !options.popularByDateFile && !options.tagTailsFile && !options.tagTailStateFile) {
+    throw new Error('Provide at least one of --books, --authors, --tagBooks, --genres, --xref, --bookPage, --tagStats, --lists, --listTags, --authorSlugs, --listTagWalkHistory, --popularByDate, --tagTails, or --tagTailState file paths.');
   }
   const counts: ImportCounts = {
     booksInserted: 0, booksUpdated: 0, booksSkipped: 0,
@@ -1291,6 +1379,9 @@ export async function importData(
     bookPagesInserted: 0, bookPagesUpdated: 0, bookPagesSkipped: 0,
     tagStatsInserted: 0, tagStatsUpdated: 0,
     listsInserted: 0, listsUpdated: 0,
+    listTagsInserted: 0, listTagsUpdated: 0,
+    authorSlugsInserted: 0, authorSlugsUpdated: 0,
+    listTagWalkHistoryInserted: 0, listTagWalkHistoryUpdated: 0,
     popularByDateInserted: 0, popularByDateUpdated: 0, popularByDateSkipped: 0,
     tagTailsInserted: 0, tagTailsUpdated: 0,
     tagTailStateInserted: 0, tagTailStateUpdated: 0,
@@ -1304,6 +1395,9 @@ export async function importData(
   if (options.bookPageFile) await importBookPagesFile(db, options.bookPageFile, counts);
   if (options.tagStatsFile) await importTagStatsFile(db, options.tagStatsFile, counts);
   if (options.listsFile) await importListsFile(db, options.listsFile, counts);
+  if (options.listTagsFile) await importListTagsFile(db, options.listTagsFile, counts);
+  if (options.authorSlugsFile) await importAuthorSlugsFile(db, options.authorSlugsFile, counts);
+  if (options.listTagWalkHistoryFile) await importListTagWalkHistoryFile(db, options.listTagWalkHistoryFile, counts);
   if (options.popularByDateFile) await importPopularByDateFile(db, options.popularByDateFile, counts);
   if (options.tagTailsFile) await importTagTailsFile(db, options.tagTailsFile, counts);
   if (options.tagTailStateFile) await importTagTailStateFile(db, options.tagTailStateFile, counts);
@@ -1320,8 +1414,187 @@ export function printImportResult(counts: ImportCounts, ratingPolicy: 'keep' | '
   console.log(chalk.white(`  book_page:   ${counts.bookPagesInserted} inserted, ${counts.bookPagesUpdated} updated, ${counts.bookPagesSkipped} skipped (older scrape)`));
   console.log(chalk.white(`  tag_stats:   ${counts.tagStatsInserted} inserted, ${counts.tagStatsUpdated} updated`));
   console.log(chalk.white(`  lists:       ${counts.listsInserted} inserted, ${counts.listsUpdated} updated`));
+  console.log(chalk.white(`  list_tags:   ${(counts as any).listTagsInserted || 0} inserted, ${(counts as any).listTagsUpdated || 0} updated`));
+  console.log(chalk.white(`  auth_slugs:  ${(counts as any).authorSlugsInserted || 0} inserted, ${(counts as any).authorSlugsUpdated || 0} updated`));
+  console.log(chalk.white(`  walk_hist:   ${(counts as any).listTagWalkHistoryInserted || 0} inserted, ${(counts as any).listTagWalkHistoryUpdated || 0} updated`));
   console.log(chalk.white(`  pop_by_date: ${counts.popularByDateInserted} inserted, ${counts.popularByDateUpdated} updated, ${counts.popularByDateSkipped} skipped (older scrape)`));
   console.log(chalk.white(`  tag_tails:   ${counts.tagTailsInserted} inserted, ${counts.tagTailsUpdated} updated`));
   console.log(chalk.white(`  tag_state:   ${counts.tagTailStateInserted} inserted, ${counts.tagTailStateUpdated} updated`));
   console.log(chalk.gray(`  avgRating policy: ${ratingPolicy === 'update' ? 'update (overwrite)' : 'keep (fill-blank-only)'}`));
+}
+
+// ── list_tags import (the ONE unified list↔tag xref) ──────────────
+// PK (list_id, tag_name). first_seen is never re-stamped; last_seen is refreshed
+// when a newer export contains the pair. from_sidebar/from_directory provenance
+// is PRESERVED: a row learned from a list's own sidebar keeps from_sidebar=1, a
+// row learned from a Listopia directory walk (list-tag-walk / walk-list-tag)
+// keeps from_directory=1, and a row carrying both stays both — so a rebuilt DB
+// still knows which route taught each association (listTagStats /
+// listTagBackfill / walkNextTag rely on it).
+export interface ListTagImportRow {
+  listId: string;
+  tagName: string;
+  firstSeen?: string;
+  lastSeen?: string;
+  fromSidebar?: number | null;
+  fromDirectory?: number | null;
+}
+
+export function decodeListTagRow(headers: string[], fields: (string | null)[]): ListTagImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const listId = get('list_id');
+  const tagName = get('tag_name');
+  if (!listId || !tagName) return null;
+  return {
+    listId,
+    tagName,
+    firstSeen: get('first_seen') ?? undefined,
+    lastSeen: get('last_seen') ?? undefined,
+    fromSidebar: toInt(get('from_sidebar')),
+    fromDirectory: toInt(get('from_directory')),
+  };
+}
+
+export async function importListTagsFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const upsert = db.prepare(`
+    INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen, from_sidebar, from_directory)
+    VALUES (@listId, @tagName, @firstSeen, @lastSeen, @fromSidebar, @fromDirectory)
+    ON CONFLICT(list_id, tag_name) DO UPDATE SET
+      first_seen = CASE WHEN list_tags.first_seen IS NULL OR list_tags.first_seen = '' THEN excluded.first_seen ELSE list_tags.first_seen END,
+      last_seen = CASE WHEN excluded.last_seen IS NULL OR excluded.last_seen = '' THEN list_tags.last_seen ELSE excluded.last_seen END,
+      -- Provenance ORs in: a row that was learned from either route (or both)
+      -- keeps every flag it ever had; reconcile never "unsets" a learned source.
+      from_sidebar = CASE WHEN excluded.from_sidebar = 1 THEN 1 ELSE list_tags.from_sidebar END,
+      from_directory = CASE WHEN excluded.from_directory = 1 THEN 1 ELSE list_tags.from_directory END
+  `);
+  const find = db.prepare('SELECT * FROM list_tags WHERE list_id = ? AND tag_name = ?');
+  let batch: { listId: string; tagName: string; firstSeen: string; lastSeen: string; fromSidebar: number; fromDirectory: number; isNew: boolean }[] = [];
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodeListTagRow(headers, fields);
+    if (!row) return;
+    total++;
+    const existing = find.get(row.listId, row.tagName.toLowerCase()) as any;
+    const now = new Date().toISOString();
+    batch.push({
+      listId: row.listId,
+      tagName: row.tagName.toLowerCase(),
+      firstSeen: row.firstSeen || existing?.first_seen || now,
+      lastSeen: row.lastSeen || now,
+      fromSidebar: row.fromSidebar === 1 ? 1 : 0,
+      fromDirectory: row.fromDirectory === 1 ? 1 : 0,
+      isNew: !existing,
+    });
+    if (batch.length >= 20_000) { flush(); batch = []; }
+  });
+  flush();
+
+  function flush(): void {
+    const tx = db.transaction((rows: typeof batch) => {
+      for (const p of rows) {
+        upsert.run(p);
+        if (p.isNew) (counts as any).listTagsInserted = ((counts as any).listTagsInserted || 0) + 1;
+        else (counts as any).listTagsUpdated = ((counts as any).listTagsUpdated || 0) + 1;
+      }
+    });
+    tx(batch);
+  }
+  return { total };
+}
+
+// ── list_tag_walk_history import (the "did I walk this tag?" table) ──
+// PK tag_name, lowercased at the write boundary (Goodreads treats
+// /show_tag/Dutch and /show_tag/dutch as the same tag). Merge policy matches
+// reconcileListTagsXref's legacy seeding: first_walked keeps the EARLIER,
+// last_walked the LATER of the two sides (a re-import never moves history
+// backwards), num_walks keeps the LARGER count, and num_lists takes the larger
+// known enumeration, preserving NULL (membership unknown) unless one side has a
+// real count. Without this importer a restore lost which tags were walked, so
+// ./walkNextTag would re-walk every tag on a rebuilt DB.
+export interface ListTagWalkHistoryImportRow {
+  tagName: string;
+  firstWalked?: string;
+  lastWalked?: string;
+  numWalks?: number | null;
+  numLists?: number | null;
+}
+
+export function decodeListTagWalkHistoryRow(headers: string[], fields: (string | null)[]): ListTagWalkHistoryImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const tagName = get('tag_name');
+  if (!tagName) return null;
+  return {
+    tagName,
+    firstWalked: get('first_walked') ?? undefined,
+    lastWalked: get('last_walked') ?? undefined,
+    numWalks: toInt(get('num_walks')),
+    numLists: toInt(get('num_lists')),
+  };
+}
+
+export async function importListTagWalkHistoryFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const upsert = db.prepare(`
+    INSERT INTO list_tag_walk_history (tag_name, first_walked, last_walked, num_walks, num_lists)
+    VALUES (@tagName, @firstWalked, @lastWalked, @numWalks, @numLists)
+    ON CONFLICT(tag_name) DO UPDATE SET
+      first_walked=CASE
+        WHEN excluded.first_walked IS NULL OR excluded.first_walked = '' THEN list_tag_walk_history.first_walked
+        WHEN list_tag_walk_history.first_walked IS NULL OR list_tag_walk_history.first_walked > excluded.first_walked THEN excluded.first_walked
+        ELSE list_tag_walk_history.first_walked END,
+      last_walked=CASE
+        WHEN excluded.last_walked IS NULL OR excluded.last_walked = '' THEN list_tag_walk_history.last_walked
+        WHEN list_tag_walk_history.last_walked IS NULL OR list_tag_walk_history.last_walked < excluded.last_walked THEN excluded.last_walked
+        ELSE list_tag_walk_history.last_walked END,
+      num_walks=MAX(COALESCE(list_tag_walk_history.num_walks, 0), COALESCE(excluded.num_walks, 0)),
+      num_lists=CASE
+        WHEN excluded.num_lists IS NULL THEN list_tag_walk_history.num_lists
+        WHEN list_tag_walk_history.num_lists IS NULL THEN excluded.num_lists
+        ELSE MAX(list_tag_walk_history.num_lists, excluded.num_lists)
+      END
+  `);
+  const find = db.prepare('SELECT 1 FROM list_tag_walk_history WHERE tag_name = ?');
+  let batch: { tagName: string; firstWalked: string; lastWalked: string; numWalks: number | null; numLists: number | null; isNew: boolean }[] = [];
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodeListTagWalkHistoryRow(headers, fields);
+    if (!row) return;
+    total++;
+    const existing = find.get(row.tagName.toLowerCase());
+    batch.push({
+      tagName: row.tagName.toLowerCase(),
+      firstWalked: row.firstWalked || new Date().toISOString(),
+      lastWalked: row.lastWalked || new Date().toISOString(),
+      numWalks: row.numWalks ?? null,
+      numLists: row.numLists ?? null,
+      isNew: !existing,
+    });
+    if (batch.length >= 20_000) { flush(); batch = []; }
+  });
+  flush();
+
+  function flush(): void {
+    const tx = db.transaction((rows: typeof batch) => {
+      for (const p of rows) {
+        upsert.run(p);
+        if (p.isNew) (counts as any).listTagWalkHistoryInserted = ((counts as any).listTagWalkHistoryInserted || 0) + 1;
+        else (counts as any).listTagWalkHistoryUpdated = ((counts as any).listTagWalkHistoryUpdated || 0) + 1;
+      }
+    });
+    tx(batch);
+  }
+  return { total };
 }

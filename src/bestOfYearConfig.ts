@@ -2,10 +2,10 @@ import chalk from 'chalk';
 import * as cheerio from 'cheerio';
 import fs from 'fs-extra';
 import path from 'path';
-import { loadConfig } from './storage.js';
-import { delay, fetchWithRetry } from './utils.js';
-import { USER_AGENT } from './scraper.js';
-import type { ListEntry } from './tagConfig.js';
+import { loadConfig } from './storage.ts';
+import { delay, fetchWithRetry } from './utils.ts';
+import { USER_AGENT } from './scraper.ts';
+import type { ListEntry } from './tagConfig.ts';
 
 const TIMEOUT = 30000;
 

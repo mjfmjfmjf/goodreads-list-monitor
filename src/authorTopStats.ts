@@ -1,7 +1,22 @@
 import chalk from 'chalk';
-import { loadAuthorCache } from './storage.js';
-import type { AuthorCache } from './storage.js';
-import type { AuthorCacheEntry } from './storage.js';
+import { iterateAuthors } from './storage.ts';
+import type { AuthorCacheEntry } from './storage.ts';
+
+// Author-selection inputs may be either the legacy id-keyed Record (unit tests,
+// small hand-built caches) or an iterable of entries — the scalable path:
+// iterateAuthors() streams rows without materializing the ~960k-row object that
+// loadAuthorCache() used to build on every statistics command. Yields [id, entry]
+// pairs; for the Record form the id is the map key (as it always was), for the
+// iterable form it is entry.id (identical in production, where keys == ids).
+export function* authorPairs(
+  src: Record<string, AuthorCacheEntry> | Iterable<AuthorCacheEntry>,
+): Generator<[string, AuthorCacheEntry]> {
+  if (src != null && typeof (src as any)[Symbol.iterator] === 'function') {
+    for (const entry of src as Iterable<AuthorCacheEntry>) yield [entry.id, entry];
+  } else {
+    for (const [key, entry] of Object.entries(src as Record<string, AuthorCacheEntry>)) yield [key, entry];
+  }
+}
 
 export type AuthorSortField = 'numRatings' | 'averageRating' | 'numReviews' | 'numShelves' | 'catalogPages' | 'ratingsRate';
 
@@ -13,6 +28,7 @@ export interface AuthorTopStatsOptions {
 }
 
 export interface SelectedAuthor {
+  id: string;
   name: string;
   entry: AuthorCacheEntry;
   value: number;
@@ -51,7 +67,7 @@ const SORT_LABELS: Record<AuthorSortField, string> = {
 const parseNum = (s?: string): number => parseInt((s || '0').replace(/,/g, ''), 10) || 0;
 const parseAvg = (s?: string): number => parseFloat(s || '0') || 0;
 
-export function selectAuthors(authorCache: AuthorCache, options: AuthorTopStatsOptions = {}): { authors: SelectedAuthor[]; missingField: number } {
+export function selectAuthors(authorModels: Record<string, AuthorCacheEntry> | Iterable<AuthorCacheEntry>, options: AuthorTopStatsOptions = {}): { authors: SelectedAuthor[]; missingField: number } {
   const sortBy = (options.sortBy || 'numRatings') as AuthorSortField;
   if (!SORT_FIELDS.includes(sortBy)) {
     console.error(chalk.red.bold(`Error: --sortBy must be one of: ${SORT_FIELDS.join(', ')}`));
@@ -71,19 +87,20 @@ export function selectAuthors(authorCache: AuthorCache, options: AuthorTopStatsO
   const authors: SelectedAuthor[] = [];
   let missingField = 0;
 
-  for (const [name, entry] of Object.entries(authorCache)) {
+  for (const [id, entry] of authorPairs(authorModels)) {
     const ratings = parseNum(entry.numRatings);
     if (ratings < minRatings || ratings > maxRatings) continue;
 
+    const name = entry.name ?? id;
     const value = valueOf(entry);
     if (sortBy === 'catalogPages') {
       // null/undefined catalogPages = 0 pages (not "missing")
-      authors.push({ name, entry, value: value || 0 });
+      authors.push({ id, name, entry, value: value || 0 });
     } else if (value <= 0) {
       missingField++;
       continue;
     } else {
-      authors.push({ name, entry, value });
+      authors.push({ id, name, entry, value });
     }
   }
 
@@ -99,14 +116,12 @@ export function selectAuthors(authorCache: AuthorCache, options: AuthorTopStatsO
 }
 
 export async function runAuthorTopStats(options: AuthorTopStatsOptions = {}): Promise<void> {
-  const authorCache = await loadAuthorCache();
-
   const sortBy = (options.sortBy || 'numRatings') as AuthorSortField;
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
   const minRatings = options.minRatings !== undefined ? parseNum(options.minRatings) : 0;
   const maxRatings = options.maxRatings !== undefined ? parseNum(options.maxRatings) : Infinity;
 
-  const { authors, missingField } = selectAuthors(authorCache, options);
+  const { authors, missingField } = selectAuthors(iterateAuthors(), options);
 
   console.log(chalk.cyan.bold(`\n🏆 Top Authors by ${SORT_LABELS[sortBy]}`));
   let criteriaMsg = `   Criteria: Min Ratings: ${minRatings.toLocaleString()}`;

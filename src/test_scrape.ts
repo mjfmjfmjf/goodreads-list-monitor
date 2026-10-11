@@ -1,4 +1,4 @@
-import { scrapeBookDetails } from './scraper.js';
+import { scrapeBookDetails } from './scraper.ts';
 
 async function test() {
   const details = await scrapeBookDetails('1');

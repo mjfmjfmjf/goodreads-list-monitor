@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { planConsolidation, planRename, collapseName } from './authorDedupe.js';
-import type { AuthorRow } from './authorDedupe.js';
+import { planConsolidation, planRename, collapseName } from './authorDedupe.ts';
+import type { AuthorRow } from './authorDedupe.ts';
 
 function row(name: string, id: string, opts: Partial<AuthorRow> = {}): AuthorRow {
   return {

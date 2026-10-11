@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldMarkScraped } from './listPopularWalker.js';
+import { shouldMarkScraped } from './listPopularWalker.ts';
 
 describe('shouldMarkScraped', () => {
   it('marks a full crawl as scraped', () => {

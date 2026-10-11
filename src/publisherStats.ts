@@ -1,4 +1,4 @@
-import { runGroupedCommand, publisherExtractor, GroupedCommandOptions } from './favoriteAuthors.js';
+import { runGroupedCommand, publisherExtractor, GroupedCommandOptions } from './favoriteAuthors.ts';
 
 export type PublisherStatsOptions = GroupedCommandOptions;
 

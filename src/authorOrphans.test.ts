@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeAuthorName, selectAuthorOrphans, applyOrphanFilters, classifyOrphan, looksLikeNameConcat, authorListUrl, selectScrapeCandidates } from './authorOrphans.js';
-import type { CachedBook, AuthorCache } from './storage.js';
+import { normalizeAuthorName, selectAuthorOrphans, applyOrphanFilters, classifyOrphan, looksLikeNameConcat, authorListUrl, selectScrapeCandidates } from './authorOrphans.ts';
+import type { CachedBook, AuthorCache } from './storage.ts';
 
 const book = (author: string, ratings: string, opts: { id?: string; title?: string } = {}): CachedBook => ({
   id: Math.random().toString(36).slice(2),
@@ -13,7 +13,7 @@ const book = (author: string, ratings: string, opts: { id?: string; title?: stri
 });
 
 const cacheWith = (...names: string[]): AuthorCache =>
-  Object.fromEntries(names.map(n => [n, { id: '0', slug: n.toLowerCase().replace(/\s+/g, '-'), lastSeen: '' }]));
+  Object.fromEntries(names.map((n, i) => [`1000${i}`, { id: `1000${i}`, name: n, slug: n.toLowerCase().replace(/\s+/g, '-'), lastSeen: '' }]));
 
 describe('normalizeAuthorName', () => {
   it('collapses repeated spaces', () => {
@@ -59,8 +59,9 @@ describe('selectAuthorOrphans', () => {
   it('excludes an author already hosted in the cache when matched by authorId', () => {
     // "John  Green" is not a name key, but its authorId already lives in the
     // cache -> must NOT be reported as an orphan.
-    const cache = cacheWith('John Green');
-    cache['John Green'] = { id: '1406384', slug: '1406384.John_Green', lastSeen: '' };
+    const cache: AuthorCache = {
+      '1406384': { id: '1406384', name: 'John Greene', slug: '1406384.John_Green', lastSeen: '' },
+    };
     const { orphans } = selectAuthorOrphans(
       [book('John  Green', '5000000', { id: '1406384' }), book('A Real Newbie', '100', { id: '9999' })],
       cache
@@ -71,8 +72,9 @@ describe('selectAuthorOrphans', () => {
 
   it('excludes a whitespace-dirty name with no authorId when it normalizes to a cached key', () => {
     // "Michael  Grant" has no authorId, but normalizes to the cached "Michael Grant".
-    const cache = cacheWith('Michael Grant');
-    cache['Michael Grant'] = { id: '1599723', slug: '1599723.Michael_Grant', lastSeen: '' };
+    const cache: AuthorCache = {
+      '1599723': { id: '1599723', name: 'Michael Grant', slug: '1599723.Michael_Grant', lastSeen: '' },
+    };
     const { orphans } = selectAuthorOrphans(
       [book('Michael  Grant', '212024'), book('A Real Newbie', '100', { id: '9999' })],
       cache

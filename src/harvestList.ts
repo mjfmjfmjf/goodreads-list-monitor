@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { scrapeListBooks } from './scraper.js';
-import { syncBooksToCache, loadAuthorCache, syncAuthorsToCache, type BookCache } from './storage.js';
+import { scrapeListBooks } from './scraper.ts';
+import { syncBooksToCache, syncAuthorsToCache, type BookCache, type AuthorCache } from './storage.ts';
 
 async function harvestList(listId: string) {
   if (!listId) {
@@ -12,10 +12,10 @@ async function harvestList(listId: string) {
   console.log(chalk.cyan.bold(`\n📥 Starting metadata harvest for list: ${listId}`));
 
   try {
-    // Empty in-run book cache: syncBooksToCache merges against the DB row
-    // (getBook), so no need to load the 5.6M-row table into memory.
+    // Run-scoped memos only: syncBooksToCache/syncAuthorsToCache resolve misses
+    // against the live DB row (getBook / getAuthorById), so no full table loads.
     const bookCache: BookCache = {};
-    const authorCache = await loadAuthorCache();
+    const authorCache: AuthorCache = {};
 
     console.log(chalk.gray(`   Reading list pages...`));
     const listBooks = await scrapeListBooks(listId);

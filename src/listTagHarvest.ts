@@ -1,9 +1,10 @@
 import chalk from 'chalk';
 import { Page } from 'playwright';
-import { scrapeListsByTag } from './scraper.js';
-import { ListWalkerOptions, walkOneList, ensureListTables, listScrapeSkip, setListWalkRow, WalkerSummary } from './listWalker.js';
-import { ensureScrapeTables, getBrowserContext, closeBrowserContext } from './browserBookScrape.js';
-import { delay } from './utils.js';
+import { scrapeListsByTag } from './scraper.ts';
+import { ListWalkerOptions, walkOneList, ensureListTables, listScrapeSkip, setListWalkRow, WalkerSummary } from './listWalker.ts';
+import { ensureScrapeTables, getBrowserContext, closeBrowserContext } from './browserBookScrape.ts';
+import { recordListTagMembership, recordListTagWalkHistory } from './storage.ts';
+import { delay } from './utils.ts';
 
 export interface ListTagHarvestOptions {
   tag: string;
@@ -58,6 +59,14 @@ export async function runListTagHarvest(options: ListTagHarvestOptions): Promise
   ensureScrapeTables();
   ensureListTables();
 
+  // Record membership + walk history for EVERY list the directory yielded,
+  // before the already-scraped filter: a mature tag's re-walk is mostly
+  // skipped lists (or all of them), and the tag produced each list whether or
+  // not this run re-reads it. Same up-front bookkeeping as listTagWalker.
+  try { recordListTagMembership(options.tag, listEntries.map((l) => String(l.id))); } catch { /* best-effort */ }
+  try { recordListTagWalkHistory(options.tag, listEntries.length); } catch { /* best-effort */ }
+  console.log(chalk.gray(`   🏷️  Recorded walk of "${options.tag}" — ${listEntries.length.toLocaleString()} lists → list_tags (from_directory) + list_tag_walk_history`));
+
   // Filter out lists already fully walked (fresh within --relist-days) BEFORE
   // the browser opens, so already-scraped lists don't churn a Page + inter-list
   // delay. Same pure DB check re-runs inside walkOneList at walk time.
@@ -108,6 +117,8 @@ export async function runListTagHarvest(options: ListTagHarvestOptions): Promise
         ? ` · ${chalk.white(`tag page ${l.page}${lastTagPage > 0 ? `/${lastTagPage}` : ''}`)} · ${chalk.white(`list ${l.pagePos ?? '?'}/${l.pageTotal ?? '?'} on page`)}`
         : '';
       console.log(chalk.gray(`   ── list ${i + 1}/${walkable.length}${pageNote} · ${l.slug || l.id} (${l.id}) ──`));
+      // Membership for this list was recorded up front (all enumerated lists,
+      // before the skip filter) — nothing to write here.
       let page: Page;
       let pageOpenAttempts = 0;
       while (true) {

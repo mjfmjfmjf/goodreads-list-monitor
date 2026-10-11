@@ -1,13 +1,13 @@
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
-import { scrapeListBooks, scrapeBookDetails, scrapeShelfBooks } from './scraper.js';
-import { loadState, saveState, getBook, upsertBook, syncBooksToCache } from './storage.js';
-import type { BookCache, CachedBook } from './storage.js';
-import { getDb } from './db.js';
-import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink, withDbLockRetryAsync } from './utils.js';
-import { RegexCriterion, matchesRegex } from './bookMatch.js';
-import { parseSeriesPos, matchesSeriesPos, SERIES_POS_STANDALONE } from './seriesPos.js';
+import { scrapeListBooks, scrapeBookDetails, scrapeShelfBooks } from './scraper.ts';
+import { loadState, saveState, getBook, upsertBook, syncBooksToCache } from './storage.ts';
+import type { BookCache, CachedBook } from './storage.ts';
+import { getDb } from './db.ts';
+import { getYear, normalizeTitle, normalizeAuthor, formatDate, delay, formatBookLink, withDbLockRetryAsync } from './utils.ts';
+import { RegexCriterion, matchesRegex } from './bookMatch.ts';
+import { parseSeriesPos, matchesSeriesPos, SERIES_POS_STANDALONE } from './seriesPos.ts';
 
 const AUDIT_REPORT = path.join(process.cwd(), 'auditReport.txt');
 

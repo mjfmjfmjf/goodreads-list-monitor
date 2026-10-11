@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { loadLibraryExport, loadLibraryExportCache, LibraryExport, LibraryEntry } from './libraryExport.js';
-import { splitAuthorNames, authorFirstAndLast } from './bookMatch.js';
+import { loadLibraryExport, loadLibraryExportCache, LibraryExport, LibraryEntry } from './libraryExport.ts';
+import { splitAuthorNames, authorFirstAndLast } from './bookMatch.ts';
 
 export interface LibraryQueryOptions {
   year?: string;

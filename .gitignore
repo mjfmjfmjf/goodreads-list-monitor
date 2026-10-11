@@ -37,6 +37,19 @@ probeRateLimit.js
 parse_genres.js
 howManyBooksShouldWeFind.txt
 savedAuthorData.txt
+*.tmp.mjs
+*.tmp.cjs
+*_probe.mjs
+smoke_scrape.mjs
+phase0-browser-spike.mjs
+bestScrapers.txt
+genres.txt
+nextAuthor.txt
+sql.txt
+whatCouldBeNext.txt
+
+# Sanitized export-data outputs (gzipped CSVs, large data dumps)
+*.csv.gz
 
 # Configuration (contains private cookies/tokens)
 config.json*

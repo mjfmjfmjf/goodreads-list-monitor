@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
-import { loadTagSets, rankPairings } from './genrePairings.js';
+import { getDb } from './db.ts';
+import { loadTagSets, rankPairings } from './genrePairings.ts';
 
 export interface TagPairingOptions {
   tag?: string;          // restrict to a single non-genre tag

@@ -1,6 +1,6 @@
-import { scrapeBookDetails } from './scraper.js';
-import { delay } from './utils.js';
-import { iterateBooks, upsertBook, type CachedBook } from './storage.js';
+import { scrapeBookDetails } from './scraper.ts';
+import { delay } from './utils.ts';
+import { iterateBooks, upsertBook, type CachedBook } from './storage.ts';
 
 async function fixSuspects() {
   // Collect only the suspect books (a tiny set) while streaming the table.

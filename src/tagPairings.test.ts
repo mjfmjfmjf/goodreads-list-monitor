@@ -6,10 +6,10 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-tagpairing-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb, getDb } from './db.js';
-import { upsertGenres, upsertTagBooks, upsertGenreTagXref, loadGenreTagXref } from './storage.js';
-import { loadTagSets } from './genrePairings.js';
-import { computeTagPairings, writeSimilarityXref } from './tagPairings.js';
+import { closeDb, getDb } from './db.ts';
+import { upsertGenres, upsertTagBooks, upsertGenreTagXref, loadGenreTagXref } from './storage.ts';
+import { loadTagSets } from './genrePairings.ts';
+import { computeTagPairings, writeSimilarityXref } from './tagPairings.ts';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 

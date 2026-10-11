@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { selectRecentAuthors, newestYearSortKey } from './authorRecent.js';
-import type { AuthorCacheEntry } from './storage.js';
+import { selectRecentAuthors, newestYearSortKey } from './authorRecent.ts';
+import type { AuthorCacheEntry } from './storage.ts';
 
 const entry = (id: string, extra: Partial<AuthorCacheEntry> = {}): AuthorCacheEntry => ({
   id,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { formatDuration, formatBookLink, httpCallInfo, httpStatusWord, fmtBytes, isConnectivityError, isDbLockError, withConnectivityProbe } from './utils.js';
+import { formatDuration, formatBookLink, httpCallInfo, httpStatusWord, fmtBytes, isConnectivityError, isDbLockError, withConnectivityProbe } from './utils.ts';
 
 describe('isConnectivityError', () => {
   it('recognizes DNS / connection-level error codes', () => {

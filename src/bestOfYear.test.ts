@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyBestOfYearPublished, resolveYearRange, BEST_OF_YEAR_FIRST } from './bestOfYear.js';
+import { applyBestOfYearPublished, resolveYearRange, BEST_OF_YEAR_FIRST } from './bestOfYear.ts';
 
 describe('resolveYearRange', () => {
   it('defaults to 1980 through the current year', () => {

@@ -8,15 +8,15 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-reports-test-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb } from './db.js';
-import { upsertBook } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { runSummaryByYear } from './summary.js';
-import { runSummaryRatings } from './summaryRatings.js';
-import { runRatingsHistogram } from './summaryHistogram.js';
-import { runAvgHistogram } from './summaryAvgHistogram.js';
-import { runSummaryTop, runSummaryBottom } from './summaryTopRated.js';
-import { runShelfStats } from './shelfStats.js';
+import { closeDb } from './db.ts';
+import { upsertBook } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { runSummaryByYear } from './summary.ts';
+import { runSummaryRatings } from './summaryRatings.ts';
+import { runRatingsHistogram } from './summaryHistogram.ts';
+import { runAvgHistogram } from './summaryAvgHistogram.ts';
+import { runSummaryTop, runSummaryBottom } from './summaryTopRated.ts';
+import { runShelfStats } from './shelfStats.ts';
 
 const DB_FILE = process.env.GOODREADS_DB_PATH!;
 const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'goodreads-reports-'));
@@ -287,7 +287,7 @@ describe('most-rated book per year script', () => {
   it('prints the highest-rated book for each publication year', async () => {
     const c = capture();
     try {
-      await import('./summaryTopByYear.js');
+      await import('./summaryTopByYear.ts');
       const out = c.out();
       expect(out).toContain('Most Rated Book per Year');
       expect(out).toMatch(/2001 numRatings=3,000,000 \(4\.5 avg\)[^\n]*Alpha Prime/);

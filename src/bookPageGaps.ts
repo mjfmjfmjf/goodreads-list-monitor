@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
+import { getDb } from './db.ts';
 
 export interface BookPageGapOptions {
   /** Pool size: the top-N book editions by ratings to inspect (default 100000). */

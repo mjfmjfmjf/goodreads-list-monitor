@@ -231,7 +231,7 @@ describe('add-book single lookup', () => {
 
         const candidates = library.entries.filter(entry => {
           const pub = (entry.published || '').trim();
-          return !pub && !!entry.author && !!authorCache[entry.author]?.slug;
+          return !pub && !!entry.author && !!Object.values(authorCache).find(e => e.name === entry.author)?.slug;
         });
         const candidate = candidates.find(isCleanCandidate) || candidates[0];
         if (!candidate) throw new Error('No unknown-year book whose author has a slug in authorsCache.json');

@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
-import { hasBookPageTable } from './bookPageGaps.js';
+import { getDb } from './db.ts';
+import { hasBookPageTable } from './bookPageGaps.ts';
 
 export interface PublisherCatalogOptions {
   limit?: string;

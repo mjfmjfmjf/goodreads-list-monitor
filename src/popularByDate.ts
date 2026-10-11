@@ -1,8 +1,8 @@
 import chalk from 'chalk';
 import { Page } from 'playwright';
-import { getDb } from './db.js';
-import { getBrowserContext, closeBrowserContext, runBrowserBookScrape, ScrapeRunSummary } from './browserBookScrape.js';
-import { connectivityProbeDefaults, isConnectivityError, withDbLockRetry } from './utils.js';
+import { getDb } from './db.ts';
+import { getBrowserContext, closeBrowserContext, runBrowserBookScrape, ScrapeRunSummary } from './browserBookScrape.ts';
+import { connectivityProbeDefaults, isConnectivityError, withDbLockRetry } from './utils.ts';
 
 // AWS AppSync fetch fallback for the getTopList query. The live endpoint + API
 // key are ALWAYS captured from the page's own traffic at runtime (the automatic

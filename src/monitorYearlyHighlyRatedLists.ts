@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
-import { loadState } from './storage.js';
+import { getDb } from './db.ts';
+import { loadState } from './storage.ts';
 
 export interface YearlyRow {
   year: number;

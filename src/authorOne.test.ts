@@ -10,14 +10,14 @@ vi.hoisted(() => {
   process.env.GR_AUTHOR_DELAY_MS = '0,0';
 });
 
-vi.mock('./scraper.js', () => ({
+vi.mock('./scraper.ts', () => ({
   scrapeAuthorStats: vi.fn(),
 }));
 
-import { closeDb, getDb } from './db.js';
-import { scrapeAuthorStats } from './scraper.js';
-import { authorExistsById, upsertAuthor } from './storage.js';
-import { runAuthorOneFile } from './authorOne.js';
+import { closeDb, getDb } from './db.ts';
+import { scrapeAuthorStats } from './scraper.ts';
+import { authorExistsById, upsertAuthor } from './storage.ts';
+import { runAuthorOneFile } from './authorOne.ts';
 
 const mockScrape = vi.mocked(scrapeAuthorStats);
 

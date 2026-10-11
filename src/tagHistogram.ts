@@ -1,6 +1,6 @@
 import chalk from 'chalk';
-import { getDb } from './db.js';
-import { loadTagBooks, TagBookRow } from './storage.js';
+import { getDb } from './db.ts';
+import { loadTagBooks, TagBookRow } from './storage.ts';
 
 export interface TagHistogramRow {
   tag: string;

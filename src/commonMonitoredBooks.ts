@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { loadState, getBook } from './storage.js';
-import type { State, BookCache, CachedBook } from './storage.js';
-import { getYear, formatBookLink } from './utils.js';
+import { loadState, getBook } from './storage.ts';
+import type { State, BookCache, CachedBook } from './storage.ts';
+import { getYear, formatBookLink } from './utils.ts';
 
 export interface CommonMonitoredOptions {
   limit?: string;

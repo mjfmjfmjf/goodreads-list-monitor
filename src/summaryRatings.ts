@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { iterateBooks } from './storage.js';
+import { iterateBooks } from './storage.ts';
 
 interface RatingBucket {
   label: string;

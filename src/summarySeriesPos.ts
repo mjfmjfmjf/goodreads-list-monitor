@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import { iterateBooks, countBooks } from './storage.js';
-import type { CachedBook } from './storage.js';
-import { parseSeriesPos, SERIES_POS_MULTI } from './seriesPos.js';
+import { iterateBooks, countBooks } from './storage.ts';
+import type { CachedBook } from './storage.ts';
+import { parseSeriesPos, SERIES_POS_MULTI } from './seriesPos.ts';
 
 export interface SeriesPosHistogramRow {
   pos: number;
