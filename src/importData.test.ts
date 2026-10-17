@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { gzipSync } from 'node:zlib';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import {
   splitCsvLine, decodeBookRow, decodeAuthorRow, mergeBook, mergeAuthor, mergeTags,
   decodeTagBookRow, decodeGenreRow, decodeXrefRow, decodeBookPageRow, decodeTagStatsRow, decodeListRow, mergeSeenIds,
   parseCsvRecords, decodePopularByDateRow, decodeTagTailRow, decodeTagTailStateRow,
+  importBookPagesFile, ImportCounts,
 } from './importData.ts';
 
 describe('parseCsvRecords', () => {
@@ -197,11 +203,11 @@ describe('decodeXrefRow', () => {
   });
 });
 
-const bookPageHeaders = ['book_id', 'publisher', 'isbn13', 'isbn10', 'asin', 'format', 'language', 'description', 'series', 'reviews_count', 'ratings_dist', 'currently_reading', 'to_read', 'editions_count', 'scraped_at'];
+const bookPageHeaders = ['book_id', 'publisher', 'isbn13', 'isbn10', 'asin', 'format', 'language', 'description', 'series', 'reviews_count', 'ratings_dist', 'ratings_mean', 'ratings_median', 'ratings_mode', 'ratings_variance', 'ratings_stddev', 'ratings_skewness', 'ratings_kurtosis', 'ratings_total', 'currently_reading', 'to_read', 'editions_count', 'scraped_at'];
 
 describe('decodeBookPageRow', () => {
   it('decodes typed fields', () => {
-    expect(decodeBookPageRow(bookPageHeaders, ['170448', 'Penguin', '9780451524935', '', '', 'Paperback', 'English', 'An allegory', '', '100', '{"5":1}', '10', '200', '42', '2026-09-05T00:00:00Z'])).toEqual({
+    expect(decodeBookPageRow(bookPageHeaders, ['170448', 'Penguin', '9780451524935', '', '', 'Paperback', 'English', 'An allegory', '', '100', '{"5":1}', '', '', '', '', '', '', '', '', '10', '200', '42', '2026-09-05T00:00:00Z'])).toEqual({
       bookId: '170448', publisher: 'Penguin', isbn13: '9780451524935', isbn10: '', asin: '',
       format: 'Paperback', language: 'English', description: 'An allegory', series: '',
       reviewsCount: '100', ratingsDist: '{"5":1}', currentlyReading: 10, toRead: 200, editionsCount: 42,
@@ -310,5 +316,105 @@ describe('decodeTagTailStateRow', () => {
   it('returns null when id or run_started_at is missing', () => {
     expect(decodeTagTailStateRow(tagStateHeaders, [null, '2026-09-01', '1'])).toBeNull();
     expect(decodeTagTailStateRow(tagStateHeaders, ['run1', null, '1'])).toBeNull();
+  });
+});
+
+// ── importBookPagesFile: write-path recompute of the derived columns ──
+function makeBookPageDb(): InstanceType<typeof Database> {
+  const db = new Database(':memory:');
+  db.exec(`CREATE TABLE book_page (
+    book_id TEXT PRIMARY KEY, publisher TEXT, isbn13 TEXT, isbn10 TEXT, asin TEXT,
+    format TEXT, language TEXT, description TEXT, series TEXT, reviews_count TEXT,
+    ratings_dist TEXT, ratings_mean REAL, ratings_median INTEGER, ratings_mode INTEGER,
+    ratings_variance REAL, ratings_stddev REAL, ratings_skewness REAL, ratings_kurtosis REAL,
+    ratings_total INTEGER, currently_reading INTEGER, to_read INTEGER, editions_count INTEGER,
+    scraped_at TEXT)`);
+  return db;
+}
+
+function csvField(s: string): string {
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function writeBookPageGz(values: Record<string, string>[]): string {
+  const row = (vals: Record<string, string>) =>
+    bookPageHeaders.map((h) => csvField(vals[h] ?? '')).join(',');
+  const csv = [bookPageHeaders.join(','), ...values.map(row)].join('\n') + '\n';
+  const dir = mkdtempSync(join(tmpdir(), 'import-pages-'));
+  const file = join(dir, 'book_page.csv.gz');
+  writeFileSync(file, gzipSync(Buffer.from(csv, 'utf8')));
+  return file;
+}
+
+const emptyCounts = (): ImportCounts => ({
+  bookPagesInserted: 0, bookPagesUpdated: 0, bookPagesSkipped: 0,
+} as unknown as ImportCounts);
+
+describe('importBookPagesFile derived ratings stats', () => {
+  it('populates the derived columns from ratings_dist on insert', async () => {
+    const db = makeBookPageDb();
+    const file = writeBookPageGz([
+      { book_id: '1', ratings_dist: '{"5":2,"4":1}', scraped_at: '2026-09-05T00:00:00Z' },
+    ]);
+    const counts = emptyCounts();
+    await importBookPagesFile(db, file, counts);
+
+    const row = db.prepare('SELECT * FROM book_page WHERE book_id=?').get('1') as any;
+    expect(row.ratings_total).toBe(3);
+    expect(row.ratings_mean).toBeCloseTo(14 / 3, 12);
+    expect(row.ratings_median).toBe(5);
+    expect(row.ratings_mode).toBe(5);
+    expect(row.ratings_variance).toBeCloseTo(2 / 9, 12);
+    expect(row.ratings_stddev).toBeCloseTo(Math.sqrt(2 / 9), 12);
+    expect(row.ratings_skewness).not.toBeNull();
+    expect(row.ratings_kurtosis).not.toBeNull();
+    expect(counts.bookPagesInserted).toBe(1);
+    db.close();
+  });
+
+  it('writes all-null derived columns when the row has no distribution', async () => {
+    const db = makeBookPageDb();
+    const file = writeBookPageGz([
+      { book_id: '2', scraped_at: '2026-09-05T00:00:00Z' },
+    ]);
+    await importBookPagesFile(db, file, emptyCounts());
+
+    const row = db.prepare('SELECT * FROM book_page WHERE book_id=?').get('2') as any;
+    expect(row.ratings_mean).toBeNull();
+    expect(row.ratings_median).toBeNull();
+    expect(row.ratings_mode).toBeNull();
+    expect(row.ratings_variance).toBeNull();
+    expect(row.ratings_stddev).toBeNull();
+    expect(row.ratings_skewness).toBeNull();
+    expect(row.ratings_kurtosis).toBeNull();
+    expect(row.ratings_total).toBeNull();
+    db.close();
+  });
+
+  it('stamps a fresh scraped_at when a new row has none (fallback preserved)', async () => {
+    const db = makeBookPageDb();
+    const file = writeBookPageGz([{ book_id: '3', ratings_dist: '{"5":1}' }]);
+    await importBookPagesFile(db, file, emptyCounts());
+
+    const row = db.prepare('SELECT * FROM book_page WHERE book_id=?').get('3') as any;
+    expect(typeof row.scraped_at).toBe('string');
+    expect(Number.isNaN(Date.parse(row.scraped_at))).toBe(false);
+    db.close();
+  });
+
+  it('skips an existing row whose stored scraped_at is newer', async () => {
+    const db = makeBookPageDb();
+    db.prepare('INSERT INTO book_page (book_id, scraped_at) VALUES (?, ?)')
+      .run('4', '2027-01-01T00:00:00Z');
+    const file = writeBookPageGz([
+      { book_id: '4', ratings_dist: '{"5":2,"4":1}', scraped_at: '2026-09-05T00:00:00Z' },
+    ]);
+    const counts = emptyCounts();
+    await importBookPagesFile(db, file, counts);
+
+    const row = db.prepare('SELECT * FROM book_page WHERE book_id=?').get('4') as any;
+    expect(row.ratings_total).toBeNull();
+    expect(counts.bookPagesSkipped).toBe(1);
+    db.close();
   });
 });

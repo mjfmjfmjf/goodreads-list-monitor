@@ -30,6 +30,8 @@ export interface BooksOptions {
 type SortField =
   | 'numReviews' | 'numRatings' | 'avgRatings' | 'numShelves' | 'numTags'
   | 'currentlyReading' | 'toRead' | 'editionCount' | 'reviewRatio'
+  | 'ratingsMean' | 'ratingsMedian' | 'ratingsMode' | 'ratingsVariance'
+  | 'ratingsStddev' | 'ratingsSkewness' | 'ratingsKurtosis' | 'ratingsTotal'
   | 'year' | 'title' | 'author';
 
 // Canonical aliases so "ratings"/"avgRating" (the old names) keep working.
@@ -41,6 +43,8 @@ const SORT_ALIASES: Record<string, SortField> = {
 const SORT_FIELDS: SortField[] = [
   'numReviews', 'numRatings', 'avgRatings', 'numShelves', 'numTags',
   'currentlyReading', 'toRead', 'editionCount', 'reviewRatio',
+  'ratingsMean', 'ratingsMedian', 'ratingsMode', 'ratingsVariance',
+  'ratingsStddev', 'ratingsSkewness', 'ratingsKurtosis', 'ratingsTotal',
   'year', 'title', 'author',
 ];
 
@@ -54,6 +58,14 @@ const SORT_LABELS: Record<SortField, string> = {
   toRead: 'To Read',
   editionCount: 'Number of Editions',
   reviewRatio: 'Reviews / Ratings',
+  ratingsMean: 'Ratings Mean',
+  ratingsMedian: 'Ratings Median',
+  ratingsMode: 'Ratings Mode',
+  ratingsVariance: 'Ratings Variance',
+  ratingsStddev: 'Ratings Standard Deviation',
+  ratingsSkewness: 'Ratings Skewness',
+  ratingsKurtosis: 'Ratings Excess Kurtosis',
+  ratingsTotal: 'Ratings Total (histogram)',
   year: 'Publication Year',
   title: 'Title',
   author: 'Author'
@@ -68,7 +80,30 @@ interface PageStats {
   currentlyReading: number;
   toRead: number;
   editions: number | undefined;
+  // Derived from book_page.ratings_dist; null when the distribution is missing
+  // or unparseable. ratingsTotal is the histogram sum, which may differ from
+  // the advertised books.ratings (see PLAN-ratings-derived-columns.md).
+  mean: number | null;
+  median: number | null;
+  mode: number | null;
+  variance: number | null;
+  stddev: number | null;
+  skewness: number | null;
+  kurtosis: number | null;
+  total: number | null;
 }
+
+// Short display label + formatter for the sorted derived column on each row.
+const DERIVED_DISPLAY: Partial<Record<SortField, { key: keyof PageStats; label: string; fmt: (n: number) => string }>> = {
+  ratingsMean: { key: 'mean', label: 'mean', fmt: (n) => n.toFixed(3) },
+  ratingsMedian: { key: 'median', label: 'median', fmt: (n) => n.toFixed(0) },
+  ratingsMode: { key: 'mode', label: 'mode', fmt: (n) => n.toFixed(0) },
+  ratingsVariance: { key: 'variance', label: 'var', fmt: (n) => n.toFixed(4) },
+  ratingsStddev: { key: 'stddev', label: 'sd', fmt: (n) => n.toFixed(4) },
+  ratingsSkewness: { key: 'skewness', label: 'skew', fmt: (n) => n.toFixed(4) },
+  ratingsKurtosis: { key: 'kurtosis', label: 'kurt', fmt: (n) => n.toFixed(4) },
+  ratingsTotal: { key: 'total', label: 'total', fmt: (n) => n.toLocaleString() },
+};
 interface TagStats {
   numTags: number;
   numShelves: number;
@@ -79,7 +114,11 @@ const parseNum = (s?: string | number | null): number => {
   return parseInt(str.replace(/,/g, ''), 10) || 0;
 };
 
-const PAGE_SORTS: SortField[] = ['numReviews', 'currentlyReading', 'toRead', 'editionCount', 'reviewRatio'];
+const PAGE_SORTS: SortField[] = [
+  'numReviews', 'currentlyReading', 'toRead', 'editionCount', 'reviewRatio',
+  'ratingsMean', 'ratingsMedian', 'ratingsMode', 'ratingsVariance',
+  'ratingsStddev', 'ratingsSkewness', 'ratingsKurtosis', 'ratingsTotal',
+];
 const TAG_SORTS: SortField[] = ['numShelves', 'numTags'];
 
 let pageStatsCache: Map<string, PageStats> | null = null;
@@ -104,6 +143,14 @@ interface PageRow {
   currently_reading: number | null;
   to_read: number | null;
   editions_count: number | null;
+  ratings_mean: number | null;
+  ratings_median: number | null;
+  ratings_mode: number | null;
+  ratings_variance: number | null;
+  ratings_stddev: number | null;
+  ratings_skewness: number | null;
+  ratings_kurtosis: number | null;
+  ratings_total: number | null;
 }
 
 interface TagRow {
@@ -124,13 +171,24 @@ function loadPageStats(): Map<string, PageStats> {
   const map = new Map<string, PageStats>();
   if (hasPage) {
     for (const row of db.prepare(
-      `SELECT book_id, reviews_count, currently_reading, to_read, editions_count FROM book_page`
+      `SELECT book_id, reviews_count, currently_reading, to_read, editions_count,
+              ratings_mean, ratings_median, ratings_mode, ratings_variance,
+              ratings_stddev, ratings_skewness, ratings_kurtosis, ratings_total
+       FROM book_page`
     ).iterate() as IterableIterator<PageRow>) {
       map.set(row.book_id, {
         reviews: parseNum(row.reviews_count),
         currentlyReading: row.currently_reading ?? 0,
         toRead: row.to_read ?? 0,
         editions: row.editions_count ?? undefined,
+        mean: row.ratings_mean,
+        median: row.ratings_median,
+        mode: row.ratings_mode,
+        variance: row.ratings_variance,
+        stddev: row.ratings_stddev,
+        skewness: row.ratings_skewness,
+        kurtosis: row.ratings_kurtosis,
+        total: row.ratings_total,
       });
     }
   }
@@ -314,6 +372,14 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
         const reviews = pageStats?.get(book.id)?.reviews ?? 0;
         return ratings > 0 ? reviews / ratings : 0;
       }
+      case 'ratingsMean': return pageStats?.get(book.id)?.mean ?? 0;
+      case 'ratingsMedian': return pageStats?.get(book.id)?.median ?? 0;
+      case 'ratingsMode': return pageStats?.get(book.id)?.mode ?? 0;
+      case 'ratingsVariance': return pageStats?.get(book.id)?.variance ?? 0;
+      case 'ratingsStddev': return pageStats?.get(book.id)?.stddev ?? 0;
+      case 'ratingsSkewness': return pageStats?.get(book.id)?.skewness ?? 0;
+      case 'ratingsKurtosis': return pageStats?.get(book.id)?.kurtosis ?? 0;
+      case 'ratingsTotal': return pageStats?.get(book.id)?.total ?? 0;
       case 'year': return getYear(book.published) ?? 0;
       case 'title': return (book.title || '').toLowerCase();
       case 'author': return (book.author || '').toLowerCase();
@@ -341,11 +407,18 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
   // With --dedupe only the work-representative editions (books.is_work_rep)
   // are considered: editions that share a work_id collapse to one row, and
   // books with no work_id (never clustered) each stand alone.
+  // When the sort key is one of the derived ratings stats, only books that
+  // actually HAVE the stat are considered. Their value is unknown (not zero)
+  // when ratings_dist is absent, and the `?? 0` in valueOf would otherwise sort
+  // those unknowns to the FRONT under --asc. Excluding them (both directions)
+  // makes the match set "books that have this stat".
+  const derivedSort = DERIVED_DISPLAY[sortBy];
+
   const matched: CachedBook[] = [];
   let reviewedExcluded = 0;
   let dedupedExcluded = 0;
   let totalMatched = 0;
-  for (const book of iterateBooks()) {
+  for (const book of iterateBooks(minRatings > 0 ? { minRatings } : {})) {
     if (book.isBad && !options.includeBad) continue;
     if (book.title === 'Unknown') continue;
     if (options.dedupe && book.workId) {
@@ -368,6 +441,11 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
     const year = getYear(book.published);
     if (minYear > 0 || maxYear < Infinity) {
       if (year === null || year < minYear || year > maxYear) continue;
+    }
+
+    if (derivedSort) {
+      const statValue = pageStats?.get(book.id)?.[derivedSort.key];
+      if (typeof statValue !== 'number') continue;
     }
 
     if (!matchesRegex(book, criterion)) continue;
@@ -440,6 +518,11 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
         if (sortBy === 'toRead') fields.push(`to_read=${chalk.magenta(ps.toRead.toLocaleString())}`);
         if (sortBy === 'editionCount' && ps.editions !== undefined && fields.length === 3) fields.push(`editions=${chalk.cyan(ps.editions.toLocaleString())}`);
         if (sortBy === 'reviewRatio') reviewsField(ps);
+        const derived = DERIVED_DISPLAY[sortBy];
+        if (derived) {
+          const value = ps[derived.key];
+          if (typeof value === 'number') fields.push(`${derived.label}=${chalk.cyan(derived.fmt(value))}`);
+        }
       }
     }
     if (tagStats) {

@@ -94,7 +94,7 @@ describe('exportBooksAndAuthors', () => {
       expect(xrefCsv.split('\n')[0]).toBe('genre_name,tag_name,kind');
       expect(xrefCsv).toContain('fiction,fiction,exact');
       const bookPageCsv = parseGz(byTable.get('book_page')!.path);
-      expect(bookPageCsv.split('\n')[0]).toBe('book_id,publisher,isbn13,isbn10,asin,format,language,description,series,reviews_count,ratings_dist,currently_reading,to_read,editions_count,scraped_at');
+      expect(bookPageCsv.split('\n')[0]).toBe('book_id,publisher,isbn13,isbn10,asin,format,language,description,series,reviews_count,ratings_dist,ratings_mean,ratings_median,ratings_mode,ratings_variance,ratings_stddev,ratings_skewness,ratings_kurtosis,ratings_total,currently_reading,to_read,editions_count,scraped_at');
       expect(bookPageCsv).toContain('170448,Penguin');
       const tagStatsCsv = parseGz(byTable.get('tag_stats')!.path);
       expect(tagStatsCsv.split('\n')[0]).toBe('tag_name,last_page_seen,estimate_page,estimate_source,updated');

@@ -667,6 +667,14 @@ function initSchema(db: Database.Database) {
       series TEXT,
       reviews_count TEXT,
       ratings_dist TEXT,
+      ratings_mean REAL,
+      ratings_median INTEGER,
+      ratings_mode INTEGER,
+      ratings_variance REAL,
+      ratings_stddev REAL,
+      ratings_skewness REAL,
+      ratings_kurtosis REAL,
+      ratings_total INTEGER,
       currently_reading INTEGER,
       to_read INTEGER,
       editions_count INTEGER,
@@ -685,6 +693,31 @@ function initSchema(db: Database.Database) {
   const bookCols = db.prepare('PRAGMA table_info(books)').all() as any[];
   if (!bookCols.some((c: any) => c.name === 'work_id')) {
     db.exec('ALTER TABLE books ADD COLUMN work_id TEXT');
+  }
+  const bookPageCols = db.prepare('PRAGMA table_info(book_page)').all() as any[];
+  if (!bookPageCols.some((c: any) => c.name === 'ratings_mean')) {
+    db.exec('ALTER TABLE book_page ADD COLUMN ratings_mean REAL');
+  }
+  if (!bookPageCols.some((c: any) => c.name === 'ratings_median')) {
+    db.exec('ALTER TABLE book_page ADD COLUMN ratings_median INTEGER');
+  }
+  if (!bookPageCols.some((c: any) => c.name === 'ratings_mode')) {
+    db.exec('ALTER TABLE book_page ADD COLUMN ratings_mode INTEGER');
+  }
+  if (!bookPageCols.some((c: any) => c.name === 'ratings_variance')) {
+    db.exec('ALTER TABLE book_page ADD COLUMN ratings_variance REAL');
+  }
+  if (!bookPageCols.some((c: any) => c.name === 'ratings_stddev')) {
+    db.exec('ALTER TABLE book_page ADD COLUMN ratings_stddev REAL');
+  }
+  if (!bookPageCols.some((c: any) => c.name === 'ratings_skewness')) {
+    db.exec('ALTER TABLE book_page ADD COLUMN ratings_skewness REAL');
+  }
+  if (!bookPageCols.some((c: any) => c.name === 'ratings_kurtosis')) {
+    db.exec('ALTER TABLE book_page ADD COLUMN ratings_kurtosis REAL');
+  }
+  if (!bookPageCols.some((c: any) => c.name === 'ratings_total')) {
+    db.exec('ALTER TABLE book_page ADD COLUMN ratings_total INTEGER');
   }
   const authorCols = db.prepare('PRAGMA table_info(authors)').all() as any[];
   if (!authorCols.some((c: any) => c.name === 'catalog_pages')) {

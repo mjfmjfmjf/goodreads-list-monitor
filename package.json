@@ -43,6 +43,7 @@
     "title-first-word-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts title-first-word-histogram",
     "backfill-series-pos": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts backfill-series-pos",
     "backfill-pages": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts backfill-pages",
+    "backfill-ratings-stats": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts backfill-ratings-stats",
     "avg-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts avg-histogram",
     "author-top-books": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts author-top-books",
     "author-top-stats": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts author-top-stats",

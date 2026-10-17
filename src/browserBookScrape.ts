@@ -15,6 +15,7 @@ import {
   SocialSignals,
   FetchClass,
 } from './bookPageParse.ts';
+import { ratingsStatsColumns } from './ratingsStats.ts';
 
 // Pacing: uniform random 2000–4000 ms at millisecond precision (deliberately
 // NOT utils.delay(), which inflates each range by ~1.5x and adds 100 ms).
@@ -124,6 +125,14 @@ export function ensureScrapeTables(): void {
       series TEXT,
       reviews_count TEXT,
       ratings_dist TEXT,
+      ratings_mean REAL,
+      ratings_median INTEGER,
+      ratings_mode INTEGER,
+      ratings_variance REAL,
+      ratings_stddev REAL,
+      ratings_skewness REAL,
+      ratings_kurtosis REAL,
+      ratings_total INTEGER,
       currently_reading INTEGER,
       to_read INTEGER,
       editions_count INTEGER,
@@ -149,17 +158,24 @@ function setCheckpoint(row: CheckpointRow): void {
   });
 }
 
-function saveBookPage(bookId: string, parsed: BookPageDetails, socials: SocialSignals, editions?: number): void {
+export function saveBookPage(bookId: string, parsed: BookPageDetails, socials: SocialSignals, editions?: number): void {
   const db = getDb();
+  // Derived ratings statistics are recomputed from the same distribution that
+  // is being written, so they can never drift from ratings_dist.
+  const ratingsStats = ratingsStatsColumns(parsed.ratingsCountDist);
   withDbLockRetry(() => {
     db.prepare(`
-      INSERT INTO book_page (book_id, publisher, isbn13, isbn10, asin, format, language, description, series, reviews_count, ratings_dist, currently_reading, to_read, editions_count, scraped_at)
-      VALUES (@book_id, @publisher, @isbn13, @isbn10, @asin, @format, @language, @description, @series, @reviews_count, @ratings_dist, @currently_reading, @to_read, @editions_count, @scraped_at)
+      INSERT INTO book_page (book_id, publisher, isbn13, isbn10, asin, format, language, description, series, reviews_count, ratings_dist, ratings_mean, ratings_median, ratings_mode, ratings_variance, ratings_stddev, ratings_skewness, ratings_kurtosis, ratings_total, currently_reading, to_read, editions_count, scraped_at)
+      VALUES (@book_id, @publisher, @isbn13, @isbn10, @asin, @format, @language, @description, @series, @reviews_count, @ratings_dist, @ratings_mean, @ratings_median, @ratings_mode, @ratings_variance, @ratings_stddev, @ratings_skewness, @ratings_kurtosis, @ratings_total, @currently_reading, @to_read, @editions_count, @scraped_at)
       ON CONFLICT(book_id) DO UPDATE SET
         publisher=excluded.publisher, isbn13=excluded.isbn13, isbn10=excluded.isbn10,
         asin=excluded.asin, format=excluded.format, language=excluded.language,
         description=excluded.description, series=excluded.series, reviews_count=excluded.reviews_count,
-        ratings_dist=excluded.ratings_dist, currently_reading=excluded.currently_reading,
+        ratings_dist=excluded.ratings_dist, ratings_mean=excluded.ratings_mean,
+        ratings_median=excluded.ratings_median, ratings_mode=excluded.ratings_mode,
+        ratings_variance=excluded.ratings_variance, ratings_stddev=excluded.ratings_stddev,
+        ratings_skewness=excluded.ratings_skewness, ratings_kurtosis=excluded.ratings_kurtosis,
+        ratings_total=excluded.ratings_total, currently_reading=excluded.currently_reading,
         to_read=excluded.to_read, editions_count=excluded.editions_count, scraped_at=excluded.scraped_at
     `).run({
       book_id: bookId,
@@ -173,6 +189,7 @@ function saveBookPage(bookId: string, parsed: BookPageDetails, socials: SocialSi
       series: parsed.series.length ? JSON.stringify(parsed.series) : null,
       reviews_count: parsed.reviewsCount ?? null,
       ratings_dist: parsed.ratingsCountDist ? JSON.stringify(parsed.ratingsCountDist) : null,
+      ...ratingsStats,
       currently_reading: socials.currentlyReading ?? null,
       to_read: socials.toRead ?? null,
       editions_count: editions ?? null,

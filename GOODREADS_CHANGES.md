@@ -3,6 +3,50 @@
 Record whenever Goodreads changes a page in a way that forces a code change.
 Newest entry on top. Timestamp format: `YYYY/MM/DD HH:MM` (local time).
 
+## 2026/10/16 19:40 — Derived `book_page` ratings statistics + `books.sh` sorts, backfill, streaming fixes
+
+Not a page change — recording a feature that adds derived handling around the
+already-stored `ratings_dist`.
+
+- **New `book_page` columns** derived from the stored `ratings_dist` JSON:
+  `ratings_mean`, `ratings_median`, `ratings_mode`, `ratings_variance`,
+  `ratings_stddev`, `ratings_skewness` (3rd standardized moment), `ratings_kurtosis`
+  (EXCESS; normal = 0) and `ratings_total` (= histogram sum, which legitimately
+  differs from `books.ratings`). All NULL when `ratings_dist` is
+  missing/empty/unparseable; skewness/kurtosis are also NULL when stddev = 0.
+  Added the `CREATE TABLE` columns, a guarded `ALTER TABLE` migration
+  (`src/db.ts`), and the export header (`exportData.test.ts`).
+- **Pure module `src/ratingsStats.ts`** (`parseRatingsDist` / `computeRatingsStats`
+  / `ratingsStatsColumns`) so the recompute is unit-tested offline.
+- **Recomputed at every write path**: `browserBookScrape.saveBookPage` and
+  `importData.importBookPagesFile` spread `ratingsStatsColumns(...)` into the
+  upsert alongside `ratings_dist`, so the derived columns can't drift from it.
+- **`backfill-ratings-stats` CLI** (+ npm script + `backfillRatingsStats.sh`) to
+  populate existing rows. Keyset-chunked (`CHUNK=5000`) — NOT a whole-table
+  `[...streamRows(...)]` snapshot (that is the `loadBookCache` anti-pattern;
+  better-sqlite3 also forbids `.run()` while a read iterator is open). Live run:
+  237,003 updated / 23,384 unchanged / 45 skipped, 7.6 s; re-run updated 0
+  (idempotent), overwriting values left by an out-of-band session.
+- **`books.sh` sorts**: the 8 stats are new `--sort` keys (`ratingsMean` …
+  `ratingsTotal`), distinct from `avgRatings`/`numRatings`. Derived sorts now
+  EXCLUDE books whose stat is missing (unknown ≠ 0) — previously `--asc` listed
+  distribution-less books first via `?? 0`.
+- **`backfillSeriesPos` fix**: was `for (snap of iterateBooks()) upsertBook(...)`,
+  which throws "This database connection is busy executing a query" on the first
+  changed row (read iterator + `.run()` on one connection). Rewritten to
+  keyset-chunked `.all()` pages with a targeted `UPDATE books SET series_pos = ?
+  WHERE id = ?`. Live run filled 1,293,353 rows.
+- **`books.sh` perf**: `--minRatings` is now pushed into SQL
+  (`iterateBooks({ minRatings })` seeks `idx_books_ratings`) instead of filtering
+  after `rowToBook()` over all 13.26M books — 32.3 s → 12.1 s for
+  `--sort editionCount --dedupe --minRatings 1000`.
+- **AGENTS.md**: documented the single-connection read/write constraint +
+  keyset-chunked pagination rule.
+
+Verified: `./runUnitTests.sh` 85 files / 1060 tests + 2 CLI smoke green;
+`./runIntegrationTests.sh` 2 files / 15 tests green; a live `browser-book-scrape`
+wrote a new `book_page` row whose 8 columns matched an independent recompute.
+
 ## 2026/10/10 — Other-user review-list rating markup renamed `staticStars` → `readOnlyStars`
 
 - Logged-in fetch of another user's review list (`/review/list/<id>?shelf=read`,

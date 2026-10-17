@@ -15,6 +15,7 @@ import {
   findAuthorBySlug,
   getAuthor,
   getBook,
+  iterateBooks,
   loadAuthorCache,
   loadBookCache,
   loadConfig,
@@ -318,6 +319,31 @@ describe('book rows', () => {
     expect(deleteBook('9005')).toBe(true);
     expect(getBook('9005')).toBeUndefined();
     expect(deleteBook('9005')).toBe(false);
+  });
+});
+
+describe('iterateBooks (optional minRatings SQL prefilter)', () => {
+  // Unique ids so assertions stay valid regardless of rows left by other
+  // describes in this shared temp DB.
+  it('streams every book when no minRatings is given', () => {
+    upsertBook(makeBook({ id: 'ib-low', ratings: '10' }));
+    upsertBook(makeBook({ id: 'ib-high', ratings: '5,000' }));
+    const ids = [...iterateBooks()].map(b => b.id);
+    expect(ids).toContain('ib-low');
+    expect(ids).toContain('ib-high');
+  });
+
+  it('pushes minRatings>0 into SQL, returning only the matching slice', () => {
+    upsertBook(makeBook({ id: 'ib-low', ratings: '10' }));
+    upsertBook(makeBook({ id: 'ib-high', ratings: '5,000' }));
+    const ids = [...iterateBooks({ minRatings: 1000 })].map(b => b.id);
+    expect(ids).toContain('ib-high');
+    expect(ids).not.toContain('ib-low');
+  });
+
+  it('treats minRatings 0 as no filter (zero-rating rows still stream)', () => {
+    upsertBook(makeBook({ id: 'ib-zero', ratings: '0' }));
+    expect([...iterateBooks({ minRatings: 0 })].map(b => b.id)).toContain('ib-zero');
   });
 });
 

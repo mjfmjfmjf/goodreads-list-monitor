@@ -39,14 +39,24 @@ function insertBook(book: {
   });
 }
 
-function insertPage(bookId: string, stats: { reviews?: number; currentlyReading?: number; toRead?: number; editions?: number; language?: string }) {
+function insertPage(bookId: string, stats: {
+  reviews?: number; currentlyReading?: number; toRead?: number; editions?: number; language?: string;
+  derived?: Partial<Record<'mean' | 'median' | 'mode' | 'variance' | 'stddev' | 'skewness' | 'kurtosis' | 'total', number>>;
+}) {
+  const d = stats.derived ?? {};
   getDb().prepare(`
-    INSERT INTO book_page (book_id, reviews_count, currently_reading, to_read, editions_count, language, scraped_at)
-    VALUES (@bookId, @reviews, @cr, @toRead, @editions, @language, @scrapedAt)
+    INSERT INTO book_page (book_id, reviews_count, currently_reading, to_read, editions_count, language, scraped_at,
+      ratings_mean, ratings_median, ratings_mode, ratings_variance, ratings_stddev, ratings_skewness, ratings_kurtosis, ratings_total)
+    VALUES (@bookId, @reviews, @cr, @toRead, @editions, @language, @scrapedAt,
+      @mean, @median, @mode, @variance, @stddev, @skewness, @kurtosis, @total)
     ON CONFLICT(book_id) DO UPDATE SET
       reviews_count = excluded.reviews_count, currently_reading = excluded.currently_reading,
       to_read = excluded.to_read, editions_count = excluded.editions_count,
-      language = excluded.language
+      language = excluded.language,
+      ratings_mean = excluded.ratings_mean, ratings_median = excluded.ratings_median,
+      ratings_mode = excluded.ratings_mode, ratings_variance = excluded.ratings_variance,
+      ratings_stddev = excluded.ratings_stddev, ratings_skewness = excluded.ratings_skewness,
+      ratings_kurtosis = excluded.ratings_kurtosis, ratings_total = excluded.ratings_total
   `).run({
     bookId,
     reviews: String(stats.reviews ?? 0),
@@ -55,6 +65,9 @@ function insertPage(bookId: string, stats: { reviews?: number; currentlyReading?
     editions: stats.editions ?? null,
     language: stats.language ?? null,
     scrapedAt: new Date().toISOString(),
+    mean: d.mean ?? null, median: d.median ?? null, mode: d.mode ?? null,
+    variance: d.variance ?? null, stddev: d.stddev ?? null,
+    skewness: d.skewness ?? null, kurtosis: d.kurtosis ?? null, total: d.total ?? null,
   });
 }
 
@@ -230,5 +243,61 @@ describe('runBooks', () => {
     expect(logs.indexOf('Alpha')).toBeLessThan(logs.indexOf('Gamma'));
     expect(logs).toContain('editions=27');
     expect(logs).not.toContain('editions=0');
+  });
+
+  it('sorts by derived ratings stats from the histogram', async () => {
+    insertPage('1', { derived: { mean: 4.75, stddev: 0.5 } });
+    insertPage('4', { derived: { mean: 3.25, stddev: 1.5 } });
+
+    await runBooks({ sort: 'ratingsMean', limit: '3' });
+    expect(logs.indexOf('Alpha')).toBeLessThan(logs.indexOf('Delta'));
+    expect(logs).toContain('mean=4.750');
+
+    logs = '';
+    await runBooks({ sort: 'ratingsStddev', limit: '3' });
+    expect(logs.indexOf('Delta')).toBeLessThan(logs.indexOf('Alpha'));
+    expect(logs).toContain('sd=1.5000');
+  });
+
+  it('excludes books without the derived stat instead of treating it as 0', async () => {
+    // Only Alpha carries a mean; Beta/Delta/Gamma have no distribution. A missing
+    // stat is unknown, not 0, so those books are dropped entirely (both dirs).
+    insertPage('1', { derived: { mean: 4.75 } });
+    await runBooks({ sort: 'ratingsMean', limit: '4' });
+    expect(logs).toContain('Alpha');
+    expect(logs).not.toContain('Delta');
+    expect(logs).not.toContain('Beta');
+    expect(logs).not.toContain('Gamma');
+    expect(logs).toContain('Total books matching: 1');
+  });
+
+  it('asc by a derived stat does not surface unknown (0) values first', async () => {
+    // Regression for the reported bug: with null->0, ascending variance listed
+    // distribution-less books (value 0) ahead of real low-variance books.
+    insertPage('1', { derived: { variance: 1.5 } });
+    insertPage('4', { derived: { variance: 0.25 } });
+    await runBooks({ sort: 'ratingsVariance', asc: true, limit: '4' });
+    expect(logs).toContain('Delta'); // 0.25, the real lowest
+    expect(logs).toContain('Alpha'); // 1.5
+    expect(logs).not.toContain('Beta'); // no distribution
+    expect(logs).not.toContain('Gamma'); // no distribution
+    expect(logs.indexOf('Delta')).toBeLessThan(logs.indexOf('Alpha'));
+  });
+
+  it('shows the sorted total as a histogram count', async () => {
+    insertPage('4', { derived: { total: 12345 } });
+    await runBooks({ sort: 'ratingsTotal', limit: '3' });
+    expect(logs).toContain('total=12,345');
+  });
+
+  it('dedupes to the English edition per work when sorting by a derived stat', async () => {
+    // Same as the editionCount dedupe: w-1's rep (id=1, Alpha) is not English,
+    // but id=2 (Beta) is, so the work collapses to Beta regardless of sort key.
+    insertPage('1', { derived: { mean: 4.9 } });
+    insertPage('2', { language: 'English', derived: { mean: 4.2 } });
+    await runBooks({ sort: 'ratingsMean', dedupe: true, limit: '10' });
+    expect(logs).toContain('Beta');
+    expect(logs).not.toContain('Alpha');
+    expect(logs).toContain('mean=4.200');
   });
 });

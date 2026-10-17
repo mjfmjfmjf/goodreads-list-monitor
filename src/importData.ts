@@ -3,6 +3,7 @@ import { createReadStream, openSync, readSync, closeSync } from 'node:fs';
 import { Readable } from 'node:stream';
 import chalk from 'chalk';
 import { recomputeWorkReps } from './db.ts';
+import { ratingsStatsColumns } from './ratingsStats.ts';
 
 // Importer for the sanitized CSV+gzip exports produced by exportData.
 // Policy (per existing merge conventions in storage.ts):
@@ -842,15 +843,19 @@ export async function importBookPagesFile(
 ): Promise<{ total: number }> {
   const known = db.prepare('SELECT scraped_at FROM book_page WHERE book_id = ?');
   const upsert = db.prepare(`
-    INSERT INTO book_page (book_id, publisher, isbn13, isbn10, asin, format, language, description, series, reviews_count, ratings_dist, currently_reading, to_read, editions_count, scraped_at)
-    VALUES (@bookId, @publisher, @isbn13, @isbn10, @asin, @format, @language, @description, @series, @reviewsCount, @ratingsDist, @currentlyReading, @toRead, @editionsCount, @scrapedAt)
-    ON CONFLICT(book_id) DO UPDATE SET
-      publisher=excluded.publisher, isbn13=excluded.isbn13, isbn10=excluded.isbn10,
-      asin=excluded.asin, format=excluded.format, language=excluded.language,
-      description=excluded.description, series=excluded.series,
-      reviews_count=excluded.reviews_count, ratings_dist=excluded.ratings_dist,
-      currently_reading=excluded.currently_reading, to_read=excluded.to_read,
-      editions_count=excluded.editions_count, scraped_at=excluded.scraped_at
+    INSERT INTO book_page (book_id, publisher, isbn13, isbn10, asin, format, language, description, series, reviews_count, ratings_dist, ratings_mean, ratings_median, ratings_mode, ratings_variance, ratings_stddev, ratings_skewness, ratings_kurtosis, ratings_total, currently_reading, to_read, editions_count, scraped_at)
+      VALUES (@bookId, @publisher, @isbn13, @isbn10, @asin, @format, @language, @description, @series, @reviews_count, @ratings_dist, @ratings_mean, @ratings_median, @ratings_mode, @ratings_variance, @ratings_stddev, @ratings_skewness, @ratings_kurtosis, @ratings_total, @currently_reading, @to_read, @editions_count, @scraped_at)
+      ON CONFLICT(book_id) DO UPDATE SET
+        publisher=excluded.publisher, isbn13=excluded.isbn13, isbn10=excluded.isbn10,
+        asin=excluded.asin, format=excluded.format, language=excluded.language,
+        description=excluded.description, series=excluded.series,
+        reviews_count=excluded.reviews_count, ratings_dist=excluded.ratings_dist,
+        ratings_mean=excluded.ratings_mean, ratings_median=excluded.ratings_median,
+        ratings_mode=excluded.ratings_mode, ratings_variance=excluded.ratings_variance,
+        ratings_stddev=excluded.ratings_stddev, ratings_skewness=excluded.ratings_skewness,
+        ratings_kurtosis=excluded.ratings_kurtosis, ratings_total=excluded.ratings_total,
+        currently_reading=excluded.currently_reading, to_read=excluded.to_read,
+        editions_count=excluded.editions_count, scraped_at=excluded.scraped_at
   `);
   let total = 0;
   await readCsvGz(file, (headers, fields) => {
@@ -872,12 +877,13 @@ export async function importBookPagesFile(
       language: row.language ?? null,
       description: row.description ?? null,
       series: row.series ?? null,
-      reviewsCount: row.reviewsCount ?? null,
-      ratingsDist: row.ratingsDist ?? null,
-      currentlyReading: row.currentlyReading ?? null,
-      toRead: row.toRead ?? null,
-      editionsCount: row.editionsCount ?? null,
-      scrapedAt: row.scrapedAt || new Date().toISOString(),
+      reviews_count: row.reviewsCount ?? null,
+      ratings_dist: row.ratingsDist ?? null,
+      ...ratingsStatsColumns(row.ratingsDist),
+      currently_reading: row.currentlyReading ?? null,
+      to_read: row.toRead ?? null,
+      editions_count: row.editionsCount ?? null,
+      scraped_at: row.scrapedAt || new Date().toISOString(),
     });
     if (existing) counts.bookPagesUpdated++;
     else counts.bookPagesInserted++;

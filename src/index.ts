@@ -43,6 +43,7 @@ import { runTagRecentMonitor } from './tagRecentMonitor.ts';
 import { runTagFirstPagePicks } from './tagFirstPagePicks.ts';
 import { runBackfillSeriesPos } from './backfillSeriesPos.ts';
 import { runBackfillPages } from './backfillPages.ts';
+import { runBackfillRatingsStats } from './backfillRatingsStats.ts';
 import { runAvgHistogram } from './summaryAvgHistogram.ts';
 import { runAuthorTopBooks } from './authorTopBooks.ts';
 import { runAuthorTopStats } from './authorTopStats.ts';
@@ -508,6 +509,17 @@ program
       await runBackfillPages(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to backfill book pages:'), (error as any).message);
+    }
+  });
+
+program
+  .command('backfill-ratings-stats')
+  .description('Offline one-time backfill: recompute the derived book_page ratings statistics (mean/median/mode/variance/stddev/skewness/kurtosis/total) from each row\'s stored ratings_dist. Rows without a distribution are left untouched.')
+  .action(async () => {
+    try {
+      await runBackfillRatingsStats();
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to backfill ratings stats:'), (error as any).message);
     }
   });
 
@@ -1265,6 +1277,7 @@ Examples:
   $ npm run books -- --sort numReviews --minRatings 1000 --limit 20
   $ npm run books -- --sort numShelves --dedupe --limit 20
   $ npm run books -- --sort reviewRatio --minRatings 50000 --limit 10
+  $ npm run books -- --sort ratingsStddev --minRatings 50000 --limit 10   # from the ratings histogram
   $ npm run books -- '^j' --excludeReviewed          # uses cached library import
   $ npm run books -- '^j' --excludeReviewed --export ~/Downloads/goodreads_library_export.csv  # refresh cached import
   $ npm run books -- --import ~/Downloads/goodreads_library_export.csv   # import + validate + cache
@@ -1272,7 +1285,7 @@ Examples:
   .option('--title <regex>', 'Match title against this regex')
   .option('--authorLast <regex>', 'Match first author\'s last name against this regex')
   .option('--authorFirst <regex>', 'Match first author\'s first name against this regex')
-  .option('--sort <field>', 'Sort by: numRatings (or ratings), numReviews, avgRatings (or avgRating), numShelves, numTags, currentlyReading, toRead, editionCount, reviewRatio (reviews/ratings), year, title, author (default numRatings)', 'numRatings')
+  .option('--sort <field>', 'Sort by: numRatings (or ratings), numReviews, avgRatings (or avgRating), numShelves, numTags, currentlyReading, toRead, editionCount, reviewRatio (reviews/ratings), ratingsMean, ratingsMedian, ratingsMode, ratingsVariance, ratingsStddev, ratingsSkewness, ratingsKurtosis, ratingsTotal (all derived from the book_page ratings histogram; distinct from avgRatings/numRatings), year, title, author (default numRatings)', 'numRatings')
   .option('--limit <number>', 'Maximum number of books to show (default 100)', '100')
   .option('--dedupe', 'Collapse editions of the same work to one row (uses books.is_work_rep); books with no work_id each stand alone')
   .option('--minRatings <number>', 'Only include books with at least this many ratings')

@@ -1,6 +1,6 @@
 #!/bin/bash
 if [ $# -lt 1 ]; then
-  echo "Usage: ./books.sh [pattern] [--title <regex>] [--authorLast <regex>] [--authorFirst <regex>] [--sort ratings|numRatings|numReviews|avgRatings|numShelves|numTags|currentlyReading|toRead|editionCount|reviewRatio|year|title|author] [--limit N] [--minRatings N] [--dedupe] [--excludeReviewed --export|--import <path>]"
+  echo "Usage: ./books.sh [pattern] [--title <regex>] [--authorLast <regex>] [--authorFirst <regex>] [--sort ratings|numRatings|numReviews|avgRatings|numShelves|numTags|currentlyReading|toRead|editionCount|reviewRatio|ratingsMean|ratingsMedian|ratingsMode|ratingsVariance|ratingsStddev|ratingsSkewness|ratingsKurtosis|ratingsTotal|year|title|author] [--limit N] [--minRatings N] [--dedupe] [--excludeReviewed --export|--import <path>]"
   echo "Example: ./books.sh '^j'"
   echo "Example: ./books.sh --authorLast '^sanderson' --sort year"
   echo "Example: ./books.sh --title '^[jqx]' --minRatings 1000 --limit 20"

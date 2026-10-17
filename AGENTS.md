@@ -196,6 +196,18 @@ matter how much code it wrote.
     (`cachedPublishedYear`, `summaryTopByYear`, `booksAddedHistogram`).
   Keep new bulk writers as plain single-statement upserts (see below) and
   reach for these patterns instead of a new full-table load.
+- **A streaming read and a write cannot share one connection at the same time.**
+  better-sqlite3 treats `.run()` as `DOES_MUTATE`: it throws "This database
+  connection is busy executing a query" while any read iterator on the same
+  connection is open. `.get()`/`.all()` are fine (they only need the connection
+  not to be mid-statement). So `for (const r of streamRows(...)) { stmt.run(...) }`
+  NEVER works — and `[...streamRows(...)]` (materializing the whole table just to
+  dodge the throw) is the `loadBookCache` anti-pattern all over again. For a
+  read→recompute→write pass use **keyset-chunked pagination**: read a bounded
+  chunk with `.all()` (which fully consumes and closes the statement), write it,
+  then resume after the last id (`WHERE id > ? ORDER BY id LIMIT ?`). See the
+  `authorMint.ts` comment plus `backfillRatingsStats.ts` / `backfillSeriesPos.ts`.
+  `db.unsafeMode(true)` lifts the restriction but the codebase does NOT use it.
 - **`idx_books_author_pub (author_id, ratings DESC, published)` must keep
   `published`.** It is the only reason `loadAuthorBookStats`'s
   `GROUP BY author_id` (MAX(ratings) + year-over-`published` + COUNT across

@@ -214,9 +214,19 @@ export function loadBookCache(): BookCache {
 // consumers (histograms, summaries, audits, sync helpers). The caller may
 // `break` early; better-sqlite3 frees the statement once the cursor (and the
 // generator) is garbage collected.
-export function* iterateBooks(): Generator<CachedBook> {
-  const stmt = getDb().prepare('SELECT * FROM books');
-  for (const row of stmt.iterate()) {
+//
+// `opts.minRatings` (when > 0) is pushed into SQL as `WHERE ratings >= ?` so
+// the scan seeks idx_books_ratings and only rowToBook()s the matching slice —
+// the difference between scanning ~13M rows (each with a JSON.parse of
+// genres/tags) and a few hundred thousand. Rows with NULL ratings are excluded
+// by the predicate, which matches the JS `parseNum(ratings) >= minRatings`
+// check for any min > 0 (NULL maps to 0, which is never >= min > 0).
+export function* iterateBooks(opts: { minRatings?: number } = {}): Generator<CachedBook> {
+  const min = opts.minRatings ?? 0;
+  const useMin = min > 0;
+  const stmt = getDb().prepare(`SELECT * FROM books${useMin ? ' WHERE ratings >= ?' : ''}`);
+  const cursor = useMin ? stmt.iterate(min) : stmt.iterate();
+  for (const row of cursor) {
     yield rowToBook(row);
   }
 }
