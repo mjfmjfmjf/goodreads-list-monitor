@@ -2,6 +2,9 @@
 # Runs the live integration test suite (Vitest): minimal live lookups against
 # Goodreads to catch parser/scraper breakage or site-structure changes.
 #
+# Run with ALL scrapers/crawlers OFF (they compete for Goodreads, DB locks, and
+# can trigger throttling/skew results).
+#
 # Makes ~12 requests (shelves, search, author stats, tag counts, list
 # pagination, and one rate-limited add-book lookup), so run it deliberately:
 #   ./runIntegrationTests.sh

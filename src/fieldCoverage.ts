@@ -41,6 +41,8 @@ export const REPORTED_TABLES = [
 // never displayed on purpose.
 export const IGNORED_TABLES = [
   'config',
+  'work_shelf_scrapes',
+  'work_tag_books',
   'authors_old_20261003',
   'emrys_books',
   'emrys_tags',
@@ -238,12 +240,16 @@ export async function runFieldCoverage(): Promise<void> {
       SUM(CASE WHEN num_reviews IS NOT NULL AND num_reviews > 0 THEN 1 ELSE 0 END) AS 'num_reviews',
       SUM(CASE WHEN num_shelves IS NOT NULL AND num_shelves > 0 THEN 1 ELSE 0 END) AS 'num_shelves',
       SUM(CASE WHEN slug IS NOT NULL AND slug != '' THEN 1 ELSE 0 END) AS 'slug',
-      SUM(CASE WHEN catalog_pages IS NOT NULL AND catalog_pages > 0 THEN 1 ELSE 0 END) AS 'catalog_pages'
+      SUM(CASE WHEN catalog_pages IS NOT NULL AND catalog_pages > 0 THEN 1 ELSE 0 END) AS 'catalog_pages',
+      SUM(CASE WHEN source IS NOT NULL AND source != '' THEN 1 ELSE 0 END) AS 'source'
     FROM authors
   `).get() as any;
 
   const authorDistinct = db.prepare(`
-    SELECT COUNT(DISTINCT slug) AS 'slug' FROM authors
+    SELECT
+      COUNT(DISTINCT slug) AS 'slug',
+      COUNT(DISTINCT source) AS 'source'
+    FROM authors
   `).get() as Record<string, number>;
 
   // Bad author-id tracking for the author-orphans scrape pipeline: ids that

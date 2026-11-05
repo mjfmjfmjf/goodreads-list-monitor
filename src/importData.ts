@@ -257,6 +257,7 @@ export interface AuthorImportRow {
   numShelves?: number | null;
   catalogPages?: number | null;
   ratingsRate?: number | null;
+  source?: string;
   // Durable per-author flag (author page permanently gone). Round-trips through
   // export; the strike ledger deliberately does not (it is operational state).
 }
@@ -280,6 +281,7 @@ export function decodeAuthorRow(headers: string[], fields: (string | null)[]): A
     numShelves: toInt(get('num_shelves')),
     catalogPages: toInt(get('catalog_pages')),
     ratingsRate: toFloat(get('ratings_rate')),
+    source: get('source') ?? undefined,
   };
 }
 
@@ -497,16 +499,17 @@ export async function importAuthorsFile(
 ): Promise<{ total: number }> {
   const upsertStmt = db.prepare(`
     INSERT INTO authors
-      (id, name, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, ratings_rate)
+      (id, name, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, ratings_rate, source)
     VALUES
-      (@id, @name, @slug, @lastSeen, @firstSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @ratingsRate)
+      (@id, @name, @slug, @lastSeen, @firstSeen, @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @ratingsRate, @source)
     ON CONFLICT(id) DO UPDATE SET
       name=excluded.name, slug=excluded.slug, last_seen=excluded.last_seen,
       first_seen=COALESCE(authors.first_seen, excluded.first_seen),
       average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
       num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
       catalog_pages=excluded.catalog_pages,
-      ratings_rate=excluded.ratings_rate
+      ratings_rate=excluded.ratings_rate,
+      source=CASE WHEN excluded.source IS NULL OR excluded.source = '' THEN authors.source ELSE COALESCE(authors.source, excluded.source) END
   `);
 
   const find = db.prepare('SELECT * FROM authors WHERE id = ?');
@@ -534,6 +537,7 @@ export async function importAuthorsFile(
       numShelves: mergedAuthor.numShelves,
       catalogPages: mergedAuthor.catalogPages,
       ratingsRate: mergedAuthor.ratingsRate ?? null,
+      source: mergedAuthor.source || null,
       isNew: !existing,
     });
   });
@@ -1333,7 +1337,7 @@ export async function importTagTailStateFile(
 // Fill-blank-only for authors (status fields like last_seen are always updated).
 export interface ExistingAuthor {
   id?: string; slug?: string; lastSeen?: string; firstSeen?: string; averageRating?: number | null; numRatings?: number | null;
-  numReviews?: number | null; numShelves?: number | null; catalogPages?: number | null; ratingsRate?: number | null;
+  numReviews?: number | null; numShelves?: number | null; catalogPages?: number | null; ratingsRate?: number | null; source?: string;
 }
 export function mergeAuthor(existing: ExistingAuthor | undefined, inc: AuthorImportRow): ExistingAuthor {
   const pickStr = (e: string | undefined, i: string | undefined, fb: string) => !isBlank(e) ? e! : (!isBlank(i) ? i! : fb);
@@ -1349,6 +1353,7 @@ export function mergeAuthor(existing: ExistingAuthor | undefined, inc: AuthorImp
     numShelves: pickNum2(existing?.numShelves ?? null, inc.numShelves ?? null),
     catalogPages: pickNum2(existing?.catalogPages ?? null, inc.catalogPages ?? null),
     ratingsRate: pickNum2(existing?.ratingsRate ?? null, inc.ratingsRate ?? null),
+    source: pickStr(existing?.source, inc.source, ''),
   };
 }
 

@@ -81,7 +81,7 @@ describe('exportBooksAndAuthors', () => {
       expect(booksCsv.split('\n')[0]).toBe('id,title,author,author_id,ratings,avg_rating,published,pages,series_pos,genres,last_updated,tags,requires_auth,is_bad,fail_count,work_id,first_seen,is_work_rep');
       expect(booksCsv).toContain('170448,Animal Farm');
       const authorsCsv = parseGz(res.authorsFile);
-      expect(authorsCsv.split('\n')[0]).toBe('id,name,slug,last_seen,average_rating,num_ratings,num_reviews,num_shelves,first_seen,catalog_pages,ratings_rate');
+      expect(authorsCsv.split('\n')[0]).toBe('id,name,slug,last_seen,average_rating,num_ratings,num_reviews,num_shelves,first_seen,catalog_pages,ratings_rate,source');
       expect(authorsCsv).toContain('3706,George Orwell');
 
       const tagCsv = parseGz(byTable.get('tag_books')!.path);

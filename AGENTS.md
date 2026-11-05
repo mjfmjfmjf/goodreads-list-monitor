@@ -41,11 +41,15 @@ matter how much code it wrote.
   the saved log afterwards.
 - **Integration tests** (`./runIntegrationTests.sh`): live lookups against real
   Goodreads pages (a dozen+ requests, pagination sweeps, one add-book lookup).
-  Run deliberately BEFORE/AFTER risky scraper changes, when Goodreads markup may
-  have drifted, or when the user asks. Needs cached `libraryExportCache.json` +
-  `authorsCache.json` + `state.json` (monitored lists) + `config.json`.
+  **Run with ALL scrapers/crawlers OFF** (they compete for Goodreads, DB locks,
+  and can trigger throttling/skew results). Run deliberately BEFORE/AFTER risky
+  scraper changes, when Goodreads markup may have drifted, or when the user asks.
+  Needs cached `libraryExportCache.json` + `authorsCache.json` + `state.json`
+  (monitored lists) + `config.json`.
 - If the integration suite fails, FIRST retry after a cooldown (~60s+) before
-  suspecting a parser change — see throttling below.
+  suspecting a parser change — see throttling below. Known-flaky case:
+  `/book/show` `browser-book-scrape` 202 interstitial (GOODREADS_CHANGES.md
+  2026/09/25) — don't retry if only that test 202s.
 
 ## Goodreads throttling / politeness — IMPORTANT
 - Goodreads throttles aggressively. It has served HTTP 202 0-byte interstitial
@@ -178,6 +182,25 @@ matter how much code it wrote.
   `browser-book-scrape` 202 case (GOODREADS_CHANGES.md 2026/09/25), don't re-run
   even that one — it's the first URL to be throttled, and 14 green with only it
   202'ing is the expected outcome.
+- **Giveaways feed is AppSync `getGiveaways` (book-id discovery only).**
+  `./giveaways.sh` (`src/giveaways.ts`, command `giveaways`) walks
+  `https://www.goodreads.com/giveaway?sort=recently_listed` purely to harvest BOOK
+  ids, then hands them to `browser-book-scrape`. It uses the SAME AppSync endpoint
+  as popular-by-date (`APPSYNC_URL` in both files) and reads the api key from
+  `__NEXT_DATA__.props.pageProps.apiKey`. The listing is server-rendered, so no
+  request fires on plain load — the walker drives `getGiveaways`
+  (`getGiveawaysInput:{format:null,genre:"all",sort:RECENTLY_LISTED}`,
+  `pagination:{after,limit}`) from inside the page, chaining the **base64**
+  `nextPageToken` (unlike getTopList's hex). The server **CAPS a page at 15**
+  (asking 30 returned 15) → ~120 fetches for the current ~1.8k feed. `book_id`
+  comes from `details.book.legacyId` (spike-verified selectable) falling back to
+  the cover `imageUrl` tail (`/books/<digest>i/<id>.jpg`). **BOOK-ID ONLY**:
+  nothing giveaway-specific (copies/entries/dates/region) is persisted — the book
+  detail page is the canonical source. Already-scraped books are skipped by the
+  `browser_scrape` checkpoint, so re-walking the feed re-fetches nothing. Feed
+  fetches are paced 1500–3500ms (`GR_FEED_DELAY_MS="min,max"`), matching the
+  popular-by-date walker — ~120 sequential fetches must not hammer Goodreads.
+  Discovered 2026/10/17 (see GOODREADS_CHANGES.md).
 
 ## SQLite writes / database locking
 - **Do NOT call `loadBookCache()` — it materializes the whole `books` table
@@ -300,3 +323,8 @@ matter how much code it wrote.
   hundreds of `TS5097` errors, that flag is missing — not 540 real bugs.
 - `npm test` = fast unit; `npm run test:coverage` = unit + coverage;
   `npm run test:integration` = live suite (slow, polite).
+## Agent behavior / safety
+- **NEVER change file permissions or execute bits.** Do not attempt to chmod +x files, do not restore/modify execute permissions if the user has removed them. Respect the user's explicit permission decisions.
+- **STOP means STOP.** If the user says "stop", "abort", "halt", or similar, immediately cease all tool calls and wait. Do not continue running commands, do not retry, do not run further bash queries.
+- **Do not auto-retry blocked/aborted commands.** If a command was aborted by the user or timed out, do not re-run it without explicit permission.
+
