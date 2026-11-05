@@ -226,44 +226,133 @@ export async function runQueueDiscovery(
 
     // Stream-filter cached books for this list's criteria
     const candidates: CachedBook[] = [];
-    for (const book of iterateBooks()) {
-      if (book.isBad) continue;
-      if (!book.title || book.title === 'Unknown') continue;
-      if (!candidatePassesRequireWorkId(book, !!globalOptions.requireWorkId)) continue;
+    const criteriaTag = (criteria as any).tag as string | undefined;
+    const minTags = (criteria as any).minTags as number | undefined;
 
-      // Ratings check
-      const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
-      if (bookRatings < minVal || bookRatings > maxVal) continue;
-
-      // Avg Rating check
-      if (!book.avgRating) {
-        if (minAvg > 0 || maxAvg < Infinity) continue;
-      } else {
-        const bookAvg = parseFloat(book.avgRating);
-        if (bookAvg < minAvg || bookAvg > maxAvg) continue;
+    if (criteriaTag) {
+      // Fast path: query only books shelved under this tag from tag_books
+      const db = getDb();
+      const tagRows = db.prepare('SELECT book_id, shelved FROM tag_books WHERE tag_name = ?').all(criteriaTag) as any[];
+      const tagShelved = new Map<string, number>();
+      for (const tr of tagRows) {
+        if (tr.shelved != null && (!tagShelved.has(tr.book_id) || tr.shelved > tagShelved.get(tr.book_id)!)) {
+          tagShelved.set(tr.book_id, tr.shelved);
+        } else if (!tagShelved.has(tr.book_id)) {
+          tagShelved.set(tr.book_id, tr.shelved || 0);
+        }
       }
 
-      // Year check
-      const bookYear = getYear(book.published);
-      if (minYear > 0 || maxYear < Infinity) {
-        if (bookYear === null || bookYear < minYear || bookYear > maxYear) continue;
+      const bookIds = [...tagShelved.entries()]
+        .filter(([_, shelved]) => (minTags === undefined || (shelved || 0) >= minTags))
+        .map(([id]) => id);
+
+      if (bookIds.length > 0) {
+        const placeholders = bookIds.map(() => '?').join(',');
+        const rows = db.prepare(
+          `SELECT id, title, author, author_id, ratings, avg_rating, published, pages, series_pos, genres, last_updated, tags, requires_auth, is_bad, fail_count, work_id, first_seen FROM books WHERE id IN (${placeholders})`
+        ).all(...bookIds) as any[];
+
+        for (const row of rows) {
+          const book: CachedBook = {
+            id: row.id,
+            title: row.title,
+            author: row.author,
+            authorId: row.author_id || undefined,
+            ratings: String(row.ratings ?? 0),
+            avgRating: row.avg_rating != null ? String(row.avg_rating) : undefined,
+            published: row.published || 'Unknown',
+            pages: row.pages != null ? String(row.pages) : undefined,
+            seriesPos: row.series_pos != null ? Number(row.series_pos) : undefined,
+            genres: row.genres || undefined,
+            lastUpdated: row.last_updated,
+            tags: row.tags || undefined,
+            requiresAuth: !!row.requires_auth,
+            isBad: !!row.is_bad,
+            failCount: row.fail_count || 0,
+            workId: row.work_id || undefined,
+            firstSeen: row.first_seen || undefined,
+          } as CachedBook;
+
+          if (book.isBad) continue;
+          if (!book.title || book.title === 'Unknown') continue;
+          if (!candidatePassesRequireWorkId(book, !!globalOptions.requireWorkId)) continue;
+
+          const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
+          if (bookRatings < minVal || bookRatings > maxVal) continue;
+
+          if (!book.avgRating) {
+            if (minAvg > 0 || maxAvg < Infinity) continue;
+          } else {
+            const bookAvg = parseFloat(book.avgRating);
+            if (bookAvg < minAvg || bookAvg > maxAvg) continue;
+          }
+
+          const bookYear = getYear(book.published);
+          if (minYear > 0 || maxYear < Infinity) {
+            if (bookYear === null || bookYear < minYear || bookYear > maxYear) continue;
+          }
+
+          const regexCriterion = {
+            titleRegex: criteria.titleRegex,
+            authorLastRegex: criteria.authorLastRegex,
+            authorFirstRegex: criteria.authorFirstRegex
+          };
+          if (!matchesRegex(book, regexCriterion)) continue;
+
+          if (criteria.seriesPos !== undefined) {
+            const bookSeriesPos = parseSeriesPos(book.title) ?? book.seriesPos;
+            if (!matchesSeriesPos(criteria.seriesPos, bookSeriesPos)) continue;
+          }
+
+          candidates.push(book);
+        }
+      }
+    } else {
+      // Push down sargable filters where possible
+      const iterateOpts: { minRatings?: number } = {};
+      if (minVal > 0 && maxVal === Infinity) {
+        iterateOpts.minRatings = minVal;
       }
 
-      // Regex check
-      const regexCriterion = {
-        titleRegex: criteria.titleRegex,
-        authorLastRegex: criteria.authorLastRegex,
-        authorFirstRegex: criteria.authorFirstRegex
-      };
-      if (!matchesRegex(book, regexCriterion)) continue;
+      for (const book of iterateBooks(iterateOpts)) {
+        if (book.isBad) continue;
+        if (!book.title || book.title === 'Unknown') continue;
+        if (!candidatePassesRequireWorkId(book, !!globalOptions.requireWorkId)) continue;
 
-      // Series position check
-      if (criteria.seriesPos !== undefined) {
-        const bookSeriesPos = parseSeriesPos(book.title) ?? book.seriesPos;
-        if (!matchesSeriesPos(criteria.seriesPos, bookSeriesPos)) continue;
+        // Ratings check (handle both bounds)
+        const bookRatings = parseInt(book.ratings.replace(/,/g, ''), 10) || 0;
+        if (bookRatings < minVal || bookRatings > maxVal) continue;
+
+        // Avg Rating check
+        if (!book.avgRating) {
+          if (minAvg > 0 || maxAvg < Infinity) continue;
+        } else {
+          const bookAvg = parseFloat(book.avgRating);
+          if (bookAvg < minAvg || bookAvg > maxAvg) continue;
+        }
+
+        // Year check
+        const bookYear = getYear(book.published);
+        if (minYear > 0 || maxYear < Infinity) {
+          if (bookYear === null || bookYear < minYear || bookYear > maxYear) continue;
+        }
+
+        // Regex check
+        const regexCriterion = {
+          titleRegex: criteria.titleRegex,
+          authorLastRegex: criteria.authorLastRegex,
+          authorFirstRegex: criteria.authorFirstRegex
+        };
+        if (!matchesRegex(book, regexCriterion)) continue;
+
+        // Series position check
+        if (criteria.seriesPos !== undefined) {
+          const bookSeriesPos = parseSeriesPos(book.title) ?? book.seriesPos;
+          if (!matchesSeriesPos(criteria.seriesPos, bookSeriesPos)) continue;
+        }
+
+        candidates.push(book);
       }
-
-      candidates.push(book);
     }
 
     if (candidates.length === 0) {

@@ -1,2 +1,2 @@
-npm run tag-discovery economics -- --minTags 200
+npm run tag-discovery economics -- --minTags 10
 

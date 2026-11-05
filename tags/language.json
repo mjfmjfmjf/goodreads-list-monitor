@@ -1,0 +1,51 @@
+{
+  "tag": "language",
+  "lists": [
+    {
+      "nickname": "Best Popular language  500 ratings, 40 tags",
+      "officialTitle": "Best Popular Language 500 ratings, 40 tags",
+      "id": "128894",
+      "url": "https://www.goodreads.com/list/show/128894",
+      "criteria": {
+        "min": 5000,
+        "minTags": 40
+      }
+    },
+    {
+      "nickname": "Language 2020s",
+      "officialTitle": "Language 2020s",
+      "id": "424030",
+      "url": "https://www.goodreads.com/list/show/424030",
+      "criteria": {
+        "min": 50,
+        "minTags": 10,
+        "minYear": 2020,
+        "maxYear": 2029
+      }
+    },
+    {
+      "nickname": "Language 2010s",
+      "officialTitle": "Language 2010s",
+      "id": "130961",
+      "url": "https://www.goodreads.com/list/show/130961",
+      "criteria": {
+        "min": 50,
+        "minTags": 10,
+        "minYear": 2010,
+        "maxYear": 2019 
+      }
+    },
+    {
+      "nickname": "Language 2000s",
+      "officialTitle": "Language 2000s",
+      "id": "130961",
+      "url": "https://www.goodreads.com/list/show/130961",
+      "criteria": {
+        "min": 50,
+        "minTags": 10,
+        "minYear": 2000,
+        "maxYear": 2009 
+      }
+    }
+ ]
+}

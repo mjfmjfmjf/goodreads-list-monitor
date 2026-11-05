@@ -62,7 +62,7 @@ function storeAuthorStats(parsed: { id: string; slug: string }, result: AuthorSt
     name,
     slug,
     lastSeen: new Date().toISOString(),
-  };
+  } as AuthorCacheEntry;
   // Persist the page's canonical name/slug; ids can outlive their slugs.
   if (stats.name) entry.name = stats.name;
   if (stats.slug) entry.slug = stats.slug;

@@ -7,6 +7,8 @@
       "id": "36384",
       "url": "https://www.goodreads.com/list/show/36384",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "min": 100000
       }
     },
@@ -16,6 +18,8 @@
       "id": "43611",
       "url": "https://www.goodreads.com/list/show/43611",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "min": 50000,
         "max": 99999
       }
@@ -26,6 +30,8 @@
       "id": "76386",
       "url": "https://www.goodreads.com/list/show/76386",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "min": 25000,
         "max": 49999
       }
@@ -36,6 +42,8 @@
       "id": "82859",
       "url": "https://www.goodreads.com/list/show/82859",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "min": 10000,
         "max": 24999
       }
@@ -46,6 +54,8 @@
       "id": "132669",
       "url": "https://www.goodreads.com/list/show/132669",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2020,
         "maxYear": 2029
       }
@@ -56,6 +66,8 @@
       "id": "120171",
       "url": "https://www.goodreads.com/list/show/120171",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2010,
         "maxYear": 2019
       }
@@ -66,6 +78,8 @@
       "id": "120170",
       "url": "https://www.goodreads.com/list/show/120170",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2000,
         "maxYear": 2009
       }
@@ -76,6 +90,8 @@
       "id": "120213",
       "url": "https://www.goodreads.com/list/show/120213",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 1990,
         "maxYear": 1999
       }
@@ -86,6 +102,8 @@
       "id": "120214",
       "url": "https://www.goodreads.com/list/show/120214",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 1980,
         "maxYear": 1989
       }
@@ -96,6 +114,8 @@
       "id": "120215",
       "url": "https://www.goodreads.com/list/show/120215",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 1970,
         "maxYear": 1979
       }
@@ -106,6 +126,8 @@
       "id": "120216",
       "url": "https://www.goodreads.com/list/show/120216",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 1960,
         "maxYear": 1969
       }
@@ -116,6 +138,8 @@
       "id": "120133",
       "url": "https://www.goodreads.com/list/show/120133",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 1950,
         "maxYear": 1959
       }
@@ -126,6 +150,8 @@
       "id": "120135",
       "url": "https://www.goodreads.com/list/show/120135",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 1940,
         "maxYear": 1949
       }
@@ -136,6 +162,8 @@
       "id": "120165",
       "url": "https://www.goodreads.com/list/show/120165",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 1930,
         "maxYear": 1939
       }
@@ -146,8 +174,22 @@
       "id": "120222",
       "url": "https://www.goodreads.com/list/show/120222",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 1920,
         "maxYear": 1929
+      }
+    },
+    {
+      "nickname": "2027",
+      "officialTitle": "Nonfiction Published in 2027",
+      "id": "420104",
+      "url": "https://www.goodreads.com/list/show/420104",
+      "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
+        "minYear": 2027,
+        "maxYear": 2027
       }
     },
     {
@@ -156,6 +198,8 @@
       "id": "232675",
       "url": "https://www.goodreads.com/list/show/232675",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2026,
         "maxYear": 2026
       }
@@ -166,6 +210,8 @@
       "id": "205271",
       "url": "https://www.goodreads.com/list/show/205271",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2025,
         "maxYear": 2025
       }
@@ -176,6 +222,8 @@
       "id": "188486",
       "url": "https://www.goodreads.com/list/show/188486",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2024,
         "maxYear": 2024
       }
@@ -186,6 +234,8 @@
       "id": "180239",
       "url": "https://www.goodreads.com/list/show/180239",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2023,
         "maxYear": 2023
       }
@@ -196,6 +246,8 @@
       "id": "161620",
       "url": "https://www.goodreads.com/list/show/161620",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2022,
         "maxYear": 2022
       }
@@ -206,6 +258,8 @@
       "id": "150576",
       "url": "https://www.goodreads.com/list/show/150576",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2021,
         "maxYear": 2021
       }
@@ -216,6 +270,8 @@
       "id": "132668",
       "url": "https://www.goodreads.com/list/show/132668",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2020,
         "maxYear": 2020
       }
@@ -226,6 +282,8 @@
       "id": "125154",
       "url": "https://www.goodreads.com/list/show/125154",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2019,
         "maxYear": 2019
       }
@@ -236,6 +294,8 @@
       "id": "120402",
       "url": "https://www.goodreads.com/list/show/120402",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2018,
         "maxYear": 2018
       }
@@ -246,6 +306,8 @@
       "id": "119684",
       "url": "https://www.goodreads.com/list/show/119684",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2017,
         "maxYear": 2017
       }
@@ -256,6 +318,8 @@
       "id": "120417",
       "url": "https://www.goodreads.com/list/show/120417",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2016,
         "maxYear": 2016
       }
@@ -266,6 +330,8 @@
       "id": "119758",
       "url": "https://www.goodreads.com/list/show/119758",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2015,
         "maxYear": 2015
       }
@@ -276,6 +342,8 @@
       "id": "119765",
       "url": "https://www.goodreads.com/list/show/119765",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2014,
         "maxYear": 2014
       }
@@ -286,6 +354,8 @@
       "id": "119917",
       "url": "https://www.goodreads.com/list/show/119917",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2013,
         "maxYear": 2013
       }
@@ -296,6 +366,8 @@
       "id": "119918",
       "url": "https://www.goodreads.com/list/show/119918",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2012,
         "maxYear": 2012
       }
@@ -306,6 +378,8 @@
       "id": "119919",
       "url": "https://www.goodreads.com/list/show/119919",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2011,
         "maxYear": 2011
       }
@@ -316,6 +390,8 @@
       "id": "119976",
       "url": "https://www.goodreads.com/list/show/119976",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2010,
         "maxYear": 2010
       }
@@ -326,6 +402,8 @@
       "id": "119975",
       "url": "https://www.goodreads.com/list/show/119975",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2009,
         "maxYear": 2009
       }
@@ -336,6 +414,8 @@
       "id": "119974",
       "url": "https://www.goodreads.com/list/show/119974",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2008,
         "maxYear": 2008
       }
@@ -346,6 +426,8 @@
       "id": "119973",
       "url": "https://www.goodreads.com/list/show/119973",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2007,
         "maxYear": 2007
       }
@@ -356,6 +438,8 @@
       "id": "119972",
       "url": "https://www.goodreads.com/list/show/119972",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2006,
         "maxYear": 2006
       }
@@ -366,6 +450,8 @@
       "id": "119971",
       "url": "https://www.goodreads.com/list/show/119971",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2005,
         "maxYear": 2005
       }
@@ -376,6 +462,8 @@
       "id": "119970",
       "url": "https://www.goodreads.com/list/show/119970",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2004,
         "maxYear": 2004
       }
@@ -386,6 +474,8 @@
       "id": "119969",
       "url": "https://www.goodreads.com/list/show/119969",
       "criteria": {
+        "minTags": 10,
+        "tag": "non-fiction",
         "minYear": 2003,
         "maxYear": 2003
       }

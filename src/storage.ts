@@ -63,6 +63,7 @@ export interface AuthorCacheEntry {
   failCount?: number;
   lastError?: string;
   ratingsRate?: number;
+  source?: string;
 }
 
 // Does `authors` still carry the legacy strike counter? Checked once per process
@@ -506,6 +507,51 @@ export function getKnownShelfPages(tag: string): number | null {
   return row && typeof row.pages === 'number' ? row.pages : null;
 }
 
+// ── Work shelf scrapes (/work/shelves/<workId>) ─────────────────────
+// Tracks when we last scraped all user shelves for a work so we don't
+// re-scrape too frequently. The actual shelf memberships are stored in
+// work_tag_books (keyed by work_id) to avoid polluting tag_books which is
+// keyed by edition/book id and consumed by many tools.
+export function getLastWorkShelfScrape(bookId: string): string | null {
+  const row = getDb().prepare(
+    'SELECT scraped_at FROM work_shelf_scrapes WHERE book_id = ?'
+  ).get(bookId) as any;
+  return row?.scraped_at ?? null;
+}
+
+export function recordWorkShelfScrape(bookId: string, tagsCount: number): void {
+  const db = getDb();
+  db.prepare(`
+    INSERT INTO work_shelf_scrapes (book_id, scraped_at, tags_count)
+    VALUES (@bookId, @scrapedAt, @tagsCount)
+    ON CONFLICT(book_id) DO UPDATE SET
+      scraped_at = excluded.scraped_at,
+      tags_count = excluded.tags_count
+  `).run({ bookId, scrapedAt: new Date().toISOString(), tagsCount });
+}
+
+export function upsertWorkShelfTags(workId: string, shelves: { tag: string; shelved: number }[]): void {
+  // Write to work_tag_books keyed by work_id (not edition book_id). Position
+  // is not meaningful on /work/shelves page, so leave it null. Normalize tags
+  // to lowercase (AGENTS: lowercased at storage).
+  const db = getDb();
+  if (!shelves.length) return;
+  const now = new Date().toISOString();
+  const stmt = db.prepare(`
+    INSERT INTO work_tag_books (work_id, tag_name, position, shelved, harvested_at)
+    VALUES (@workId, @tagName, NULL, @shelved, @harvestedAt)
+    ON CONFLICT(work_id, tag_name) DO UPDATE SET
+      shelved = excluded.shelved,
+      harvested_at = excluded.harvested_at
+  `);
+  for (const s of shelves) {
+    const tag = (s.tag || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!tag) continue;
+    stmt.run({ workId, tagName: tag, shelved: s.shelved ?? null, harvestedAt: now });
+  }
+  recordWorkShelfScrape(workId, shelves.length);
+}
+
 // The last page count actually MEASURED from a live pagination footer, ignoring
 // the backfilled estimate_page guess. That estimate is a shelf_book_count/50
 // division and can be wildly off (e.g. "manga" estimates 125,293 pages against
@@ -890,7 +936,8 @@ function rowToAuthor(row: any): AuthorCacheEntry & { name: string } {
     failCount: row.fail_count ?? undefined,
     lastError: row.last_error ?? undefined,
     ratingsRate: row.ratings_rate ?? undefined,
-  };
+    source: row.source ?? undefined,
+  } as any;
 }
 
 // Authors are keyed by Goodreads id. The in-memory cache is id-keyed so that
@@ -949,19 +996,21 @@ function bindAuthor(id: string, e: AuthorCacheEntry) {
     catalogPages: e.catalogPages ?? null,
     failCount: e.failCount ?? null,
     ratingsRate: e.ratingsRate ?? null,
+    source: (e as any).source ?? null,
   };
 }
 
 const AUTHOR_UPSERT_SQL = `
-  INSERT INTO authors (id, name, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, ratings_rate)
-  VALUES (@id, @name, @slug, @lastSeen, COALESCE(@firstSeen, @lastSeen), @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @ratingsRate)
+  INSERT INTO authors (id, name, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, catalog_pages, ratings_rate, source)
+  VALUES (@id, @name, @slug, @lastSeen, COALESCE(@firstSeen, @lastSeen), @averageRating, @numRatings, @numReviews, @numShelves, @catalogPages, @ratingsRate, @source)
   ON CONFLICT(id) DO UPDATE SET
     name=COALESCE(excluded.name, name), slug=excluded.slug, last_seen=excluded.last_seen,
     first_seen=COALESCE(authors.first_seen, excluded.first_seen),
     average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
     num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
     catalog_pages=COALESCE(excluded.catalog_pages, catalog_pages),
-    ratings_rate=excluded.ratings_rate
+    ratings_rate=excluded.ratings_rate,
+    source=COALESCE(authors.source, excluded.source)
 `;
 
 export function upsertAuthorById(id: string, entry: AuthorCacheEntry): void {

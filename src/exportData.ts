@@ -37,6 +37,9 @@ export const EXCLUDED_TABLES = [
   'browser_scrape',
   'list_scrapes',
   'list_walk',
+  // /work/shelves/<workId> freshness checkpoint + work-level shelf xref (operational, not shared data).
+  'work_shelf_scrapes',
+  'work_tag_books',
   // Legacy per-(tag,list) walk membership, superseded by list_tags.from_directory
   // and due to be dropped once pre-unification crawlers exit. Only written by
   // those old crawlers; never exported (a receiver can't import it).

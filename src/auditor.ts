@@ -388,17 +388,25 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
 
   // Load the tag_books shelf membership for the configured tag. Empty table for
   // this tag means it was never scraped → skip the criterion with a warning.
+  // Work-level shelves from /work/shelves are stored in work_tag_books and are
+  // canonical (all editions share the same work count).
   let tagShelvesIndex: TagShelvesIndex | undefined;
   if (isTagAudit) {
     const db = getDb();
     const tagRows = db.prepare('SELECT book_id, shelved FROM tag_books WHERE tag_name = ?').all(tag!) as any[];
-    if (tagRows.length === 0) {
+    const hasWorkTagBooks = !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='work_tag_books'`).get();
+    const workTagRows = hasWorkTagBooks ? db.prepare('SELECT work_id, shelved FROM work_tag_books WHERE tag_name = ? AND work_id IS NOT NULL AND shelved IS NOT NULL').all(tag!) as any[] : [];
+    if (tagRows.length === 0 && workTagRows.length === 0) {
       result.tagSkipped = true;
       console.log(chalk.yellow(`   ⚠️ Tag "${tag}" not yet scraped — skipping this list's tag check.`));
     } else {
       const workRows = db.prepare(
         'SELECT t.book_id, b.work_id, t.shelved FROM tag_books t JOIN books b ON b.id = t.book_id WHERE t.tag_name = ? AND b.work_id IS NOT NULL AND t.shelved IS NOT NULL'
       ).all(tag!) as any[];
+      // Merge work_tag_books into work-level index as well.
+      for (const r of workTagRows) {
+        workRows.push({ book_id: null, work_id: r.work_id, shelved: r.shelved });
+      }
       tagShelvesIndex = buildTagShelvesIndex(tagRows, workRows);
     }
   }

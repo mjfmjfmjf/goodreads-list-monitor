@@ -1,3 +1,44 @@
+planning a new feature - reading the tag details page on books- https://www.goodreads.com/work/shelves/640276
+- need to figure out if this page is protected and therefore needs playrite
+- will only read page 1 - so don't need to parse multiple pages
+- in the example page it runs from to-read with 22,851 entries to books-for-kids with 18
+- should save just like the code for tags to books related to pages like https://www.goodreads.com/shelf/show/picture%20books
+- there may be issues around upper and lower case or punctuation
+
+I expect to read this with a new scraper - there should be a way of knowing if this has been recently tag scraped - perhaps we keep a new last tag details scraped date
+
+$ git -C /Users/mitchellfriedman/codebase/goodreads stash pop 2>&1 | tail -30
+modified:   GOODREADS_CHANGES.md
+	modified:   books.sh
+	modified:   bulkAvgRatings.json
+	modified:   bulkTopics.json
+	modified:   next.txt
+	modified:   package.json
+	modified:   src/books.test.ts
+	modified:   src/books.ts
+	modified:   src/db.ts
+	modified:   src/index.ts
+	modified:   src/integration/goodreads.integration.ts
+	modified:   src/reports.test.ts
+	modified:   src/scraper.ts
+	modified:   src/storage.ts
+	modified:   src/summaryAvgHistogram.ts
+	modified:   tags/geology.json
+	modified:   tags/history.json
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	PLAN-genre-pages-filter.md
+	PLAN-giveaways.md
+	giveaways.sh
+	src/giveaways.test.ts
+	src/giveaways.ts
+	src/workShelves.ts
+	tagAuditGraphicNovels.sh
+
+no changes added to commit (use "git add" and/or "git commit -a")
+Dropped refs/stash@{0} (88f282fd5ae97c6317451cd143167408a9ff5eba)
+===
 I want to add a new feature. I want to be able to give an id like 51477729 and have it be removed from the local book cache
 ==== 
 like with queueYearRatings.sh npm run queue-discovery -- queueYearRatings.json, I'd like a new feature that captures a histogram of number of books in the book cache by number of ratings with the categories

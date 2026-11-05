@@ -14,15 +14,16 @@ const DB_FILE = process.env.GOODREADS_DB_PATH!;
 
 function insertBook(book: {
   id: string; title: string; author: string; ratings?: number; avgRating?: string;
-  published?: string; workId?: string; isWorkRep?: number; isBad?: number;
+  published?: string; workId?: string; isWorkRep?: number; isBad?: number; pages?: string; genres?: string[];
 }) {
   getDb().prepare(`
-    INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, last_updated, work_id, is_work_rep, is_bad, genres)
-    VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @lastUpdated, @workId, @isWorkRep, @isBad, @genres)
+    INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, last_updated, work_id, is_work_rep, is_bad, genres, pages)
+    VALUES (@id, @title, @author, @authorId, @ratings, @avgRating, @published, @lastUpdated, @workId, @isWorkRep, @isBad, @genres, @pages)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title, author = excluded.author, ratings = excluded.ratings,
       avg_rating = excluded.avg_rating, published = excluded.published,
-      work_id = excluded.work_id, is_work_rep = excluded.is_work_rep, is_bad = excluded.is_bad
+      work_id = excluded.work_id, is_work_rep = excluded.is_work_rep, is_bad = excluded.is_bad,
+      pages = excluded.pages, genres = excluded.genres
   `).run({
     id: book.id,
     title: book.title,
@@ -35,8 +36,13 @@ function insertBook(book: {
     workId: book.workId ?? null,
     isWorkRep: book.isWorkRep ?? 0,
     isBad: book.isBad ?? 0,
-    genres: null,
+    genres: book.genres ? JSON.stringify(book.genres) : null,
+    pages: book.pages ?? null,
   });
+}
+
+function insertGenreXref(genre: string, tag: string, kind = 'exact') {
+  getDb().prepare('INSERT INTO genre_tag_xref (genre_name, tag_name, kind) VALUES (?, ?, ?)').run(genre, tag, kind);
 }
 
 function insertPage(bookId: string, stats: {
@@ -108,6 +114,7 @@ describe('runBooks', () => {
     db.prepare('DELETE FROM books').run();
     db.prepare('DELETE FROM book_page').run();
     db.prepare('DELETE FROM tag_books').run();
+    db.prepare('DELETE FROM genre_tag_xref').run();
 
     insertBook({ id: '1', title: 'Alpha', author: 'Smith John', ratings: 1000, avgRating: '4.5', workId: 'w-1', isWorkRep: 1 });
     insertBook({ id: '2', title: 'Beta', author: 'Jones Amy', ratings: 3000, avgRating: '3.9', workId: 'w-1', isWorkRep: 0 });
@@ -299,5 +306,142 @@ describe('runBooks', () => {
     expect(logs).toContain('Beta');
     expect(logs).not.toContain('Alpha');
     expect(logs).toContain('mean=4.200');
+  });
+
+  it('filters by --tag via genre_tag_xref (exact, case-insensitive)', async () => {
+    insertGenreXref('fantasy', 'fantasy');
+    insertGenreXref('fantasy', 'scifi', 'cognate');
+    await runBooks({ tag: 'Fantasy', limit: '10' });
+    // Alpha (tagged fantasy + scifi) matches via both xref tags.
+    expect(logs).toContain('Alpha');
+    expect(logs).toContain('Tag: fantasy (tag xref)');
+    // Delta (mystery only) and the untagged books are excluded.
+    expect(logs).not.toContain('Delta');
+    expect(logs).not.toContain('Beta');
+    expect(logs).not.toContain('Gamma');
+    expect(logs).toContain('Total books matching: 1');
+  });
+
+  it('filters by --tag when the name is itself a scraped tag (no xref row)', async () => {
+    await runBooks({ tag: 'mystery', limit: '10' });
+    expect(logs).toContain('Delta');
+    expect(logs).not.toContain('Alpha');
+  });
+
+  it('errors on an unknown --tag', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('process.exit'); }) as any);
+    await expect(runBooks({ tag: 'nope-not-real' })).rejects.toThrow('process.exit');
+    expect(logs).toContain('--tag "nope-not-real" matches no genre_tag_xref row');
+    exitSpy.mockRestore();
+  });
+
+  it('filters by --genre against the books.genres JSON column (case-insensitive exact)', async () => {
+    insertBook({ id: '5', title: 'Epsilon', author: 'Vera Sam', ratings: 500, avgRating: '3.5', genres: ['Fiction', 'Historical'] });
+    insertBook({ id: '6', title: 'Zeta', author: 'Wu Ann', ratings: 600, avgRating: '3.6', genres: ['Science Fiction'] });
+    await runBooks({ genre: 'fiction', limit: '10' });
+    expect(logs).toContain('Epsilon'); // "Fiction" matches case-insensitively
+    expect(logs).toContain('Genre: fiction');
+    expect(logs).not.toContain('Zeta'); // "Science Fiction" is a distinct entry, not an exact match
+    expect(logs).not.toContain('Alpha'); // no genres column -> no match
+    expect(logs).toContain('Total books matching: 1');
+  });
+
+  it('combines --tag AND --genre', async () => {
+    insertGenreXref('mystery', 'mystery');
+    insertBook({ id: '5', title: 'Epsilon', author: 'Vera Sam', ratings: 500, avgRating: '3.5', genres: ['Fiction'] });
+    // Delta: tagged mystery, but no genres column -> fails the genre half.
+    await runBooks({ tag: 'mystery', genre: 'fiction', limit: '10' });
+    expect(logs).not.toContain('Delta');
+    expect(logs).not.toContain('Epsilon'); // has the genre, but is not tagged mystery
+    expect(logs).toContain('Total books matching: 0');
+  });
+
+  it('accepts comma lists in --genre (OR within the flag)', async () => {
+    insertBook({ id: '5', title: 'Epsilon', author: 'Vera Sam', ratings: 500, genres: ['Fiction'] });
+    insertBook({ id: '6', title: 'Zeta', author: 'Wu Ann', ratings: 600, genres: ['Mystery'] });
+    insertBook({ id: '7', title: 'Eta', author: 'Yu Bea', ratings: 700, genres: ['Biography'] });
+    await runBooks({ genre: 'fiction, mystery', limit: '10' });
+    expect(logs).toContain('Epsilon');
+    expect(logs).toContain('Zeta');
+    expect(logs).not.toContain('Eta');
+    expect(logs).toContain('Genre: fiction, mystery');
+  });
+
+  it('filters by --notGenre with word-boundary matching over compound legacy labels', async () => {
+    insertBook({ id: '5', title: 'Epsilon', author: 'Vera Sam', ratings: 500, genres: ['Comics'] });
+    insertBook({ id: '6', title: 'Zeta', author: 'Wu Ann', ratings: 600, genres: ['Graphic Novels Comics'] }); // Goodreads legacy compound
+    insertBook({ id: '7', title: 'Eta', author: 'Yu Bea', ratings: 700, genres: ['Dc Comics'] });
+    insertBook({ id: '8', title: 'Theta', author: 'Io Kim', ratings: 800, genres: ['Science Fiction'] });
+    await runBooks({ notGenre: 'comics', limit: '10' });
+    expect(logs).toContain('Theta');
+    expect(logs).not.toContain('Epsilon'); // exact "Comics"
+    expect(logs).not.toContain('Zeta'); // "comics" is a word inside the compound label
+    expect(logs).not.toContain('Eta'); // "Dc Comics" contains the word
+    expect(logs).toContain('Not Genre: comics');
+  });
+
+  it('--notGenre "graphic-novels" matches the stored "Graphic Novels" form (spaces ≡ hyphens)', async () => {
+    insertBook({ id: '5', title: 'Epsilon', author: 'Vera Sam', ratings: 500, genres: ['Graphic Novels Comics'] });
+    insertBook({ id: '6', title: 'Zeta', author: 'Wu Ann', ratings: 600, genres: ['Fiction'] });
+    await runBooks({ notGenre: 'graphic-novels', limit: '10' });
+    expect(logs).toContain('Zeta');
+    expect(logs).not.toContain('Epsilon');
+  });
+
+  it('combines --genre and --notGenre', async () => {
+    insertBook({ id: '5', title: 'Epsilon', author: 'Vera Sam', ratings: 500, genres: ['Fiction', 'Comics'] });
+    insertBook({ id: '6', title: 'Zeta', author: 'Wu Ann', ratings: 600, genres: ['Fiction'] });
+    await runBooks({ genre: 'fiction', notGenre: 'comics', limit: '10' });
+    expect(logs).toContain('Zeta');
+    expect(logs).not.toContain('Epsilon'); // matches genre but excluded by notGenre
+    expect(logs).toContain('Total books matching: 1');
+  });
+
+  it('honors --minPages / --maxPages; unknown pages excluded under --minPages', async () => {
+    insertBook({ id: '5', title: 'Epsilon', author: 'Vera Sam', ratings: 500, avgRating: '3.5', pages: '120' });
+    insertBook({ id: '6', title: 'Zeta', author: 'Wu Ann', ratings: 600, avgRating: '3.6', pages: '3000' });
+    await runBooks({ minPages: '100', maxPages: '500', limit: '10' });
+    expect(logs).toContain('Epsilon'); // 120 pages, in range
+    expect(logs).toContain('Pages: 100-500');
+    expect(logs).not.toContain('Zeta'); // 3000 pages, over max
+    // Books with unknown pages parse as 0 and are excluded by --minPages.
+    expect(logs).not.toContain('Alpha');
+    expect(logs).not.toContain('Delta');
+  });
+
+  it('filters by --hasDetails to books with a book_page details row', async () => {
+    // Fixture: Alpha (1) and Delta (4) have book_page rows; Beta/Gamma don't.
+    await runBooks({ hasDetails: true, sort: 'numRatings', limit: '10' });
+    expect(logs).toContain('Has details: yes (book_page row)');
+    expect(logs).toContain('Alpha');
+    expect(logs).toContain('Delta');
+    expect(logs).not.toContain('Beta');
+    expect(logs).not.toContain('Gamma');
+    expect(logs).toContain('Total books matching: 2');
+  });
+
+  it('keeps exact top-N ordering across batched flushes (large limit vs match count)', async () => {
+    // 1200 books forces mid-stream flushes (PENDING_FLUSH = max(1024, limit/4))
+    // plus a final merge, so both merge branches run; the top-100 must be the
+    // true top-100 in order, not just "roughly the best".
+    for (let i = 1; i <= 1200; i++) {
+      insertBook({ id: `b${i}`, title: `T${String(i).padStart(4, '0')}`, author: 'Bulk Author', ratings: i, avgRating: '3.0' });
+    }
+    await runBooks({ sort: 'numRatings', desc: true, limit: '100' });
+    // Top = Delta (8000), Beta (3000), then T1200..T1103 (ratings 1200..1103).
+    expect(logs.indexOf('Delta')).toBeLessThan(logs.indexOf('Beta'));
+    expect(logs.indexOf('Beta')).toBeLessThan(logs.indexOf('T1200'));
+    expect(logs.indexOf('T1200')).toBeLessThan(logs.indexOf('T1103'));
+    expect(logs).not.toContain('T1102'); // 101st-best is out
+    expect(logs).not.toContain('Alpha'); // 1000 ratings, well below the cut
+    expect(logs).toContain('Total books matching: 1,204');
+  });
+
+  it('--sort avgRatings excludes books with missing/0 avgRating instead of sorting them first under --asc', async () => {
+    insertBook({ id: '7', title: 'Eta', author: 'Zero Nul', ratings: 0 }); // no avgRating -> NULL
+    await runBooks({ sort: 'avgRatings', asc: true, limit: '10' });
+    expect(logs).not.toContain('Eta'); // null avg -> excluded, not listed first
+    expect(logs.indexOf('Delta')).toBeLessThan(logs.indexOf('Alpha')); // asc: 4.1, 4.5, ...
+    expect(logs.indexOf('Alpha')).toBeLessThan(logs.indexOf('Gamma')); // ...4.9 last
   });
 });

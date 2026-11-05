@@ -1,0 +1,117 @@
+  [
+    {
+      "nickname": "Main",
+      "officialTitle": "politics > 1000 ratings and 200 shelves",
+      "id": "97141",
+      "url": "https://www.goodreads.com/list/show/97141",
+      "criteria": {
+        "min": 1000,
+        "minTags": 200,
+        "tag": "politics"
+      }
+    },
+    {
+      "nickname": "Politics 2027",
+      "officialTitle": "Politics 2027",
+      "id": "421113",
+      "url": "https://www.goodreads.com/list/show/421113",
+      "criteria": {
+        "min": 100,
+        "minTags": 10,
+        "minYear": 2027,
+        "maxYear": 2027,
+        "tag": "politics"
+      }
+    },
+    {
+      "nickname": "Politics 2026",
+      "officialTitle": "Politics 2026",
+      "id": "232572",
+      "url": "https://www.goodreads.com/list/show/232572",
+      "criteria": {
+        "min": 100,
+        "minTags": 10,
+        "minYear": 2026,
+        "maxYear": 2026,
+        "tag": "politics"
+      }
+    },
+    {
+      "nickname": "Politics 2025",
+      "officialTitle": "Politics 2025",
+      "id": "205273",
+      "url": "https://www.goodreads.com/list/show/205273",
+      "criteria": {
+        "min": 100,
+        "minTags": 10,
+        "minYear": 2025,
+        "maxYear": 2025,
+        "tag": "politics"
+      }
+    },
+    {
+      "nickname": "Politics 2024",
+      "officialTitle": "Politics 2024",
+      "id": "188490",
+      "url": "https://www.goodreads.com/list/show/188490",
+      "criteria": {
+        "min": 100,
+        "minTags": 10,
+        "minYear": 2024,
+        "maxYear": 2024,
+        "tag": "politics"
+      }
+    },
+    {
+      "nickname": "Politics 2023",
+      "officialTitle": "Politics 2023",
+      "id": "180237",
+      "url": "https://www.goodreads.com/list/show/180237",
+      "criteria": {
+        "min": 100,
+        "minTags": 10,
+        "minYear": 2023,
+        "maxYear": 2023,
+        "tag": "politics"
+      }
+    },
+    {
+      "nickname": "Politics 2022",
+      "officialTitle": "Politics 2022",
+      "id": "171488",
+      "url": "https://www.goodreads.com/list/show/171488",
+      "criteria": {
+        "min": 100,
+        "minTags": 10,
+        "minYear": 2022,
+        "maxYear": 2022,
+        "tag": "politics"
+      }
+    },
+    {
+      "nickname": "Politics 2021",
+      "officialTitle": "Politics 2021",
+      "id": "157405",
+      "url": "https://www.goodreads.com/list/show/157405",
+      "criteria": {
+        "min": 100,
+        "minTags": 10,
+        "minYear": 2021,
+        "maxYear": 2021,
+        "tag": "politics"
+      }
+    },
+    {
+      "nickname": "Politics 2020",
+      "officialTitle": "Politics 2020",
+      "id": "148293",
+      "url": "https://www.goodreads.com/list/show/148293",
+      "criteria": {
+        "min": 100,
+        "minTags": 10,
+        "minYear": 2020,
+        "maxYear": 2020,
+        "tag": "politics"
+      }
+    }
+  ]

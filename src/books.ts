@@ -18,6 +18,11 @@ export interface BooksOptions {
   maxRatings?: string;
   minYear?: string;
   maxYear?: string;
+  tag?: string;
+  genre?: string;
+  notGenre?: string;
+  minPages?: string;
+  maxPages?: string;
   asc?: boolean;
   desc?: boolean;
   includeBad?: boolean;
@@ -25,6 +30,7 @@ export interface BooksOptions {
   export?: string;
   library?: string;
   dedupe?: boolean;
+  hasDetails?: boolean;
 }
 
 type SortField =
@@ -114,6 +120,18 @@ const parseNum = (s?: string | number | null): number => {
   return parseInt(str.replace(/,/g, ''), 10) || 0;
 };
 
+// Normalize a genre label or user input for comparison: lowercase, spaces ≡
+// hyphens (the column stores "Graphic Novels", users type "graphic-novels").
+const normGenre = (s: string): string => s.trim().toLowerCase().replace(/\s+/g, '-');
+
+// Comma-separated user input → trimmed display labels (empties dropped).
+const parseGenreList = (s: string): string[] => s.split(',').map(x => x.trim()).filter(Boolean);
+
+// Word-boundary match on the normalized (hyphen-joined) form, so --notGenre
+// "comics" catches Goodreads' own compound legacy labels ("Graphic Novels
+// Comics", "Dc Comics", "Comics Manga") while "novel" does NOT match "novels".
+const genreWordMatch = (entryNorm: string, key: string): boolean => `-${entryNorm}-`.includes(`-${key}-`);
+
 const PAGE_SORTS: SortField[] = [
   'numReviews', 'currentlyReading', 'toRead', 'editionCount', 'reviewRatio',
   'ratingsMean', 'ratingsMedian', 'ratingsMode', 'ratingsVariance',
@@ -126,6 +144,8 @@ let tagStatsCache: Map<string, TagStats> | null = null;
 let workEditionsCache: Map<string, number> | null = null;
 let englishKeepersCache: Map<string, string> | null = null;
 let bookLanguagesCache: Map<string, string> | null = null;
+let tagBookIdsCache: Map<string, Set<string>> | null = null;
+let bookPageIdsCache: Set<string> | null = null;
 
 // Test seam: runBooks caches these maps at module scope, so a test that mutates
 // the DB between runBooks calls must drop the caches first.
@@ -135,6 +155,8 @@ export function resetBooksCaches(): void {
   workEditionsCache = null;
   englishKeepersCache = null;
   bookLanguagesCache = null;
+  tagBookIdsCache = null;
+  bookPageIdsCache = null;
 }
 
 interface PageRow {
@@ -232,6 +254,46 @@ function loadTagStats(): Map<string, TagStats> {
   return map;
 }
 
+// ── tag → book_ids via the tag xref tables ──────────────────────────
+// `--tag fantasy` resolves EXACTLY against genre_tag_xref.genre_name (all
+// kinds), then each mapped tag's book set from tag_books. Both lookups are
+// covering PK-prefix scans; the reverse book_id → tags path has NO index, so
+// membership is resolved once here into a Set and checked per streamed row.
+// A tag with no xref row falls back to being a scraped tag_books tag itself.
+// (--genre is the separate, narrower filter over the books.genres JSON column.)
+function loadTagBookIds(tag: string): Set<string> {
+  const key = tag.trim().toLowerCase();
+  const cached = tagBookIdsCache?.get(key);
+  if (cached) return cached;
+  const db = getDb();
+  const tagRows = db.prepare('SELECT tag_name FROM genre_tag_xref WHERE genre_name = ?').all(key) as Array<{ tag_name: string }>;
+  const tags = tagRows.map(r => r.tag_name);
+  if (tags.length === 0) {
+    const direct = db.prepare('SELECT 1 AS x FROM tag_books WHERE tag_name = ?').get(key) as any;
+    if (direct) tags.push(key);
+  }
+  if (tags.length === 0) {
+    const suggestions = [
+      ...(db.prepare('SELECT genre_name FROM genre_tag_xref WHERE genre_name LIKE ? LIMIT 5').all(`${key}%`) as any[]).map(r => r.genre_name as string),
+      ...(db.prepare('SELECT DISTINCT tag_name FROM tag_books WHERE tag_name LIKE ? LIMIT 5').all(`${key}%`) as any[]).map(r => r.tag_name as string),
+    ];
+    const hint = suggestions.length ? ` — did you mean: ${[...new Set(suggestions)].join(', ')}?` : '';
+    console.error(chalk.red.bold(`Error: --tag "${tag}" matches no genre_tag_xref row and no scraped tag_books tag${hint}`));
+    console.error(chalk.gray('  Seed the xref (genrePairings) or scrape the tag first (gapGenreTagDiscovery).'));
+    process.exit(1);
+  }
+  const set = new Set<string>();
+  const stmt = db.prepare('SELECT book_id FROM tag_books WHERE tag_name = ?');
+  for (const tagName of tags) {
+    for (const row of stmt.iterate(tagName) as IterableIterator<{ book_id: string }>) {
+      set.add(row.book_id);
+    }
+  }
+  tagBookIdsCache = tagBookIdsCache ?? new Map();
+  tagBookIdsCache.set(key, set);
+  return set;
+}
+
 // Ediitions counts are a per-WORK figure on Goodreads (the "Show all N editions"
 // drive on any edition's page reads the same work). Different editions of a work
 // carry drift-bucket snapshots; under --dedupe the surviving row is often missing
@@ -301,6 +363,28 @@ function loadEnglishWorkKeepers(): Map<string, string> {
   return map;
 }
 
+// ── book_page presence for --hasDetails ────────────────────────────
+// book_page holds the browser-scraped details page (~282k of the 14M books
+// rows: description, genres, pages, reviews, ratings histogram). --hasDetails
+// restricts the match set to books that have one — a Set membership check per
+// streamed row (book_page is book_id-keyed, so this is one covering scan of
+// 282k rows). It also acts as an accelerator for details-heavy queries: every
+// filter after it (regex, excludeReviewed, page-stats lookups) only runs on
+// books that can actually pass, instead of on the whole stream.
+function loadBookPageIds(): Set<string> {
+  if (bookPageIdsCache) return bookPageIdsCache;
+  const db = getDb();
+  const set = new Set<string>();
+  const hasPage = !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='book_page'`).get();
+  if (hasPage) {
+    for (const row of db.prepare('SELECT book_id FROM book_page').iterate() as IterableIterator<{ book_id: string }>) {
+      set.add(row.book_id);
+    }
+  }
+  bookPageIdsCache = set;
+  return set;
+}
+
 export async function runBooks(options: BooksOptions = {}): Promise<void> {
   const rawSort = (options.sort || 'numRatings') as string;
   const sortBy: SortField = SORT_ALIASES[rawSort] ?? (rawSort as SortField);
@@ -345,7 +429,25 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
   const maxRatings = options.maxRatings !== undefined ? parseNum(options.maxRatings) : Infinity;
   const minYear = options.minYear ? parseInt(options.minYear, 10) : 0;
   const maxYear = options.maxYear ? parseInt(options.maxYear, 10) : Infinity;
+  const minPages = options.minPages ? parseNum(options.minPages) : 0;
+  const maxPages = options.maxPages ? parseNum(options.maxPages) : Infinity;
   const limit = options.limit ? parseInt(options.limit, 10) : 100;
+
+  // Resolved once up front; errors (unknown tag) exit before streaming.
+  const tagSet = options.tag ? loadTagBookIds(options.tag) : null;
+  // Books with a scraped details page (book_page row) — the "only books that
+  // have book details" limiter. Checked before regex/excludeReviewed so those
+  // only run on books that can pass.
+  const detailsSet = options.hasDetails ? loadBookPageIds() : null;
+  // Narrow filters over the books.genres JSON column (e.g. "fiction"), which is
+  // only populated on browser-scraped books (~240k rows). Comma lists allowed
+  // (OR within each flag; --genre AND --notGenre combine). --genre is exact on
+  // the normalized label; --notGenre is word-boundary so it also catches
+  // Goodreads' compound legacy labels ("Graphic Novels Comics" etc.).
+  const genreList = options.genre ? parseGenreList(options.genre) : [];
+  const genreKeySet = new Set(genreList.map(normGenre));
+  const notGenreList = options.notGenre ? parseGenreList(options.notGenre) : [];
+  const notGenreKeys = notGenreList.map(normGenre);
 
   // Load the enrichment maps lazily — only if the sort field needs them.
   const pageStats = PAGE_SORTS.includes(sortBy) ? loadPageStats() : null;
@@ -414,7 +516,42 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
   // makes the match set "books that have this stat".
   const derivedSort = DERIVED_DISPLAY[sortBy];
 
+  // Top-N maintenance is BATCHED. Re-sorting `matched` after every insert was
+  // O(N × limit·log·limit) — invisible at the default limit=100, but
+  // `--limit 100000` re-sorted a 100k-element array once per qualifying book
+  // (each comparison also running valueOf → parseNum), i.e. hours of runtime
+  // for a query that streams ~300k rows. Qualifying books now buffer in
+  // `pending`; every PENDING_FLUSH inserts (and once after the loop) the
+  // buffer is sorted and merged into the already-sorted `matched`, keeping
+  // its top `limit`. `matched` stays sorted best-first, so the worst-element
+  // early-exit in the loop stays valid, and memory stays bounded at
+  // limit + PENDING_FLUSH.
   const matched: CachedBook[] = [];
+  const PENDING_FLUSH = Math.max(1024, Math.ceil(limit / 4));
+  let pending: CachedBook[] = [];
+  const flushPending = (): void => {
+    if (pending.length === 0) return;
+    pending.sort(compare);
+    if (matched.length === 0) {
+      const n = Math.min(pending.length, limit);
+      for (let k = 0; k < n; k++) matched.push(pending[k]);
+    } else {
+      const merged: CachedBook[] = [];
+      let i = 0;
+      let j = 0;
+      while (merged.length < limit && (i < matched.length || j < pending.length)) {
+        if (j >= pending.length || (i < matched.length && compare(matched[i], pending[j]) <= 0)) {
+          merged.push(matched[i++]);
+        } else {
+          merged.push(pending[j++]);
+        }
+      }
+      matched.length = 0;
+      for (const b of merged) matched.push(b);
+    }
+    pending = [];
+  };
+
   let reviewedExcluded = 0;
   let dedupedExcluded = 0;
   let totalMatched = 0;
@@ -443,6 +580,26 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
       if (year === null || year < minYear || year > maxYear) continue;
     }
 
+    if (tagSet && !tagSet.has(book.id)) continue;
+    if (detailsSet && !detailsSet.has(book.id)) continue;
+    if (genreKeySet.size > 0 && !book.genres?.some(g => genreKeySet.has(normGenre(g)))) continue;
+    if (notGenreKeys.length > 0 && book.genres?.some(g => notGenreKeys.some(k => genreWordMatch(normGenre(g), k)))) continue;
+
+    if (minPages > 0 || maxPages < Infinity) {
+      // Unknown pages parse as 0 and are auto-excluded whenever --minPages >= 1.
+      const pages = parseNum(book.pages);
+      if (pages < minPages || pages > maxPages) continue;
+    }
+
+    // A missing/0 avgRating is unknown, not a real score; `valueOf`'s
+    // `parseFloat(avgRating || '0')` would otherwise sort these books FIRST
+    // under --asc. Exclude them outright (both directions), same as the
+    // derived-stats exclusion above.
+    if (sortBy === 'avgRatings') {
+      const avg = parseFloat(book.avgRating || '0');
+      if (!(avg > 0)) continue;
+    }
+
     if (derivedSort) {
       const statValue = pageStats?.get(book.id)?.[derivedSort.key];
       if (typeof statValue !== 'number') continue;
@@ -455,14 +612,12 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
     }
     totalMatched++;
 
-    if (limit > 0 && matched.length === limit) {
-      // Matched is kept sorted by `compare`; the end holds the worst element.
-      if (compare(book, matched[matched.length - 1]) > 0) continue;
-    }
-    matched.push(book);
-    matched.sort(compare);
-    if (matched.length > limit) matched.pop();
+    // matched is kept sorted by `compare`; the end holds the worst element.
+    if (limit > 0 && matched.length === limit && compare(book, matched[matched.length - 1]) > 0) continue;
+    pending.push(book);
+    if (pending.length >= PENDING_FLUSH) flushPending();
   }
+  flushPending();
 
   const countToDisplay = Math.min(matched.length, limit);
 
@@ -476,6 +631,11 @@ export async function runBooks(options: BooksOptions = {}): Promise<void> {
   let criteriaMsg = `   Min Ratings: ${minRatings.toLocaleString()}`;
   if (maxRatings < Infinity) criteriaMsg += `, Max Ratings: ${maxRatings.toLocaleString()}`;
   if (minYear > 0 || maxYear < Infinity) criteriaMsg += `, Year: ${minYear}-${maxYear === Infinity ? 'Any' : maxYear}`;
+  if (tagSet) criteriaMsg += `, Tag: ${options.tag!.trim().toLowerCase()} (tag xref)`;
+  if (detailsSet) criteriaMsg += ', Has details: yes (book_page row)';
+  if (genreList.length) criteriaMsg += `, Genre: ${genreList.join(', ')}`;
+  if (notGenreList.length) criteriaMsg += `, Not Genre: ${notGenreList.join(', ')}`;
+  if (minPages > 0 || maxPages < Infinity) criteriaMsg += `, Pages: ${minPages > 0 ? minPages : 'Any'}-${maxPages < Infinity ? maxPages : 'Any'}`;
   console.log(chalk.gray(criteriaMsg));
   if (options.dedupe) console.log(chalk.gray('   Dedupe works: yes (one row per distinct work; English edition preferred when known)'));
   if (library && options.excludeReviewed) {

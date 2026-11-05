@@ -501,7 +501,8 @@ function initSchema(db: Database.Database) {
       num_shelves INTEGER DEFAULT 0,
       first_seen TEXT,
       catalog_pages INTEGER,
-      ratings_rate REAL
+      ratings_rate REAL,
+      source TEXT
     );
 
     CREATE TABLE IF NOT EXISTS author_slugs (
@@ -535,6 +536,26 @@ function initSchema(db: Database.Database) {
       shelved INTEGER,
       harvested_at TEXT NOT NULL,
       PRIMARY KEY (tag_name, book_id)
+    );
+
+    -- Work-level shelves from /work/shelves/<workId> (all user shelves for a
+    -- work). Keyed by work_id, separate from tag_books which is keyed by
+    -- book/edition id to avoid breaking existing joins/exports.
+    CREATE TABLE IF NOT EXISTS work_tag_books (
+      work_id TEXT NOT NULL,
+      tag_name TEXT NOT NULL,
+      position INTEGER,
+      shelved INTEGER,
+      harvested_at TEXT NOT NULL,
+      PRIMARY KEY (work_id, tag_name)
+    );
+
+    -- Tracks when we last scraped the /work/shelves/<workId> page (all shelves
+    -- for a work) so we don't re-scrape too frequently. Keyed by work_id.
+    CREATE TABLE IF NOT EXISTS work_shelf_scrapes (
+      book_id TEXT PRIMARY KEY,
+      scraped_at TEXT NOT NULL,
+      tags_count INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS author_scrape_failures (
@@ -738,6 +759,9 @@ function initSchema(db: Database.Database) {
     // increase. NULL until an author has TWO stats observations (a minted
     // author's first scrape only establishes a baseline).
     db.exec('ALTER TABLE authors ADD COLUMN ratings_rate REAL');
+  }
+  if (!authorCols.some((c: any) => c.name === 'source')) {
+    db.exec('ALTER TABLE authors ADD COLUMN source TEXT');
   }
   const tagCols = db.prepare('PRAGMA table_info(tag_books)').all() as any[];
   if (!tagCols.some((c: any) => c.name === 'shelved')) {

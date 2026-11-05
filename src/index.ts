@@ -38,6 +38,7 @@ import { runAuthorHarvestStatus } from './authorHarvestStatus.ts';
 import { runTitleCharHistogram } from './titleCharHistogram.ts';
 import { runTitleFirstWordHistogram } from './titleFirstWordHistogram.ts';
 import { runTagHistogram } from './tagHistogram.ts';
+import { runTagYearHistogram } from './tagYearHistogram.ts';
 import { runTagCoverage } from './tagCoverage.ts';
 import { runTagRecentMonitor } from './tagRecentMonitor.ts';
 import { runTagFirstPagePicks } from './tagFirstPagePicks.ts';
@@ -70,6 +71,7 @@ import { runListTags } from './listTags.ts';
 import { runNextTagWalk } from './nextTagWalk.ts';
 import { runListTagHarvest } from './listTagHarvest.ts';
 import { runPopularByDate } from './popularByDate.ts';
+import { runLibrarianRecentEdits } from './librarianRecentEdits.ts';
 import { runTagWalkBooks } from './tagWalkBooks.ts';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.ts';
 import { runBooks } from './books.ts';
@@ -79,6 +81,8 @@ import { runLifeInBooks } from './lifeInBooks.ts';
 import { runFavoriteAuthors } from './favoriteAuthors.ts';
 import { runPublisherStats } from './publisherStats.ts';
 import { runPublisherCatalog } from './publisherCatalog.ts';
+import { runPublisherTopBooks } from './publisherTopBooks.ts';
+import { runBooksWithoutWorkId } from './booksWithoutWorkId.ts';
 import { runFacetCatalog, isFacetName } from './facetCatalog.ts';
 import { runAuthorLedgerMigrate } from './authorLedgerMigrate.ts';
 import { runShelfStats } from './shelfStats.ts';
@@ -435,15 +439,32 @@ program
 program
   .command('tag-histogram')
   .description('Show a histogram of tag_books tags: share of books shelved under one tag, and under one or two tags')
-  .option('--limit <number>', 'number of top tags to show (default 25)', '25')
-  .option('--min <number>', 'only include tags with at least this many books (default 0)', '0')
-  .option('--sortBy <key>', 'sort key: pct, pct2, single, upTo2, total, ratings, shelves, tag (default: pct, ascending)', 'pct')
-  .option('--asc', 'sort ascending instead of descending (percent keys are ascending by default)')
+  .option('--limit <number>', 'Show only the top N tags (default 50)', '50')
+  .option('--min <number>', 'Minimum number of books per tag (default 1000)', '1000')
+  .option('--asc', 'Sort ascending (default desc for magnitude; percentages still default ascending)')
+  .option('--sortBy <key>', 'Sort key: pct (default), pct2, single, upTo2, total, ratings, shelves, tag', 'pct')
   .action(async (options) => {
     try {
       await runTagHistogram({ limit: options.limit, min: options.min, asc: options.asc, sortBy: options.sortBy });
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate tag histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('tag-year-histogram <tag>')
+  .description('Show books per year for a specific tag from tag_books xref')
+  .option('--min-tags <number>', 'Minimum total number of tags per book (default 1)', '1')
+  .option('--by-decade', 'Group by decade instead of year')
+  .action(async (tag, options) => {
+    try {
+      await runTagYearHistogram({
+        tag,
+        minTags: parseInt(options.minTags, 10),
+        byDecade: !!options.byDecade,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate tag-year histogram:'), (error as any).message);
     }
   });
 
@@ -861,6 +882,7 @@ Throttling: 202/403 → 60s cooldown + 1 retry; abort after 2 consecutive thrott
   .option('--limit <number>', 'Number of books to scrape (default 10)', '10')
   .option('--minRatings <number>', 'Only target books with at least this many ratings')
   .option('--candidate <source>', 'Candidate source: default (skip-has criteria) or coverage-gap (work reps with no book_page row, most ratings first)', 'default')
+  .option('--all-works', 'With --candidate coverage-gap, include all editions with work_id missing book_page (not just is_work_rep)')
   .option('--skip-has <criteria>', 'Only target books MISSING all of these: genres|work-id|tags (default genres)', 'genres')
   .option('--sort <order>', 'Backlog order: ratingsDesc (default), ratingsAsc, random', 'ratingsDesc')
   .option('--engine <engine>', 'Fetch engine: browser (default, headed Chromium, logged-in, adds editions count) or axios (SSR fallback)', 'browser')
@@ -882,7 +904,8 @@ Throttling: 202/403 → 60s cooldown + 1 retry; abort after 2 consecutive thrott
         dryRun: !!options.dryRun,
         force: !!options.force,
         cooldownMs: options.cooldownMs !== undefined ? parseInt(options.cooldownMs, 10) : undefined,
-        maxConsecutiveThrottles: parseInt(options.maxConsecutiveThrottles, 10),
+        maxConsecutiveThrottles: options.maxConsecutiveThrottles !== undefined ? parseInt(options.maxConsecutiveThrottles, 10) : undefined,
+        allWorks: !!options.allWorks,
       });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run browser book scrape:'), (error as any).message);
@@ -1486,6 +1509,38 @@ Examples:
       await runPublisherCatalog(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run publisher catalog:'), (error as any).message);
+    }
+  });
+
+program
+  .command('publisher-top-books')
+  .description('For top publishers, show the top-rated book for each')
+  .option('--publishers <number>', 'Number of top publishers to show')
+  .option('--limit <number>', 'Number of top publishers to show (default 10)', '10')
+  .option('--sortBy <field>', 'Sort publishers by: books (default), avgRating, totalRatings', 'books')
+  .option('--minRatings <number>', 'Only count works with at least this many ratings (default 0)')
+  .option('--minBooks <number>', 'Minimum number of books per publisher (default 1)', '1')
+  .action(async (options) => {
+    try {
+      await runPublisherTopBooks({
+        publishers: options.publishers || options.limit,
+        sortBy: options.sortBy,
+        minRatings: options.minRatings,
+        minBooks: options.minBooks,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate publisher top books:'), (error as any).message);
+    }
+  });
+
+program
+  .command('books-without-work-id')
+  .description('Analyze books missing work_id')
+  .action(async () => {
+    try {
+      await runBooksWithoutWorkId({});
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to analyze books without work_id:'), (error as any).message);
     }
   });
 
@@ -2216,6 +2271,24 @@ Throttling: same 60s cooldown + 1 retry + 2-consecutive abort behavior as browse
       });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run popular-by-date:'), (error as any).message);
+    }
+  });
+
+program
+  .command('librarian-recent-edits')
+  .description('Walk Goodreads Librarian Recent Edits (https://www.goodreads.com/librarian/recent_edits). REQUIRES CREDENTIALS in config.json (loadConfig().cookie). Harvests book_id and author_id; for unseen books inserts minimal row, for unseen authors inserts minimal row only (no back-catalog scrape).')
+  .option('--pages <number>', 'Max pages to fetch (default 100, max 100)', '100')
+  .option('--dryRun', 'Enumerate only, no writes')
+  .option('--delay-ms <number>', 'Fixed delay between pages in ms')
+  .action(async (options) => {
+    try {
+      await runLibrarianRecentEdits({
+        pages: parseInt(options.pages, 10),
+        dryRun: !!options.dryRun,
+        delayMs: options.delayMs !== undefined ? parseInt(options.delayMs, 10) : undefined,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run librarian-recent-edits:'), (error as any).message);
     }
   });
 

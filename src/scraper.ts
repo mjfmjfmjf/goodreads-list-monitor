@@ -1013,7 +1013,6 @@ export async function scrapeListDescription(listId: string): Promise<string> {
     return '';
   }
 }
-
 export async function scrapeTagCount(bookId: string, tag: string): Promise<number> {
   const configData = await loadConfig();
   const url = `https://www.goodreads.com/work/shelves/${bookId}`;
@@ -1027,6 +1026,7 @@ export async function scrapeTagCount(bookId: string, tag: string): Promise<numbe
     });
     const $ = cheerio.load(response.data);
     
+
     let count = 0;
     $('.shelfStat').each((_, el) => {
       const shelfName = $(el).find('.actionLinkLite').text().trim();
@@ -1042,6 +1042,126 @@ export async function scrapeTagCount(bookId: string, tag: string): Promise<numbe
   } catch (error) {
     console.error(chalk.yellow(`   ⚠️ Shelf count fetch failed for book ${bookId}: ${(error as any).code || (error as any).message || error}`));
     return 0;
+  }
+}
+
+export interface WorkShelfEntry {
+  tag: string;      // normalized (lowercase, trimmed)
+  shelved: number;
+}
+
+export async function scrapeWorkShelves(bookId: string): Promise<WorkShelfEntry[]> {
+  const configData = await loadConfig();
+  const url = `https://www.goodreads.com/work/shelves/${bookId}`;
+  try {
+    const headers: any = { 'User-Agent': USER_AGENT };
+    if (configData.cookie) headers['Cookie'] = configData.cookie;
+
+    const response = await fetchWithRetry(url, {
+      headers,
+      timeout: TIMEOUT
+    });
+    const $ = cheerio.load(response.data);
+
+    const entries: WorkShelfEntry[] = [];
+    $('.shelfStat').each((_, el) => {
+      const shelfName = $(el).find('.actionLinkLite').text().trim();
+      if (!shelfName) return;
+      const countText = $(el).find('a.smallText').text().trim();
+      const match = countText.match(/([\d,]+)/);
+      const shelved = match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
+      // Normalize: lowercase, collapse whitespace
+      const tag = shelfName.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!tag) return;
+      entries.push({ tag, shelved });
+    });
+    return entries;
+  } catch (error) {
+    console.error(chalk.yellow(`   ⚠️ Work shelves fetch failed for book ${bookId}: ${(error as any).code || (error as any).message || error}`));
+    return [];
+  }
+}
+
+export interface WorkShelvesSafeResult {
+  ok: boolean;
+  protected: boolean;
+  entries: WorkShelfEntry[];
+}
+
+export async function scrapeWorkShelvesSafe(bookId: string): Promise<WorkShelvesSafeResult> {
+  const configData = await loadConfig();
+  const url = `https://www.goodreads.com/work/shelves/${bookId}`;
+  const start = Date.now();
+  try {
+    const headers: any = { 'User-Agent': USER_AGENT };
+    if (configData.cookie) headers['Cookie'] = configData.cookie;
+
+    const response = await fetchWithRetry(url, {
+      headers,
+      timeout: TIMEOUT
+    });
+    const durationMs = Date.now() - start;
+    const bodyLen = typeof response.data === 'string' ? response.data.length : Buffer.byteLength(JSON.stringify(response.data) || '');
+
+    // Check for protection/throttling
+    if (response.status === 403 || response.status === 429) {
+      console.log(chalk.gray(`     [work/shelves] ${response.status} in ${durationMs}ms, ${bodyLen} bytes`));
+      return { ok: false, protected: true, entries: [] };
+    }
+    if (response.status === 202) {
+      const body = String(response.data || '');
+      console.log(chalk.gray(`     [work/shelves] 202 in ${durationMs}ms, ${body.length} bytes`));
+      if (body.length < 1000) {
+        return { ok: false, protected: true, entries: [] };
+      }
+    }
+
+    const body = String(response.data || '');
+    const bodyLower = body.toLowerCase();
+    // Detect challenge/captcha
+    if (bodyLower.includes('captcha') || bodyLower.includes('cf-challenge') ||
+        bodyLower.includes('cloudflare') || bodyLower.includes('checking your browser') ||
+        bodyLower.includes('verify you are human') || bodyLower.includes('ray id')) {
+      console.log(chalk.gray(`     [work/shelves] challenge-like in ${durationMs}ms, ${body.length} bytes`));
+      return { ok: false, protected: true, entries: [] };
+    }
+
+    const $ = cheerio.load(response.data);
+    const entries: WorkShelfEntry[] = [];
+    $('.shelfStat').each((_, el) => {
+      const shelfName = $(el).find('.actionLinkLite').text().trim();
+      if (!shelfName) return;
+      const countText = $(el).find('a.smallText').text().trim();
+      const match = countText.match(/([\d,]+)/);
+      const shelved = match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
+      const tag = shelfName.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (!tag) return;
+      entries.push({ tag, shelved });
+    });
+
+    console.log(chalk.gray(`     [work/shelves] ${response.status} in ${durationMs}ms, ${body.length} bytes, ${entries.length} shelves`));
+
+    // If we got a response but no shelfStat and it looks like a challenge page
+    if (entries.length === 0 && body.length < 5000 && (bodyLower.includes('login') || bodyLower.includes('sign in'))) {
+      return { ok: false, protected: true, entries: [] };
+    }
+
+    return { ok: true, protected: false, entries };
+  } catch (error: any) {
+    const durationMs = Date.now() - start;
+    const status = error?.response?.status;
+    // Check if error indicates protection
+    if (status === 403 || status === 429) {
+      console.log(chalk.gray(`     [work/shelves] ${status} in ${durationMs}ms (error)`));
+      return { ok: false, protected: true, entries: [] };
+    }
+    if (status) {
+      console.log(chalk.gray(`     [work/shelves] ${status} in ${durationMs}ms (error)`));
+    } else if (error?.code) {
+      console.log(chalk.gray(`     [work/shelves] err ${error.code} in ${durationMs}ms`));
+    }
+    console.error(chalk.yellow(`   ⚠️ Work shelves fetch failed for book ${bookId}: ${error?.code || error?.message || error}`));
+    return { ok: false, protected: false, entries: [] };
   }
 }
 

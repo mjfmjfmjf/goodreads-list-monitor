@@ -29,6 +29,7 @@ export interface BrowserBookScrapeOptions {
   sort: string;
   engine: 'axios' | 'browser';
   candidateSource?: 'default' | 'coverage-gap';
+  allWorks?: boolean;
   dryRun?: boolean;
   force?: boolean;
   cooldownMs?: number;
@@ -385,19 +386,27 @@ export function shouldRescrapeUnknownTitle(prior: CheckpointRow | undefined, can
 // WORK+F column marks as uncovered. Ordered most-ratings-first so the highest-
 // value works are scraped first. Mirrors the histogram's streaming query but
 // bounded by LIMIT (SQLite walks idx_books_ratings, not the whole table).
-export function buildCoverageGapQuery(opts: { limit: number; minRatings?: number }): { sql: string; params: any[] } {
-  const where = ['b.is_work_rep = 1', 'b.is_bad = 0', 'b.requires_auth = 0', 'bp.book_id IS NULL'];
+export function buildCoverageGapQuery(opts: { limit: number; minRatings?: number; sort?: string; allWorks?: boolean }): { sql: string; params: any[] } {
+  const where: string[] = ['b.is_bad = 0', 'b.requires_auth = 0', 'bp.book_id IS NULL', "b.work_id IS NOT NULL AND b.work_id != ''"];
+  if (!opts.allWorks) {
+    where.unshift('b.is_work_rep = 1');
+  }
   const params: any[] = [];
   if (opts.minRatings !== undefined) {
     where.push('b.ratings >= ?');
     params.push(Number(opts.minRatings));
   }
+  const sort = opts.sort || 'ratingsDesc';
+  let order: string;
+  if (sort === 'random') order = 'RANDOM()';
+  else if (sort === 'ratingsAsc') order = 'b.ratings ASC, b.id ASC';
+  else order = 'b.ratings DESC, b.id ASC';
   const sql = `
     SELECT b.id, b.title, b.ratings
     FROM books b
     LEFT JOIN book_page bp ON bp.book_id = b.id
     WHERE ${where.join(' AND ')}
-    ORDER BY b.ratings DESC, b.id ASC
+    ORDER BY ${order}
     LIMIT ?`;
   params.push(Number(opts.limit));
   return { sql, params };
@@ -410,7 +419,7 @@ export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): P
   const candidateSource = options.candidateSource ?? 'default';
 
   console.log(chalk.cyan.bold(`\n🌐 browser-book-scrape: engine=${engine} source=${candidateSource} limit=${options.limit}`));
-  if (candidateSource !== 'default') console.log(chalk.gray(`   skipHas=[${options.skipHas.join(', ')}]`));
+  if (candidateSource !== 'default') console.log(chalk.gray(`   skipHas=[${options.skipHas.join(', ')}]${options.allWorks ? ' (all works with work_id)' : ''}`));
   if (engine === 'browser') console.log(chalk.gray('   (headed Chromium window — one at a time, 2–4s pacing)'));
 
   const db = getDb();
@@ -431,6 +440,8 @@ export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): P
     const { sql, params } = buildCoverageGapQuery({
       limit: options.limit,
       minRatings: options.minRatings,
+      sort: options.sort,
+      allWorks: options.allWorks,
     });
     candidates = db.prepare(sql).all(...params) as { id: string; title: string; ratings: number }[];
   } else {
@@ -442,7 +453,7 @@ export async function runBrowserBookScrape(options: BrowserBookScrapeOptions): P
     });
     candidates = db.prepare(sql).all(...params) as { id: string; title: string; ratings: number }[];
   }
-  console.log(chalk.gray(`   Backlog: ${candidates.length.toLocaleString()} candidate(s) ${candidateSource === 'coverage-gap' ? '(work reps without a book_page row, most ratings first)' : 'matching criteria'}`));
+  console.log(chalk.gray(`   Backlog: ${candidates.length.toLocaleString()} candidate(s) ${candidateSource === 'coverage-gap' ? (options.allWorks ? '(all works with work_id without a book_page row)' : '(work reps without a book_page row, most ratings first)') : 'matching criteria'}`));
 
   if (options.dryRun) {
     for (const c of candidates) {

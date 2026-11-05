@@ -168,12 +168,12 @@
     }
   },
   {
-    "nickname": "2024 Average Rating of 4.4 and above with at least 1000 ratings",
-    "officialTitle": "2024 Average Rating of 4.4 and above with at least 1000 ratings",
+    "nickname": "2024 Average Rating of 4.5 and above with at least 1000 ratings",
+    "officialTitle": "2024 Average Rating of 4.5 and above with at least 1000 ratings",
     "id": "250123",
     "url": "https://www.goodreads.com/list/show/250123",
     "criteria": {
-      "minAvg": 4.4,
+      "minAvg": 4.5,
       "min": 1000,
       "minYear": 2024,
       "maxYear": 2024

@@ -1,10 +1,28 @@
 import chalk from 'chalk';
 import { iterateBooks } from './storage.ts';
+import { getDb } from './db.ts';
 
 export interface AvgHistogramOptions {
   step?: string;
   minRatings?: string;
   maxRatings?: string;
+  hasDetails?: boolean;
+}
+
+// book_page presence for --hasDetails: the browser-scraped details page
+// (~282k of the 14M books rows). Loaded fresh per call — this command runs
+// once per process, and a module cache would go stale between tests that
+// insert rows. Matches the Set-membership filter in books.ts (--hasDetails).
+function loadBookPageIds(): Set<string> {
+  const db = getDb();
+  const set = new Set<string>();
+  const hasPage = !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='book_page'`).get();
+  if (hasPage) {
+    for (const row of db.prepare('SELECT book_id FROM book_page').iterate() as IterableIterator<{ book_id: string }>) {
+      set.add(row.book_id);
+    }
+  }
+  return set;
 }
 
 export async function runAvgHistogram(options: AvgHistogramOptions = {}): Promise<void> {
@@ -22,8 +40,16 @@ export async function runAvgHistogram(options: AvgHistogramOptions = {}): Promis
   const counts: number[] = new Array(bucketCount).fill(0);
   let noAvgCount = 0;
   let filteredCount = 0;
+  let noDetailsCount = 0;
+  const detailsSet = options.hasDetails ? loadBookPageIds() : null;
 
   for (const book of iterateBooks()) {
+    // Membership filter first, so the no-avg/ratings counters below describe
+    // only books that could have passed --hasDetails anyway.
+    if (detailsSet && !detailsSet.has(book.id)) {
+      noDetailsCount++;
+      continue;
+    }
     if (!book.avgRating || book.avgRating === 'Unknown') {
       noAvgCount++;
       continue;
@@ -64,6 +90,7 @@ export async function runAvgHistogram(options: AvgHistogramOptions = {}): Promis
 
   console.log(chalk.cyan.bold('\n📊 Book Cache Average Rating Histogram:'));
   console.log(chalk.gray(`Step: ${stepLabel} (empty buckets hidden)`));
+  if (detailsSet) console.log(chalk.gray('Has details: yes (book_page row)'));
   console.log(chalk.gray('----------------------------------------------------------------------'));
 
   let runningFromTop = 0;
@@ -90,6 +117,9 @@ export async function runAvgHistogram(options: AvgHistogramOptions = {}): Promis
   console.log(chalk.cyan.bold(`Total books with avg rating: ${totalCounted.toLocaleString()}`));
   if (noAvgCount > 0) {
     console.log(chalk.yellow(`${noAvgCount.toLocaleString()} books have no average rating (excluded).`));
+  }
+  if (noDetailsCount > 0) {
+    console.log(chalk.yellow(`${noDetailsCount.toLocaleString()} books without details (book_page row) (excluded).`));
   }
   if (filteredCount > 0) {
     const minStr = minRatings !== null ? `min ${minRatings.toLocaleString()}` : '';

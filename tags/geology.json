@@ -2,12 +2,23 @@
   "tag": "geology",
   "lists": [
     {
-      "nickname": "Main",
+      "nickname": "geology > 500 and 10 shelves",
       "officialTitle": "geology > 500 ratings and 10 shelves",
       "id": "143932",
       "url": "https://www.goodreads.com/list/show/143932",
       "criteria": {
         "min": 500,
+        "minTags": 10
+      }
+    },
+    {
+      "nickname": "geology > 99 and < 500 and 10 shelves",
+      "officialTitle": "geology > 99 ratings and < 500 ratings and 10 shelves",
+      "id": "144626",
+      "url": "https://www.goodreads.com/list/show/144626",
+      "criteria": {
+        "max": 499,
+        "min": 100,
         "minTags": 10
       }
     },

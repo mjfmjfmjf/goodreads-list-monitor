@@ -31,7 +31,7 @@
     "url": "https://www.goodreads.com/list/show/73088",
     "criteria": {
        "min": 50000,
-       "minTags": 500,
+       "minTags": 400,
        "tag": "graphic-novels"
     }
   },
@@ -43,7 +43,7 @@
     "criteria": {
        "min": 25000,
        "max": 49999,
-       "minTags": 500,
+       "minTags": 400,
        "tag": "graphic-novels"
     }
   },

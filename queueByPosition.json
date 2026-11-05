@@ -35,18 +35,38 @@
     "url": "https://www.goodreads.com/list/show/420595",
     "id": "420595",
     "criteria": {
-      "min": 300000,
+      "min": 100000,
       "seriesPos": 2
     }
   },
   {
     "nickname": "3rd book",
     "officialTitle": "3rd Books of Series with 100000+ Ratings",
-    "url": "https://www.goodreads.com/list/show/420595",
-    "id": "35080",
+    "url": "https://www.goodreads.com/list/show/424056",
+    "id": "424056",
     "criteria": {
-      "min": 200000,
+      "min": 100000,
       "seriesPos": 3
+    }
+  },
+  {
+    "nickname": "4th book",
+    "officialTitle": "4th Books of Series with 100000+ Ratings",
+    "url": "https://www.goodreads.com/list/show/424056",
+    "id": "424056",
+    "criteria": {
+      "min": 100000,
+      "seriesPos": 4
+    }
+  },
+  {
+    "nickname": "5th book",
+    "officialTitle": "5th Books of Series with 100000+ Ratings",
+    "url": "https://www.goodreads.com/list/show/424056",
+    "id": "424056",
+    "criteria": {
+      "min": 100000,
+      "seriesPos": 5
     }
   }
 ]

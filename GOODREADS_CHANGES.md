@@ -3,6 +3,45 @@
 Record whenever Goodreads changes a page in a way that forces a code change.
 Newest entry on top. Timestamp format: `YYYY/MM/DD HH:MM` (local time).
 
+## 2026/10/18 21:10 — bookGenres serves COMPOUND legacy genre labels (~13% of books)
+
+Not a page change — data-shape finding while adding `books --genre/--notGenre`.
+The Apollo `bookGenres[].genre.name` values are usually discrete ("Comics",
+"Graphic Novels", "X Men" — verified faithful vs a live page for
+/book/show/44024187, stored correctly), but Goodreads itself ALSO serves
+**combined legacy labels** — only 5 distinct ones exist DB-wide
+(`Graphic Novels Comics` 7.8k, `Science Fiction Fantasy`, `Comics Manga`,
+`Dc Comics`-style, `Comics Bd`) — hitting ~13% of scraped books, stable across
+Sept/Oct scrape months (not a parser regression). Consequence: exact matching
+would let compound-labelled books dodge an exclusion, so `books --notGenre`
+uses **word-boundary matching** on the normalized (spaces≡hyphens, lowercase)
+label (`comics` matches `Graphic Novels Comics`; `novel` does not match
+`novels`). `--genre` stays exact. No scraper fix needed — the data is what
+Goodreads serves.
+
+## 2026/10/17 09:30 — Giveaways feed: AppSync `getGiveaways` book-id discovery walker
+
+Not a page change — recording a new crawler. `./giveaways.sh` (`src/giveaways.ts`,
+command `giveaways`) walks `https://www.goodreads.com/giveaway?sort=recently_listed`
+purely to harvest **book ids**, then hands them to `browser-book-scrape` (book-id only;
+nothing giveaway-specific is persisted).
+
+- The listing paginates client-side (the "Show more giveaways" button); `?page=N` is
+  **ignored** (page 2/3 returned the same 5 rows). The data comes from Goodreads' own
+  AppSync `getGiveaways` query — the **same endpoint** as popular-by-date
+  (`APPSYNC_URL`), with the api key at `__NEXT_DATA__.props.pageProps.apiKey`. The page
+  is server-rendered, so the AppSync POST only fires after a click; the walker instead
+  drives `getGiveaways` from inside the page with `fetch()`.
+- Pagination chains a **base64** `nextPageToken`
+  (`{"featured_ordering_seed":null,"sort_value":…,"id":…}`) until `hasNextPage=false`
+  (getTopList uses hex — different). The server **caps a page at 15** (limit 30 → 15);
+  `totalCount` was 1,788 on 2026/10/17 → ~120 fetches for a full walk.
+- **Book id source**: `details.book.legacyId` is selectable on the Giveaway→Book edge
+  (spike-verified: giveaway 454009 → book 213082829, matching
+  `/book/show/213082829`); fallback is the cover `imageUrl` tail
+  (`/books/<digest>i/<id>.jpg`). Verified live 2026/10/17 (headed browser; 3 pages →
+  45 fetched / 45 distinct ids, http 200).
+
 ## 2026/10/16 19:40 — Derived `book_page` ratings statistics + `books.sh` sorts, backfill, streaming fixes
 
 Not a page change — recording a feature that adds derived handling around the

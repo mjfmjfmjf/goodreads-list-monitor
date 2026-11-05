@@ -16,6 +16,7 @@ import {
   BookMetadata
 } from '../scraper.js';
 import { runBrowserBookScrape, ensureScrapeTables } from '../browserBookScrape.js';
+import { runGiveaways } from '../giveaways.js';
 import { getDb } from '../db.js';
 
 // ── Live integration tests ────────────────────────────────────────────────
@@ -337,8 +338,33 @@ describe('browser-book-scrape (live, axios engine)', () => {
           genres: existing.genres,
         });
       } else {
-        db.prepare('DELETE FROM books WHERE id = ?').run(scratchId);
+          db.prepare('DELETE FROM books WHERE id = ?').run(scratchId);
+        }
       }
+    });
+});
+
+// Opens the headed persistent-profile browser and drives Goodreads' own AppSync
+// `getGiveaways` from inside the listing page. Enumerate-only (no book detail
+// writes), two fetches (~30 giveaways). A throttle means cooldown, not a parser
+// change — see the suite header.
+describe('giveaways (live, AppSync getGiveaways)', () => {
+  it('enumerates the Giveaways feed and yields distinct book ids', { timeout: 120_000 }, async () => {
+    const summary = await runGiveaways({
+      limit: 0,
+      skipHas: ['genres'],
+      sort: 'recent',
+      pages: 2,
+      pageSize: 15,
+      noDetails: true,
+    });
+    if (summary.throttled) {
+      throw new Error('Goodreads throttled the giveaways feed — cooldown and retry (not a parser change).');
     }
+    expect(summary.pagesFetched).toBeGreaterThanOrEqual(1);
+    expect(summary.giveawaysSeen).toBeGreaterThan(0);
+    expect(summary.distinctBooks).toBeGreaterThan(0);
+    expect(summary.totalCount).toBeGreaterThan(0);
+    console.log(`   Giveaways: ${summary.giveawaysSeen} enumerated, ${summary.distinctBooks} distinct book ids (total ${summary.totalCount})`);
   });
 });

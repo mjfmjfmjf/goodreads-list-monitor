@@ -12,6 +12,26 @@
       }
     },
     {
+      "nickname": "science 2020s",
+      "officialTitle": "science 2020s",
+      "id": "132682",
+      "url": "https://www.goodreads.com/list/show/132682",
+      "criteria": {
+        "minYear": 2020,
+        "maxYear": 2029 
+      }
+    },
+    {
+      "nickname": "science 2027",
+      "officialTitle": "science 2027",
+      "id": "421111",
+      "url": "https://www.goodreads.com/list/show/421111",
+      "criteria": {
+        "minYear": 2027,
+        "maxYear": 2027 
+      }
+    },
+    {
       "nickname": "science 2026",
       "officialTitle": "science 2026",
       "id": "232674",

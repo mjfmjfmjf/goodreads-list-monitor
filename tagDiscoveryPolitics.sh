@@ -1,2 +1,2 @@
-npm run tag-discovery politics -- --minTags 200
+npm run tag-discovery politics -- --minTags 1
 

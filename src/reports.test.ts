@@ -8,7 +8,7 @@ vi.hoisted(() => {
   process.env.GOODREADS_DB_PATH = `${tmp}/goodreads-reports-test-${process.pid}-${Date.now()}.db`;
 });
 
-import { closeDb } from './db.ts';
+import { closeDb, getDb } from './db.ts';
 import { upsertBook } from './storage.ts';
 import type { CachedBook } from './storage.ts';
 import { runSummaryByYear } from './summary.ts';
@@ -224,6 +224,29 @@ describe('runAvgHistogram', () => {
       const out = c.out();
       expect(out).toContain('Step: 0.50');
       expect(out).toContain('4.50 to 4.99');
+    } finally {
+      c.restore();
+    }
+  });
+
+  it('--hasDetails counts only books with a book_page details row', async () => {
+    // Give details pages to b1 (4.50), b3 (2.00), b4 (4.75), b7 (4.50).
+    const ins = getDb().prepare('INSERT INTO book_page (book_id, scraped_at) VALUES (?, ?)');
+    const now = new Date().toISOString();
+    for (const id of ['b1', 'b3', 'b4', 'b7']) ins.run(id, now);
+
+    const c = capture();
+    try {
+      await runAvgHistogram({ hasDetails: true });
+      const out = c.out();
+      expect(out).toContain('Has details: yes (book_page row)');
+      expect(out).toContain('Total books with avg rating: 4');
+      expect(out).toContain('4.75');
+      // b2, b5, b8 (have an average) + b6, b9 (no average) lack details.
+      expect(out).toContain('5 books without details (book_page row) (excluded)');
+      // Details filter runs first, so the no-avg counter only sees books
+      // that passed it — and all four with-details books have an average.
+      expect(out).not.toContain('no average rating');
     } finally {
       c.restore();
     }
