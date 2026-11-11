@@ -5,8 +5,8 @@ import { stdin as input, stdout as output } from 'node:process';
 import fs from 'fs-extra';
 import path from 'path';
 import { delay, fetchWithRetry, formatDate, httpCallInfo, isConnectivityError, isDbLockError, parseDelayRange } from './utils.ts';
-import { loadConfig, syncAuthorsToCache, getAuthor, getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_FAIL_LIMIT, persistShelfPageCount, upsertListTags } from './storage.ts';
-import type { AuthorStats } from './storage.ts';
+import { loadConfig, syncAuthorsToCache, getAuthor, getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_FAIL_LIMIT, persistShelfPageCount, upsertListTags, upsertListMeta } from './storage.ts';
+import type { AuthorStats, ListMeta } from './storage.ts';
 import type { AxiosResponse } from 'axios';
 
 let structuralWarningIssued = false;
@@ -336,7 +336,7 @@ export function reanchorShelfPage(startPage: number, totalPages: number | null, 
   return totalPages;
 }
 
-export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, startPage = 1, opts?: { skipAuthorSync?: boolean }): Promise<BookMetadata[]> {
+export async function scrapeShelfBooks(tag: string, minTags = 0, maxPages = 25, startPage = 1, opts?: { skipAuthorSync?: boolean; source?: string }): Promise<BookMetadata[]> {
   const configData = await loadConfig();
   let allBooks: BookMetadata[] = [];
   let thresholdReached = false;
@@ -576,7 +576,7 @@ const avgRating = match ? (match[1] || match[2]) : undefined;
       // Empty run-scoped memo: syncAuthorsToCache does one indexed primary-key
       // lookup per author on a miss, so there is no reason to materialize the
       // whole ~960k-row authors table first (loadAuthorCache = ~1.3s + 390MB).
-      await syncAuthorsToCache(uniqueBooks, {});
+      await syncAuthorsToCache(uniqueBooks, {}, opts?.source ?? 'tag_shelf');
     } catch (error) {
       // Ignore cache sync errors in scraper
     }
@@ -613,12 +613,98 @@ export function parseListTags($: cheerio.CheerioAPI): string[] {
   return tags;
 }
 
-export async function scrapeListBooks(listId: string, maxPages = Infinity): Promise<BookMetadata[]> {
+// "May 1st, 2013" -> "2013-05-01". The ordinal suffix is optional.
+function ordinalMonthDateToIso(raw: string): string | undefined {
+  const m = raw.match(/([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i);
+  if (!m) return undefined;
+  const month = new Date(`${m[1]} 1, 2000`).getMonth();
+  const day = parseInt(m[2], 10);
+  const year = parseInt(m[3], 10);
+  if (Number.isNaN(month) || day < 1 || day > 31) return undefined;
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+// The right-hand list sidebar repeats on every page and holds the header meta:
+//   <div class="stacked">
+//     <div>1,137 books · 164 voters · list created May 1st, 2013
+//          by <a href="/user/show/970632-mitchell-friedman">Mitchell Friedman</a> (votes) .</div>
+//     <div>Tags: …</div>
+//   </div>
+//   <span class="likeItContainer"><span class="likesCount">80 likes</span> …</span>
+//
+// Pure + unit-testable. Missing pieces are simply omitted (never fabricated), so
+// a layout change yields a partial object rather than wrong data.
+export function parseListMeta($: cheerio.CheerioAPI): ListMeta {
+  const meta: ListMeta = {};
+
+  // The meta line is the sidebar div that carries the book count (the next
+  // sibling is the Tags block).
+  const $meta = $('.stacked > div')
+    .filter((_, el) => /[\d,]\s*books?\b/i.test($(el).text()))
+    .first();
+  const text = cleanScrapedText($meta.text());
+
+  const books = text.match(/([\d,]+)\s+books?\b/i);
+  if (books) meta.numBooks = parseInt(books[1].replace(/,/g, ''), 10);
+
+  const voters = text.match(/([\d,]+)\s+voters?\b/i);
+  if (voters) meta.numVoters = parseInt(voters[1].replace(/,/g, ''), 10);
+
+  const created = text.match(/list created\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})/i);
+  if (created) {
+    const iso = ordinalMonthDateToIso(created[1]);
+    if (iso) meta.createdAt = iso;
+  }
+
+  const $creator = $meta.find('a[href*="/user/show/"]').first();
+  if ($creator.length) {
+    const name = cleanScrapedText($creator.text());
+    if (name) meta.creatorName = name;
+    const href = $creator.attr('href') || '';
+    const match = href.match(/\/user\/show\/([^/?#]+)/);
+    if (match) meta.creatorId = match[1].split('-')[0] || match[1];
+  } else {
+    // A deleted creator has no /user/show/ link; the meta line still names them
+    // as plain text ("list created <date> by deleted user.").
+    const by = text.match(/\bby\s+(.+?)\s*(?:\(votes\))?\s*\.?\s*$/i);
+    if (by) {
+      const name = cleanScrapedText(by[1].replace(/\(votes\)/i, '')).trim();
+      if (name) meta.creatorName = name;
+    }
+  }
+
+  // A list with zero likes renders only the "Like" button (no likesCount span),
+  // so an empty like container means 0, not unknown.
+  const $like = $('.likeItContainer').first();
+  if ($like.length) {
+    const likes = $like.find('.likesCount').text().match(/([\d,]+)\s+likes?\b/i);
+    meta.numLikes = likes ? parseInt(likes[1].replace(/,/g, ''), 10) : 0;
+  }
+
+  return meta;
+}
+
+export interface ScrapeListBooksResult {
+  books: BookMetadata[];
+  pagesRead: number;
+  completed: boolean;
+  lastStatus?: number;
+  error?: unknown;
+}
+
+export async function scrapeListBooks(listId: string, maxPages = Infinity, source = 'list_page'): Promise<BookMetadata[]> {
+  return (await scrapeListBooksDetailed(listId, maxPages, source)).books;
+}
+
+export async function scrapeListBooksDetailed(listId: string, maxPages = Infinity, source = 'list_page'): Promise<ScrapeListBooksResult> {
   const configData = await loadConfig();
   let allBooks: BookMetadata[] = [];
   let page = 1;
   let hasNext = true;
   let lastPageFirstId = '';
+  let completed = false;
+  let lastStatus: number | undefined;
+  let caughtError: unknown;
 
   while (hasNext) {
     // Accept either a numeric/named list id ("4893", "1.Best_Books_Ever")
@@ -637,6 +723,7 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
       });
       const duration = Date.now() - start;
       const bodyLen = typeof response.data === 'string' ? response.data.length : 0;
+      lastStatus = response.status;
 
       console.log(chalk.gray(`   ${httpCallInfo(response.status, bodyLen, duration, ['listId', listId])} page=${page}`));
 
@@ -652,6 +739,17 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
         } catch (error) {
           // Never fail a crawl over the optional tag record.
           console.log(chalk.gray(`   (could not persist list tags for ${listId}: ${(error as any)?.message})`));
+        }
+      }
+
+      // Header metadata repeats on every page too. Record it on page 1 of every
+      // read — including a partial/capped crawl — so it is not gated on the
+      // list_scrapes "completed crawl" ledger.
+      if (page === 1) {
+        try {
+          upsertListMeta(listId, parseListMeta($));
+        } catch (error) {
+          console.log(chalk.gray(`   (could not persist list meta for ${listId}: ${(error as any)?.message})`));
         }
       }
 
@@ -717,6 +815,7 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
       });
 
       if (pageBooks.length === 0) {
+        completed = true;
         hasNext = false;
         break;
       }
@@ -724,6 +823,7 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
       const firstIdOnThisPage = pageBooks[0].id;
       if (page > 1 && firstIdOnThisPage === lastPageFirstId) {
         console.log(chalk.red.bold(`   ⚠️ Warning: Goodreads is returning Page 1 content for Page ${page}.`));
+        completed = true;
         hasNext = false;
         break;
       }
@@ -732,14 +832,21 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
       allBooks = allBooks.concat(pageBooks);
 
       const nextBtn = $('.next_page');
-      if (nextBtn.length > 0 && !nextBtn.hasClass('disabled') && (maxPages === Infinity || page < maxPages)) {
-        page++;
-        await delay();
+      if (nextBtn.length > 0 && !nextBtn.hasClass('disabled')) {
+        if (maxPages !== Infinity && page >= maxPages) {
+          hasNext = false;
+        } else {
+          page++;
+          await delay();
+        }
       } else {
+        completed = true;
         hasNext = false;
       }
     } catch (error) {
+      caughtError = error;
       const status = (error as any)?.response?.status;
+      if (typeof status === 'number') lastStatus = status;
       console.error(chalk.red.bold(`   ❌ Non-fatal error fetching list ${listId} page ${page}:`), (error as any).message);
       if (page === 1 && (status === 404 || status === 410)) {
         console.log(chalk.yellow(`   ⚠️  List "${listId}" doesn't exist (HTTP ${status}) — is that a real list id, and in the right position? Expects <tag> <listId>, e.g. "space-opera 78971".`));
@@ -764,12 +871,12 @@ export async function scrapeListBooks(listId: string, maxPages = Infinity): Prom
   try {
     // Empty run-scoped memo — see the same note in scrapeShelfBooks: a miss is
     // resolved by one indexed PK lookup, not a full-table load.
-    syncAuthorsToCache(uniqueBooks, {});
+    syncAuthorsToCache(uniqueBooks, {}, source);
   } catch (error) {
     // Ignore cache sync errors in scraper
   }
 
-  return uniqueBooks;
+  return { books: uniqueBooks, pagesRead: page, completed, lastStatus, error: caughtError };
 }
 
 export interface TagListEntry {
@@ -1441,6 +1548,7 @@ async function updateAuthorStatsFromPage($: cheerio.CheerioAPI, authorSlug: stri
     name: stats.name,
     slug: slugForLookup,
     lastSeen: new Date().toISOString(),
+    source: 'author_page_lookup',
   };
   updateAuthorStats(entry, stats);
   // Persist the page's canonical name/slug; ids can outlive their slugs.

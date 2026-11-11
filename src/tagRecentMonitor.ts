@@ -225,7 +225,7 @@ export async function runTagRecentMonitor(options: TagRecentMonitorOptions = {})
       // Main tail read: from the previously-known last page (clamped to the
       // reachable ceiling), letting the live pagination footer drive the stop.
       let shelfBooks = await withConnectivityProbe(
-        () => scrapeShelfBooks(tag, 0, maxReadPages, startPage, { skipAuthorSync: true }),
+        () => scrapeShelfBooks(tag, 0, maxReadPages, startPage, { skipAuthorSync: true, source: 'tag_recent_monitor' }),
         { label: `tag-recent-monitor (tail "${tag}")` }
       );
       let hint = `read pages ${startPage}→live last page`;
@@ -237,7 +237,7 @@ export async function runTagRecentMonitor(options: TagRecentMonitorOptions = {})
       // either way; that page fetch is never thrown away.
       if (needsTailReprobe(shelfBooks.length, anchor)) {
         const probe = await withConnectivityProbe(
-          () => scrapeShelfBooks(tag, 0, 1, 1, { skipAuthorSync: true }),
+          () => scrapeShelfBooks(tag, 0, 1, 1, { skipAuthorSync: true, source: 'tag_recent_monitor' }),
           { label: `tag-recent-monitor (reprobe "${tag}")` }
         );
         const live = getMeasuredShelfPages(tag) ?? xrefPage ?? 0;
@@ -246,7 +246,7 @@ export async function runTagRecentMonitor(options: TagRecentMonitorOptions = {})
           hint = `shelf shrank (tried page ${startPage}, now ${live}) → re-probed from the new last page`;
           shelfBooks = probe.concat(
             await withConnectivityProbe(
-              () => scrapeShelfBooks(tag, 0, Math.max(maxReadPages, live), live, { skipAuthorSync: true }),
+              () => scrapeShelfBooks(tag, 0, Math.max(maxReadPages, live), live, { skipAuthorSync: true, source: 'tag_recent_monitor' }),
               { label: `tag-recent-monitor (tail "${tag}")` }
             )
           );
@@ -257,7 +257,7 @@ export async function runTagRecentMonitor(options: TagRecentMonitorOptions = {})
       }
 
       const bookOutcome = await syncBooksToCache(shelfBooks, {});
-      const authorsAdded = syncAuthorsToCache(shelfBooks, authorCache);
+      const authorsAdded = syncAuthorsToCache(shelfBooks, authorCache, 'tag_recent_monitor');
 
       const measuredNow = getMeasuredShelfPages(tag);
       upsertTagTailScrape(tag, { lastPageSeen: measuredNow, booksAdded: bookOutcome.inserted, authorsAdded });

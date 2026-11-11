@@ -33,7 +33,8 @@ async function appendToAuditReport(listTitle: string, message: string): Promise<
   await fs.appendFile(AUDIT_REPORT, entry);
 }
 
-export async function runTagDiscovery(tagName: string, globalOptions: { minTags?: string, minAvg?: string, maxAvg?: string, cacheOnly?: boolean, shelfPageStart?: string, shelfPageEnd?: string }): Promise<void> {
+export async function runTagDiscovery(tagName: string, globalOptions: { minTags?: string, minAvg?: string, maxAvg?: string, cacheOnly?: boolean, shelfPageStart?: string, shelfPageEnd?: string, source?: string }): Promise<void> {
+  const source = globalOptions.source ?? 'tag_discovery';
   const configPath = path.join(process.cwd(), 'tags', `${tagName}.json`);
   let config: TagConfig | null = null;
   if (await fs.pathExists(configPath)) {
@@ -60,7 +61,7 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   const shelfPageStart = parseInt(globalOptions.shelfPageStart || '1', 10);
   const shelfPageEnd = parseInt(globalOptions.shelfPageEnd || '25', 10);
   console.log(chalk.cyan.bold(`🔎 Step 1: Scanning global shelf "${tagName}" (pages ${shelfPageStart}-${shelfPageEnd})...`));
-  const rawShelfBooks = await scrapeShelfBooks(tagName, minTags, shelfPageEnd, shelfPageStart);
+  const rawShelfBooks = await scrapeShelfBooks(tagName, minTags, shelfPageEnd, shelfPageStart, { source });
   await syncBooksToCache(rawShelfBooks, bookCache);
   
   // Smart Deduplication: Treat different editions as the same book
@@ -197,7 +198,7 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
 
     // Fetch this specific list ONLY if we have candidates
     console.log(chalk.gray(`   📥 Fetching list content for ${candidates.length} candidate(s)...`));
-    const listBooks = await scrapeListBooks(listEntry.id);
+    const listBooks = await scrapeListBooks(listEntry.id, Infinity, source);
     console.log(chalk.gray(`   Found ${listBooks.length} books on list.`));
 
     for (const { book: sb, pos: shelfPos } of candidates) {
@@ -247,7 +248,7 @@ export async function runTagDiscovery(tagName: string, globalOptions: { minTags?
   console.log(chalk.green.bold(`   Book cache updated: ${initialCacheSize.toLocaleString()} → ${endCacheSize.toLocaleString()} books (+${netAdded.toLocaleString()} new books added).`));
 }
 
-export async function runBulkTagDiscovery(options: { start?: string, count?: string, minTags?: string, minAvg?: string, maxAvg?: string, audits?: boolean, cacheOnly?: boolean, pages?: string, shelfPages?: string }): Promise<void> {
+export async function runBulkTagDiscovery(options: { start?: string, count?: string, minTags?: string, minAvg?: string, maxAvg?: string, audits?: boolean, cacheOnly?: boolean, pages?: string, shelfPages?: string, source?: string }): Promise<void> {
   const startNum = parseInt(options.start || '1', 10);
   const countNum = parseInt(options.count || '10', 10);
   const cacheOnly = options.audits ? false : (options.cacheOnly !== undefined ? options.cacheOnly : true);
@@ -336,7 +337,7 @@ export async function runBulkTagDiscovery(options: { start?: string, count?: str
     console.log(chalk.yellow.bold(`==================================================`));
 
     try {
-      await runTagDiscovery(shelfTag, { ...options, cacheOnly, shelfPageStart, shelfPageEnd });
+      await runTagDiscovery(shelfTag, { ...options, cacheOnly, shelfPageStart, shelfPageEnd, source: 'bulk_tag_discovery' });
     } catch (err: any) {
       console.error(chalk.red.bold(`❌ Error running tag discovery for "${shelfTag}":`), err.message);
     }

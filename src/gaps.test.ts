@@ -133,7 +133,7 @@ describe('runTagGaps', () => {
     try {
       await runTagGaps('fantasy', { export: CSV_FILE, library: 'gaps-test', pages: '1', year: '2020' });
       const out = c.out();
-      expect(mockScrape).toHaveBeenCalledWith('fantasy', 0, 1);
+      expect(mockScrape).toHaveBeenCalledWith('fantasy', 0, 1, 1, { source: 'tag_gaps' });
       expect(out).toContain('Tag gaps for shelf "fantasy" — review year 2020');
       expect(out).toContain('[book:Elk Run|e1]');
       expect(out).toContain(', 220 pages');

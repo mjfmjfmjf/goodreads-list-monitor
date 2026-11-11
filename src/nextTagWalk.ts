@@ -81,6 +81,7 @@ export async function runNextTagWalk(options: NextTagWalkOptions = {}): Promise<
           endPage: options.pageEnd,
           listMaxPages: options.listMaxPages,
           skipDays,
+          source: 'next_tag_walk',
         }),
         { label: `tag "${pick.tagName}"` },
       );

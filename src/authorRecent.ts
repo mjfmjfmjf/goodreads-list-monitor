@@ -185,7 +185,7 @@ export async function runAuthorRecent(options: AuthorRecentOptions = {}): Promis
           console.log(chalk.gray(`   (No books from ${minYear}+ on first page)`));
         }
 
-        const entry = getAuthorById(id) ?? snapshotEntry;
+        const entry = getAuthorById(id) ?? { ...snapshotEntry, source: snapshotEntry.source ?? 'author_recent' };
         const prevCatalogPages = entry.catalogPages;
         if (result.catalogPages) entry.catalogPages = result.catalogPages;
         clearAuthorScrapeFailure(id);

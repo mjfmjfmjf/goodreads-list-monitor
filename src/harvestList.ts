@@ -18,13 +18,13 @@ async function harvestList(listId: string) {
     const authorCache: AuthorCache = {};
 
     console.log(chalk.gray(`   Reading list pages...`));
-    const listBooks = await scrapeListBooks(listId);
+    const listBooks = await scrapeListBooks(listId, Infinity, 'harvest_list');
     
     console.log(chalk.green(`   Found ${listBooks.length} books. Syncing to cache...`));
     
     // Sync both book and author caches
     await syncBooksToCache(listBooks, bookCache);
-    await syncAuthorsToCache(listBooks, authorCache);
+    await syncAuthorsToCache(listBooks, authorCache, 'harvest_list');
 
     console.log(chalk.cyan.bold(`\n✅ Harvest complete!`));
     console.log(chalk.gray(`   Updated metadata for ${listBooks.length} books in booksCache.json`));

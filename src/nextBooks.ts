@@ -23,7 +23,7 @@ export async function runNextBooks(tag: string, options: NextBooksOptions = {}):
   console.log(chalk.gray(`   Scanning ${pages} page(s) of https://www.goodreads.com/shelf/show/${tag} (min tags: ${minTags}); already-reviewed books are skipped`));
   console.log(chalk.gray('------------------------------------------'));
 
-  const shelfBooks = await scrapeShelfBooks(tag, minTags, pages);
+  const shelfBooks = await scrapeShelfBooks(tag, minTags, pages, 1, { source: 'next_books' });
 
   const found: typeof shelfBooks = [];
   let reviewedSkipped = 0;

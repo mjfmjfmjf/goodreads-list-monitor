@@ -140,14 +140,14 @@ export async function runNewTagWalker(options: NewTagWalkerOptions = {}): Promis
 
       try {
         const shelfBooks = await withConnectivityProbe(
-          () => scrapeShelfBooks(tag, minTags, end, 1, { skipAuthorSync: true }),
+          () => scrapeShelfBooks(tag, minTags, end, 1, { skipAuthorSync: true, source: 'walk_new_tags' }),
           { label: `new-tag walker (shelf "${tag}")` }
         );
 
         // Sync the scraped shelf into the book cache and mint its authors,
         // counting what was newly added this tag.
         const bookOutcome = await syncBooksToCache(shelfBooks, {});
-        const authorAdded = syncAuthorsToCache(shelfBooks, authorCache);
+        const authorAdded = syncAuthorsToCache(shelfBooks, authorCache, 'walk_new_tags');
         totalBooks += shelfBooks.length;
         totalBooksNew += bookOutcome.inserted;
         totalAuthors += authorAdded;

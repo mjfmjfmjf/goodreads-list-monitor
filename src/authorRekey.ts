@@ -19,6 +19,7 @@ export interface AuthorRow {
   num_shelves?: number | null;
   catalog_pages?: number | null;
   ratings_rate?: number | null;
+  source?: string | null;
 }
 
 export interface MergedAuthor {
@@ -33,6 +34,7 @@ export interface MergedAuthor {
   num_shelves: number;
   catalog_pages: number | null;
   ratings_rate: number | null;
+  source: string | null;
 }
 
 const num = (v: unknown): number => {
@@ -96,6 +98,7 @@ export function mergeAuthorRows(rows: AuthorRow[]): MergedAuthor {
     num_shelves: maxField('num_shelves'),
     catalog_pages: rows.some((r) => r.catalog_pages != null) ? maxField('catalog_pages') : null,
     ratings_rate: maxRatingsRow.ratings_rate ?? null,
+    source: latestSeenRow.source ?? maxRatingsRow.source ?? rows.find((r) => r.source)?.source ?? null,
   };
 }
 
@@ -111,15 +114,16 @@ const AUTHORS_NEW_DDL = `
     num_shelves INTEGER DEFAULT 0,
     first_seen TEXT,
     catalog_pages INTEGER,
-    ratings_rate REAL
+    ratings_rate REAL,
+    source TEXT
   );
 `;
 
 const INSERT_NEW = `
   INSERT INTO authors_new
-    (id, name, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves, first_seen, catalog_pages, ratings_rate)
+    (id, name, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves, first_seen, catalog_pages, ratings_rate, source)
   VALUES
-    (@id, @name, @slug, @last_seen, @average_rating, @num_ratings, @num_reviews, @num_shelves, @first_seen, @catalog_pages, @ratings_rate)
+    (@id, @name, @slug, @last_seen, @average_rating, @num_ratings, @num_reviews, @num_shelves, @first_seen, @catalog_pages, @ratings_rate, @source)
 `;
 
 // Backfill author_slugs from the pre-collapse rows: one entry per (id, slug),

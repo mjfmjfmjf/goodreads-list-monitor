@@ -84,6 +84,7 @@ export async function runGapGenreTagDiscovery(options: GapGenreDiscoveryOptions 
           minTags: options.minTags,
           shelfPageStart,
           shelfPageEnd,
+          source: 'gap_genre_tag_discovery',
         }),
         { label: `gap genre scrape "${g.name}"` }
       );

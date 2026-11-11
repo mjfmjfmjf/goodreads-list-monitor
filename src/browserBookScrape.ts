@@ -353,7 +353,7 @@ export async function processBook(
       const ts = new Date().toISOString();
       const slug = parsed.authorSlug || `${authorId}.${authorName.replace(/[^\w]/g, '').trim().replace(/\s+/g, '_')}`;
       withDbLockRetry(() =>
-        upsertAuthor(authorName, { id: authorId, slug, lastSeen: ts, firstSeen: ts })
+        upsertAuthor(authorName, { id: authorId, slug, lastSeen: ts, firstSeen: ts, source: 'browser_book_scrape' })
       );
     }
   }

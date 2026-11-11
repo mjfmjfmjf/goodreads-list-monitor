@@ -324,3 +324,180 @@ export async function runRatingsCoverageHistogram(): Promise<void> {
   const counts = buildCoverageCounts(mapRows(), fieldIds);
   for (const line of renderCoverageHistogram(counts)) console.log(line);
 }
+
+// ── Scope + rollup histogram ─────────────────────────────────────────
+// A cross between the plain ratings histogram (count / % / cumulative) and the
+// coverage histogram (ALL vs WORK-ID vs WORKS). For each scope it prints, per
+// bracket: # (count), % (share of that scope), ROLLUP (this bracket and every
+// higher one — "at least this many ratings") and ROLLDOWN (this bracket and
+// every lower one — "at most this many ratings").
+//   ALL     — every cached book
+//   WORK-ID — cached books that have a work id (books.work_id)
+//   WORKS   — distinct works, one representative edition each (books.is_work_rep)
+
+export interface ScopeBook {
+  ratings?: string | number | null;
+  workId?: string | null;
+  workRep?: boolean;
+}
+
+export interface RatingsScopeCounts {
+  all: number[];
+  work: number[];
+  works: number[];
+  totalAll: number;
+  totalWork: number;
+  totalWorks: number;
+}
+
+export function buildRatingsScopeCounts(
+  books: Iterable<ScopeBook>,
+  buckets: RatingBucket[] = BUCKETS,
+): RatingsScopeCounts {
+  const all = new Array<number>(buckets.length).fill(0);
+  const work = new Array<number>(buckets.length).fill(0);
+  const works = new Array<number>(buckets.length).fill(0);
+  let totalAll = 0;
+  let totalWork = 0;
+  let totalWorks = 0;
+
+  for (const book of books) {
+    const rawRatings = (book.ratings || '0').toString().replace(/,/g, '');
+    const idx = bucketIndexFor(parseInt(rawRatings, 10) || 0, buckets);
+    all[idx]++;
+    totalAll++;
+    if (book.workId) {
+      work[idx]++;
+      totalWork++;
+    }
+    if (book.workRep) {
+      works[idx]++;
+      totalWorks++;
+    }
+  }
+
+  return { all, work, works, totalAll, totalWork, totalWorks };
+}
+
+// Buckets run highest -> lowest, so ROLLUP is a prefix sum and ROLLDOWN is a
+// suffix sum (inclusive of the current bracket).
+function rollUp(counts: number[]): number[] {
+  let acc = 0;
+  return counts.map(c => (acc += c));
+}
+
+function rollDown(counts: number[]): number[] {
+  const up = rollUp(counts);
+  const total = up.length > 0 ? up[up.length - 1] : 0;
+  return counts.map((c, i) => total - up[i] + c);
+}
+
+export interface RatingsScopeRenderOptions {
+  // Compact plain-text table sized for a Reddit post: drop the % and ROLLDOWN
+  // columns (keep # and ROLLUP per scope). This roughly halves the width so the
+  // full 65-bracket table stays under Reddit's 10k-character limit.
+  reddit?: boolean;
+}
+
+export function renderRatingsScopeHistogram(
+  c: RatingsScopeCounts,
+  buckets: RatingBucket[] = BUCKETS,
+  options: RatingsScopeRenderOptions = {},
+): string[] {
+  const reddit = !!options.reddit;
+  const lines: string[] = [];
+  const pct = (part: number, whole: number) => (whole > 0 ? ((part / whole) * 100).toFixed(1) : '0.0') + '%';
+
+  const allUp = rollUp(c.all);
+  const allDown = rollDown(c.all);
+  const workUp = rollUp(c.work);
+  const workDown = rollDown(c.work);
+  const worksUp = rollUp(c.works);
+  const worksDown = rollDown(c.works);
+
+  const groups = [
+    { name: 'ALL', counts: c.all, total: c.totalAll, up: allUp, down: allDown, color: chalk.yellow },
+    { name: 'WORK-ID', counts: c.work, total: c.totalWork, up: workUp, down: workDown, color: chalk.green },
+    { name: 'WORKS', counts: c.works, total: c.totalWorks, up: worksUp, down: worksDown, color: chalk.green },
+  ];
+
+  const cols = groups.map(g => {
+    const nHead = `${g.name} #`;
+    const pHead = `${g.name} %`;
+    const upHead = `${g.name} ROLLUP`;
+    const downHead = `${g.name} ROLLDOWN`;
+    return {
+      nHead, pHead, upHead, downHead,
+      n: Math.max(nHead.length, formatNum(g.total).length),
+      p: Math.max(pHead.length, 6), // "100.0%"
+      up: Math.max(upHead.length, formatNum(g.total).length),
+      down: Math.max(downHead.length, formatNum(g.total).length),
+    };
+  });
+
+  const maxLabelWidth = Math.max(...buckets.map(b => b.label.length));
+  const LW = maxLabelWidth + 1;
+  const groupWidth = cols.reduce(
+    (a, col) => a + col.n + col.up + (reddit ? 0 : col.p + col.down),
+    0,
+  );
+  const valueCols = reddit ? 6 : 12;
+  const rule = '-'.repeat(LW + groupWidth + valueCols * 3);
+
+  const header = 'RATING BRACKET'.padEnd(LW) + ' | ' + cols.map(col => {
+    const cells = [col.nHead.padStart(col.n)];
+    if (!reddit) cells.push(col.pHead.padStart(col.p));
+    cells.push(col.upHead.padStart(col.up));
+    if (!reddit) cells.push(col.downHead.padStart(col.down));
+    return cells.join(' | ');
+  }).join(' | ');
+
+  if (!reddit) lines.push('');
+  lines.push(chalk.cyan.bold(reddit ? 'Goodreads Ratings Histogram by Scope' : 'Book Cache Ratings Histogram by Scope'));
+  lines.push(chalk.gray('   ALL = cached books · WORK-ID = books with a work id · WORKS = distinct works (is_work_rep)'));
+  if (reddit) {
+    lines.push(chalk.gray('   ROLLUP = this bracket and above (ratings >=)'));
+  } else {
+    lines.push(chalk.gray('   % = share of that scope · ROLLUP = this bracket and above (ratings >=) · ROLLDOWN = this bracket and below (ratings <=)'));
+  }
+  lines.push(chalk.gray(rule));
+  lines.push(chalk.white(header));
+  lines.push(chalk.gray(rule));
+
+  const num = (val: number, width: number, color: (s: string) => string, dimZero = false) => {
+    const s = formatNum(val).padStart(width);
+    return dimZero && val === 0 ? chalk.gray(s) : color(s);
+  };
+
+  for (let i = 0; i < buckets.length; i++) {
+    const label = buckets[i].label.padEnd(LW);
+    const cells = groups.map((g, gi) => {
+      const col = cols[gi];
+      const parts = [num(g.counts[i], col.n, g.color, true)];
+      if (!reddit) parts.push(chalk.cyan(pct(g.counts[i], g.total).padStart(col.p)));
+      parts.push(chalk.magenta(formatNum(g.up[i]).padStart(col.up)));
+      if (!reddit) parts.push(chalk.cyan(formatNum(g.down[i]).padStart(col.down)));
+      return parts.join(' | ');
+    }).join(' | ');
+    lines.push(`${chalk.white(label)} | ${cells}`);
+  }
+
+  lines.push(chalk.gray(rule));
+  lines.push(chalk.cyan.bold(
+    `Total: cache ${formatNum(c.totalAll)} | work-id ${formatNum(c.totalWork)} (${pct(c.totalWork, c.totalAll)} of cache) | works ${formatNum(c.totalWorks)} (${pct(c.totalWorks, c.totalAll)} of cache)`
+  ));
+  return lines;
+}
+
+export async function runRatingsScopeHistogram(options: RatingsScopeRenderOptions = {}): Promise<void> {
+  const rows = streamRows<{ ratings: number | null; work_id: string | null; is_work_rep: number | null }>(
+    'SELECT ratings, work_id, is_work_rep FROM books'
+  );
+  function* mapRows() {
+    for (const r of rows) {
+      yield { ratings: r.ratings, workId: r.work_id || undefined, workRep: !!r.is_work_rep };
+    }
+  }
+  const counts = buildRatingsScopeCounts(mapRows());
+  for (const line of renderRatingsScopeHistogram(counts, BUCKETS, options)) console.log(line);
+}

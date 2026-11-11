@@ -52,6 +52,14 @@ describe('mergeAuthorRows', () => {
     // canonical name matches the canonical slug suffix (normalized), not the old slug
     expect(merged.name).toBe('Stephen   Witt');
   });
+
+  it('preserves the latest-seen source instead of dropping provenance', () => {
+    const merged = mergeAuthorRows([
+      row({ id: '42', name: 'Sourced Author', slug: '42.Sourced_Author', last_seen: '2025-01-01', source: 'author_mint' }),
+      row({ id: '42', name: 'Sourced Author', slug: '42.Sourced_Author', last_seen: '2026-09-01', source: 'list_tag_walk' }),
+    ]);
+    expect(merged.source).toBe('list_tag_walk');
+  });
 });
 
 const OLD_SCHEMA = `
@@ -68,7 +76,8 @@ const OLD_SCHEMA = `
     catalog_pages INTEGER,
     fail_count INTEGER DEFAULT 0,
     last_error TEXT,
-    ratings_rate REAL
+    ratings_rate REAL,
+    source TEXT
   );
   CREATE TABLE author_slugs (
     author_id TEXT NOT NULL,
@@ -81,14 +90,15 @@ const OLD_SCHEMA = `
 `;
 
 const insertOld = (db: Database.Database, r: Partial<AuthorRow> & { name: string; id: string }) =>
-  db.prepare(`INSERT INTO authors (name, id, slug, last_seen, num_ratings, first_seen)
-    VALUES (@name, @id, @slug, @last_seen, @num_ratings, @first_seen)`).run({
+  db.prepare(`INSERT INTO authors (name, id, slug, last_seen, num_ratings, first_seen, source)
+    VALUES (@name, @id, @slug, @last_seen, @num_ratings, @first_seen, @source)`).run({
     name: r.name,
     id: r.id,
     slug: r.slug ?? null,
     last_seen: r.last_seen ?? '2026-01-01',
     num_ratings: r.num_ratings ?? 0,
     first_seen: r.first_seen ?? null,
+    source: r.source ?? null,
   });
 
 describe('rekeyAuthors', () => {

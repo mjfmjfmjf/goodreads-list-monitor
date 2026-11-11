@@ -1,5 +1,25 @@
   [
     {
+      "nickname": "50,000 to 59,999",
+      "officialTitle": "Books with between 50,000 and 59,999 to-read shelf counts",
+      "id": "141033",
+      "url": "https://www.goodreads.com/list/show/141033",
+      "criteria": {
+        "min": 50000,
+        "max": 59999
+      }
+    },
+    {
+      "nickname": "60,000 to 69,999",
+      "officialTitle": "Books with between 60,000 and 69,999 to-read shelf counts",
+      "id": "141034",
+      "url": "https://www.goodreads.com/list/show/141034",
+      "criteria": {
+        "min": 60000,
+        "max": 69999
+      }
+    },
+    {
       "nickname": "70,000 to 79,999",
       "officialTitle": "Books with between 70,000 and 79,999 to-read shelf counts",
       "id": "141035",

@@ -452,7 +452,7 @@ const sortBy = (options.sortBy || (options.rescanMissingField ? 'topRatings' : '
           }
           // Re-read fresh so we merge against current values (another process
           // may have updated this row since the snapshot was taken).
-          const entry = getAuthorById(id) ?? snapshotEntry;
+          const entry = getAuthorById(id) ?? { ...snapshotEntry, source: snapshotEntry.source ?? 'author_rescan' };
           const prevCatalogPages = entry.catalogPages;
           if (result.catalogPages) entry.catalogPages = result.catalogPages;
           clearAuthorScrapeFailure(id);

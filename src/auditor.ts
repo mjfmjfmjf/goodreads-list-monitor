@@ -24,6 +24,7 @@ export interface AuditOptions {
   authorLastRegex?: string;
   authorFirstRegex?: string;
   seriesPos?: string;
+  source?: string;
 }
 
 export interface AuditResult {
@@ -154,6 +155,7 @@ export function resolveMissingWorkIds(
 }
 
 export async function runTagAudit(tag: string, listId: string, options: AuditOptions): Promise<void> {
+  const source = options.source ?? 'tag_audit';
   // Guard against the #1 invocation mistake: swapping <tag> and <listId>.
   // Tags are shelf slugs ("space-opera"); list ids are numeric ("78971").
   const listIdIsPlausible = /^\d+$/.test(listId.trim()) || listId.includes('/');
@@ -189,7 +191,7 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
   try {
     // 1. Discovery Phase: Read the Tag/Shelf pages first
     console.log(chalk.cyan.bold(`🔎 Step 1: Discovering eligible books from shelf "${tag}"...`));
-    const shelfBooks = await scrapeShelfBooks(tag, minTags, 25);
+    const shelfBooks = await scrapeShelfBooks(tag, minTags, 25, 1, { source });
     await withDbLockRetryAsync(() => syncBooksToCache(shelfBooks, bookCache));
     
     // Filter shelf books by ratings, years, and average rating
@@ -218,7 +220,7 @@ export async function runTagAudit(tag: string, listId: string, options: AuditOpt
 
     // 2. Verification Phase: Read the Listopia list
     console.log(chalk.cyan.bold(`\n📥 Step 2: Reading the Listopia list...`));
-    const listBooks = await scrapeListBooks(listId);
+    const listBooks = await scrapeListBooks(listId, Infinity, source);
     console.log(chalk.gray(`   Found ${listBooks.length} books currently on the list.`));
 
     const toAdd: string[] = [];
@@ -325,6 +327,7 @@ async function updateCache(book: any, tag: string, bookCache: any) {
 }
 
 export async function runAudit(listId: string, options: AuditOptions): Promise<AuditResult> {
+  const source = options.source ?? 'audit';
   const state = await withDbLockRetryAsync(() => Promise.resolve(loadState()));
   const bookCache: BookCache = {};
   const listTitle = state.lists[listId]?.title || `List ${listId}`;
@@ -412,7 +415,7 @@ export async function runAudit(listId: string, options: AuditOptions): Promise<A
   }
 
   try {
-    const listBooks = await scrapeListBooks(listId);
+    const listBooks = await scrapeListBooks(listId, Infinity, source);
     await withDbLockRetryAsync(() => syncBooksToCache(listBooks, bookCache));
     result.totalBooks = listBooks.length;
     

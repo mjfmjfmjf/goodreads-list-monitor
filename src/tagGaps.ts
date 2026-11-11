@@ -202,7 +202,7 @@ export async function runTagGaps(tag: string, options: TagGapsOptions = {}): Pro
   const library = await getLibrary(options);
   const year = resolveYear(options, library);
 
-  const shelfBooks = await scrapeShelfBooks(tag, minTags, pages);
+  const shelfBooks = await scrapeShelfBooks(tag, minTags, pages, 1, { source: 'tag_gaps' });
 
   const scanBooks: ScanBook[] = shelfBooks.map(book => ({
     title: book.title,

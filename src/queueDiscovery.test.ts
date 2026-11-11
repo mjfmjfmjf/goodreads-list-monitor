@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pruneCandidates, isAlreadyOnList, resolveListWorkIds, candidatePassesRequireWorkId } from './queueDiscovery.ts';
+import { pruneCandidates, filterByWorkRatingsRange, isAlreadyOnList, resolveListWorkIds, candidatePassesRequireWorkId } from './queueDiscovery.ts';
 import type { CachedBook } from './storage.ts';
 
 const book = (over: Partial<CachedBook> = {}): CachedBook => ({
@@ -64,6 +64,35 @@ describe('pruneCandidates', () => {
     ]);
     expect(out).toHaveLength(1);
     expect(out[0].id).toBe('en');
+  });
+});
+
+describe('filterByWorkRatingsRange', () => {
+  const MIN = 200000;
+  const MAX = 499999;
+
+  it('drops a work whose highest-ratings edition is over the ceiling', () => {
+    const cand = book({ id: '43248588', ratings: '495451', workId: '65437442' });
+    const out = filterByWorkRatingsRange([cand], MIN, MAX, id => (id === '65437442' ? 500140 : undefined));
+    expect(out).toEqual([]);
+  });
+
+  it('keeps a work whose chosen edition is in range', () => {
+    const cand = book({ id: '43248588', ratings: '495451', workId: '65437442' });
+    const out = filterByWorkRatingsRange([cand], MIN, MAX, () => 495451);
+    expect(out.map(b => b.id)).toEqual(['43248588']);
+  });
+
+  it('falls back to the candidate ratings when the work max is unknown', () => {
+    const cand = book({ id: 'x', ratings: '250000', workId: 'w1' });
+    expect(filterByWorkRatingsRange([cand], MIN, MAX, () => undefined)).toHaveLength(1);
+    const noWork = book({ id: 'y', ratings: '250000' });
+    expect(filterByWorkRatingsRange([noWork], MIN, MAX, () => 999999)).toHaveLength(1);
+  });
+
+  it('does not lower the candidate to a smaller work max', () => {
+    const cand = book({ id: 'x', ratings: '300000', workId: 'w1' });
+    expect(filterByWorkRatingsRange([cand], MIN, MAX, () => 100000)).toHaveLength(1);
   });
 });
 

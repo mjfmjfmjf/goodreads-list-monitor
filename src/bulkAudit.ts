@@ -26,7 +26,7 @@ export async function runBulkAudit(customConfigFile?: string): Promise<void> {
 
     console.log(chalk.yellow.bold(`\n[${i + 1}/${lists.length}] List: "${list.officialTitle}" (ID: ${list.id})`));
 
-    const auditOptions: AuditOptions = {};
+    const auditOptions: AuditOptions = { source: 'bulk_audit' };
     if (min !== undefined) auditOptions.min = min.toString();
     if (max !== undefined) auditOptions.max = max.toString();
     if (minYear !== undefined) auditOptions.minYear = minYear.toString();

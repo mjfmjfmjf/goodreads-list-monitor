@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import chalk from 'chalk';
 import { getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, recordAuthorScrapeFailure, authorExistsById } from './storage.ts';
 import type { AuthorCacheEntry } from './storage.ts';
@@ -9,7 +10,7 @@ import { delay, isConnectivityError, parseDelayRange } from './utils.ts';
 function parseAuthorInput(input: string): { id: string; slug: string } | undefined {
   const trimmed = input.trim();
 
-  const urlMatch = trimmed.match(/\/author\/show\/([^?#\s/]+)/);
+  const urlMatch = trimmed.match(/\/author\/show\/([^?#\s/<]+)/);
   if (urlMatch) {
     const slug = urlMatch[1];
     const id = slug.split('.')[0];
@@ -29,12 +30,34 @@ function parseAuthorInput(input: string): { id: string; slug: string } | undefin
   return undefined;
 }
 
+const SITEMAP_LOC_RE = /<loc\b[^>]*>([\s\S]*?)<\/loc>/gi;
+
+const decodeXmlText = (text: string): string =>
+  text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+
+// Sitemaps are one <loc> per author URL, wrapped in <url>/<lastmod> scaffolding.
+// Pulling out only <loc> avoids counting every XML tag as an unparseable author.
+function splitAuthorFile(raw: string): { lines: string[]; isSitemap: boolean } {
+  const text = raw.replace(/^\uFEFF/, '');
+  if (/^\s*(?:<\?xml\b[^>]*>\s*)?<urlset\b/i.test(text)) {
+    const lines = [...text.matchAll(SITEMAP_LOC_RE)].map((m) => decodeXmlText(m[1]).trim());
+    return { lines, isSitemap: true };
+  }
+  return { lines: text.split(/\r?\n/), isSitemap: false };
+}
+
 const fallbackNameFromSlug = (slug: string): string =>
   slug.split('.').slice(1).join('.').replace(/_/g, ' ');
 
 interface AuthorOneOptions {
   multiPage?: boolean;
   withCookie?: boolean;
+  dryRun?: boolean;
 }
 
 interface StoredAuthor {
@@ -49,7 +72,11 @@ interface StoredAuthor {
 
 // Persist one scraped author page: create/merge the cache row and bump stats.
 // Shared by the single-author command and the --file batch importer.
-function storeAuthorStats(parsed: { id: string; slug: string }, result: AuthorStatsResult): StoredAuthor {
+export function storeAuthorStats(
+  parsed: { id: string; slug: string },
+  result: AuthorStatsResult,
+  source = 'author_one',
+): StoredAuthor {
   const stats = result.stats;
   const slug = stats.slug || parsed.slug;
   const id = parsed.id;
@@ -62,6 +89,7 @@ function storeAuthorStats(parsed: { id: string; slug: string }, result: AuthorSt
     name,
     slug,
     lastSeen: new Date().toISOString(),
+    source,
   } as AuthorCacheEntry;
   // Persist the page's canonical name/slug; ids can outlive their slugs.
   if (stats.name) entry.name = stats.name;
@@ -90,6 +118,14 @@ export async function runAuthorOne(input: string, options: AuthorOneOptions = {}
   const parsed = parseAuthorInput(input);
   if (!parsed) {
     console.error(chalk.red.bold(`Error: could not parse "${input}" as a Goodreads author URL, slug, or ID.`));
+    return;
+  }
+
+  if (options.dryRun) {
+    const cached = authorExistsById(parsed.id);
+    console.log(chalk.cyan.bold(
+      `\n👤 Author dry run: ${parsed.slug} — ${cached ? 'already cached (would skip)' : 'would scrape'}`
+    ));
     return;
   }
 
@@ -132,26 +168,34 @@ export async function runAuthorOne(input: string, options: AuthorOneOptions = {}
   }
 }
 
-// Batch variant: read author IDs / URLs / slugs one per line and scrape each
-// with the same pacing and connectivity handling as author-one. Lines already
-// present in the author cache are skipped, so re-running a list only fills the
-// misses. Blank lines and # comments are ignored.
+// Batch variant: read author IDs / URLs / slugs one per line (plain text or a
+// Goodreads author sitemap XML, optionally gzipped) and scrape each with the
+// same pacing and connectivity handling as author-one. Authors already present
+// in the cache are skipped, so re-running a list only fills the misses. Blank
+// lines and # comments are ignored in plain-text files.
 export async function runAuthorOneFile(filePath: string, options: AuthorOneOptions = {}): Promise<void> {
   let raw: string;
   try {
-    raw = readFileSync(filePath, 'utf8');
+    const buffer = readFileSync(filePath);
+    const gzipped = buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+    raw = (gzipped ? gunzipSync(buffer) : buffer).toString('utf8');
   } catch (error) {
     console.error(chalk.red.bold(`Error: could not read author list file "${filePath}": ${(error as any).message}`));
     return;
   }
 
+  const { lines, isSitemap } = splitAuthorFile(raw);
   const seen = new Set<string>();
   const todo: { id: string; slug: string }[] = [];
   let unparseable = 0;
   let alreadyPresent = 0;
-  for (const line of raw.split(/\r?\n/)) {
+  for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
+    if (!trimmed) {
+      if (isSitemap) unparseable++;
+      continue;
+    }
+    if (!isSitemap && trimmed.startsWith('#')) continue;
     const parsed = parseAuthorInput(trimmed);
     if (!parsed) {
       unparseable++;
@@ -167,10 +211,15 @@ export async function runAuthorOneFile(filePath: string, options: AuthorOneOptio
   }
 
   console.log(chalk.cyan.bold(
-    `\n👤 Author batch: scraping ${todo.length} from ${filePath}` +
+    `\n👤 Author batch: ${options.dryRun ? 'would scrape' : 'scraping'} ${todo.length} from ${filePath}` +
+    `${isSitemap ? ' (sitemap)' : ''}` +
     `${options.multiPage ? ' (full catalog crawl)' : ''}` +
     ` — ${alreadyPresent} already cached, ${unparseable} unparseable, ${seen.size} unique ids`
   ));
+  if (options.dryRun) {
+    console.log(chalk.gray('   (dry run — no author pages fetched, nothing written)'));
+    return;
+  }
 
   // Anonymous crawls (no cookie) run at a faster but still polite cadence;
   // GR_AUTHOR_DELAY_MS overrides either profile ("min,max"). This is the gap

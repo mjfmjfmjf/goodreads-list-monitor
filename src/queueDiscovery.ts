@@ -157,6 +157,29 @@ export function pruneCandidates(candidates: CachedBook[]): CachedBook[] {
   return merged;
 }
 
+// A work's "chosen" edition is its highest-ratings edition — the same rule
+// pruneCandidates uses. If that edition sits outside the list's ratings range,
+// the work no longer belongs to the range even when a stale lower-rated sibling
+// is still cached in range (e.g. The Friend Zone at 495,451 while another
+// edition has crossed 500,000). The caller supplies the work's max ratings so
+// this stays pure and testable; the check itself is DB-only, no network.
+export function filterByWorkRatingsRange(
+  books: CachedBook[],
+  minVal: number,
+  maxVal: number,
+  maxRatingsForWork: (workId: string) => number | undefined,
+): CachedBook[] {
+  const ratingsOf = (c: CachedBook): number => parseInt(c.ratings.replace(/,/g, ''), 10) || 0;
+  return books.filter(c => {
+    let ratings = ratingsOf(c);
+    if (c.workId) {
+      const workMax = maxRatingsForWork(c.workId);
+      if (workMax !== undefined && workMax > ratings) ratings = workMax;
+    }
+    return ratings >= minVal && ratings <= maxVal;
+  });
+}
+
 export async function runQueueDiscovery(
   customConfigFile?: string,
   globalOptions: { sortBy?: string; minAvg?: string; maxAvg?: string; listId?: string; requireWorkId?: boolean } = {}
@@ -368,10 +391,23 @@ export async function runQueueDiscovery(
     // instead of surfacing editions that would show as duplicates if added.
     const prunedCandidates = pruneCandidates(sortedCandidates);
 
+    // Range-check the work's chosen (highest-ratings) edition, not just the
+    // in-range edition that survived collection. Otherwise a stale sibling can
+    // be proposed for a range its work has already left.
+    const maxRatingsStmt = getDb().prepare(
+      'SELECT MAX(ratings) AS maxRatings FROM books WHERE work_id = ? AND COALESCE(is_bad, 0) = 0'
+    );
+    const inRangeCandidates = filterByWorkRatingsRange(
+      prunedCandidates,
+      minVal,
+      maxVal,
+      (workId) => (maxRatingsStmt.get(workId) as { maxRatings: number | null } | undefined)?.maxRatings ?? undefined,
+    );
+
     const toAdd: string[] = [];
 
-    console.log(chalk.gray(`   📥 Fetching list content to check against ${prunedCandidates.length} candidate(s)...`));
-    const listBooks = await scrapeListBooks(listEntry.id);
+    console.log(chalk.gray(`   📥 Fetching list content to check against ${inRangeCandidates.length} candidate(s)...`));
+    const listBooks = await scrapeListBooks(listEntry.id, Infinity, 'queue_discovery');
     console.log(chalk.gray(`   Found ${listBooks.length} books on list.`));
 
     // Resolve every list book to a workId via the cache. Editions/translations
@@ -404,7 +440,7 @@ export async function runQueueDiscovery(
     }
     const listWorkIds = resolveListWorkIds(listBooks, listCache);
 
-    for (const sb of prunedCandidates) {
+    for (const sb of inRangeCandidates) {
       const sbWorkId = getBook(sb.id)?.workId;
       const alreadyOnList = isAlreadyOnList(sb, listBooks, listWorkIds, sbWorkId);
       if (!alreadyOnList) {

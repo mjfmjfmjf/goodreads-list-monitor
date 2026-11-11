@@ -147,6 +147,7 @@ export async function runAuthorTopBooks(n: number, options: AuthorTopBooksOption
         name: author.name,
         slug: author.slug,
         lastSeen: new Date().toISOString(),
+        source: 'author_top_books',
       };
       const prevCatalogPages = entry.catalogPages;
       if (result.catalogPages) entry.catalogPages = result.catalogPages;

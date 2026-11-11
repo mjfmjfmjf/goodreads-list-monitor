@@ -7,6 +7,9 @@ npm-debug.log*
 .DS_Store
 coverage/
 
+# Generated static publish output
+publish/
+
 # Large data/cache files
 authorsCache.json
 booksCache.json

@@ -630,23 +630,108 @@ export interface ListScrapeRow {
   listName: string;
   firstScraped: string;
   lastScraped: string;
+  numScraped: number;             // completed scrapes (1 on first, +1 per re-crawl)
+  numBooksScraped: number | null; // books in the last completed crawl
 }
 
-export function upsertListScrape(listId: string, listName: string | null, now = new Date().toISOString()): void {
+// numBooksScraped = books returned by the last completed crawl. Pass null
+// (default) to leave a previously-recorded count untouched; pass 0 for a gone
+// list. Every call increments the completed-scrape counter (num_scraped).
+export function upsertListScrape(
+  listId: string,
+  listName: string | null,
+  now = new Date().toISOString(),
+  numBooksScraped: number | null = null,
+): void {
   getDb().prepare(`
-    INSERT INTO list_scrapes (list_id, list_name, first_scraped, last_scraped)
-    VALUES (@listId, @listName, @now, @now)
+    INSERT INTO list_scrapes (list_id, list_name, first_scraped, last_scraped, num_scraped, num_books_scraped)
+    VALUES (@listId, @listName, @now, @now, 1, @numBooksScraped)
     ON CONFLICT(list_id) DO UPDATE SET
       list_name = COALESCE(excluded.list_name, list_scrapes.list_name),
-      last_scraped = excluded.last_scraped
-  `).run({ listId, listName, now });
+      last_scraped = excluded.last_scraped,
+      num_scraped = COALESCE(list_scrapes.num_scraped, 0) + 1,
+      num_books_scraped = COALESCE(excluded.num_books_scraped, list_scrapes.num_books_scraped)
+  `).run({ listId, listName, now, numBooksScraped });
 }
 
 export function loadListScrape(listId: string): ListScrapeRow | undefined {
   const row = getDb().prepare('SELECT * FROM list_scrapes WHERE list_id = ?').get(listId) as any;
   return row
-    ? { listId: row.list_id, listName: row.list_name, firstScraped: row.first_scraped, lastScraped: row.last_scraped }
+    ? {
+        listId: row.list_id,
+        listName: row.list_name,
+        firstScraped: row.first_scraped,
+        lastScraped: row.last_scraped,
+        numScraped: Number(row.num_scraped ?? 0),
+        numBooksScraped: row.num_books_scraped ?? null,
+      }
     : undefined;
+}
+
+// ── List header metadata ─────────────────────────────────────────
+// The list page's right-hand sidebar states how many books/voters it has, when
+// it was created and by whom, and how many likes it has. This is read on page 1
+// of EVERY list read (partial crawls included), so unlike list_scrapes it is not
+// a "completed crawl" ledger. Counts track the latest read; the creation date
+// and creator are immutable and only ever fill in.
+
+export interface ListMeta {
+  numBooks?: number;
+  numVoters?: number;
+  createdAt?: string; // YYYY-MM-DD
+  creatorId?: string;
+  creatorName?: string;
+  numLikes?: number;
+}
+
+export interface ListMetaRow extends ListMeta {
+  listId: string;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+export function upsertListMeta(listId: string, meta: ListMeta, now = new Date().toISOString()): void {
+  const hasAny = meta.numBooks != null || meta.numVoters != null || meta.createdAt != null ||
+    meta.creatorId != null || meta.creatorName != null || meta.numLikes != null;
+  // A page we could not parse must not mint an empty row.
+  if (!hasAny) return;
+  getDb().prepare(`
+    INSERT INTO list_meta (list_id, num_books, num_voters, created_at, creator_id, creator_name, num_likes, first_seen, last_seen)
+    VALUES (@listId, @numBooks, @numVoters, @createdAt, @creatorId, @creatorName, @numLikes, @now, @now)
+    ON CONFLICT(list_id) DO UPDATE SET
+      num_books = COALESCE(excluded.num_books, list_meta.num_books),
+      num_voters = COALESCE(excluded.num_voters, list_meta.num_voters),
+      created_at = COALESCE(list_meta.created_at, excluded.created_at),
+      creator_id = COALESCE(list_meta.creator_id, excluded.creator_id),
+      creator_name = COALESCE(list_meta.creator_name, excluded.creator_name),
+      num_likes = COALESCE(excluded.num_likes, list_meta.num_likes),
+      last_seen = excluded.last_seen
+  `).run({
+    listId,
+    numBooks: meta.numBooks ?? null,
+    numVoters: meta.numVoters ?? null,
+    createdAt: meta.createdAt ?? null,
+    creatorId: meta.creatorId ?? null,
+    creatorName: meta.creatorName ?? null,
+    numLikes: meta.numLikes ?? null,
+    now,
+  });
+}
+
+export function loadListMeta(listId: string): ListMetaRow | undefined {
+  const row = getDb().prepare('SELECT * FROM list_meta WHERE list_id = ?').get(listId) as any;
+  if (!row) return undefined;
+  return {
+    listId: row.list_id,
+    numBooks: row.num_books ?? undefined,
+    numVoters: row.num_voters ?? undefined,
+    createdAt: row.created_at ?? undefined,
+    creatorId: row.creator_id ?? undefined,
+    creatorName: row.creator_name ?? undefined,
+    numLikes: row.num_likes ?? undefined,
+    firstSeen: row.first_seen,
+    lastSeen: row.last_seen,
+  };
 }
 
 // ── List tags ────────────────────────────────────────────────────
@@ -996,7 +1081,7 @@ function bindAuthor(id: string, e: AuthorCacheEntry) {
     catalogPages: e.catalogPages ?? null,
     failCount: e.failCount ?? null,
     ratingsRate: e.ratingsRate ?? null,
-    source: (e as any).source ?? null,
+    source: e.source ?? null,
   };
 }
 
@@ -1010,7 +1095,11 @@ const AUTHOR_UPSERT_SQL = `
     num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
     catalog_pages=COALESCE(excluded.catalog_pages, catalog_pages),
     ratings_rate=excluded.ratings_rate,
-    source=COALESCE(authors.source, excluded.source)
+    source=CASE
+      WHEN authors.source IS NULL OR authors.source = '' OR authors.source = 'unknown'
+      THEN COALESCE(excluded.source, authors.source)
+      ELSE authors.source
+    END
 `;
 
 export function upsertAuthorById(id: string, entry: AuthorCacheEntry): void {
@@ -1291,16 +1380,25 @@ export function loadXrefTagMap(): Map<string, string> {
   return map;
 }
 
-export function syncAuthorsToCache(books: any[], authorCache: AuthorCache): number {
+// Mint/refresh authors seen on a scraped page. `source` records WHERE an author
+// id was first discovered (e.g. list_walk, tag_shelf, monitor); it is set on
+// insert and only fills a blank/unknown existing source — never overwrites real
+// provenance.
+export function syncAuthorsToCache(books: any[], authorCache: AuthorCache, source?: string): number {
   const db = getDb();
   let added = 0;
 
   const upsert = db.prepare(`
-    INSERT INTO authors (id, name, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves)
-    VALUES (@id, @name, @slug, @lastSeen, @lastSeen, NULL, 0, 0, 0)
+    INSERT INTO authors (id, name, slug, last_seen, first_seen, average_rating, num_ratings, num_reviews, num_shelves, source)
+    VALUES (@id, @name, @slug, @lastSeen, @lastSeen, NULL, 0, 0, 0, @source)
     ON CONFLICT(id) DO UPDATE SET
       name=COALESCE(authors.name, excluded.name), slug=excluded.slug, last_seen=excluded.last_seen,
-      first_seen=COALESCE(authors.first_seen, excluded.first_seen)
+      first_seen=COALESCE(authors.first_seen, excluded.first_seen),
+      source=CASE
+        WHEN authors.source IS NULL OR authors.source = '' OR authors.source = 'unknown'
+        THEN COALESCE(excluded.source, authors.source)
+        ELSE authors.source
+      END
   `);
   const upsertSlug = db.prepare(`
     INSERT INTO author_slugs (author_id, slug, name, first_seen, last_seen)
@@ -1330,19 +1428,28 @@ export function syncAuthorsToCache(books: any[], authorCache: AuthorCache): numb
           name: book.author,
           slug: book.authorSlug,
           lastSeen: new Date().toISOString(),
+          source,
         };
         authorCache[authorId] = entry;
-        upsert.run({ id: entry.id, name: entry.name, slug: entry.slug, lastSeen: entry.lastSeen });
+        upsert.run({ id: entry.id, name: entry.name, slug: entry.slug, lastSeen: entry.lastSeen, source: source ?? 'unknown' });
         upsertSlug.run({ id: entry.id, slug: entry.slug, name: entry.name, ts: entry.lastSeen });
         added++;
-      } else if (existing.slug !== book.authorSlug) {
-        existing.slug = book.authorSlug;
+      } else {
+        const slugChanged = existing.slug !== book.authorSlug;
+        // Backfill provenance for authors minted before source tracking, but
+        // never overwrite a source already recorded by an earlier discovery.
+        const fillsSource = !!source && (!existing.source || existing.source === 'unknown');
+        if (!slugChanged && !fillsSource) continue;
+        if (slugChanged) existing.slug = book.authorSlug;
         existing.lastSeen = new Date().toISOString();
+        if (fillsSource) existing.source = source;
+        authorCache[authorId] = existing;
         upsert.run({
           id: existing.id,
           name: existing.name ?? book.author,
           slug: existing.slug,
           lastSeen: existing.lastSeen,
+          source: existing.source ?? null,
         });
         upsertSlug.run({ id: existing.id, slug: existing.slug, name: existing.name, ts: existing.lastSeen });
       }

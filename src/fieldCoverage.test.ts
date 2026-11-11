@@ -57,6 +57,30 @@ describe('formatCoverageLine', () => {
     chalk.level = 0;
     expect(formatCoverageLine({ field: 'work_id', populated: 10, total: 20, distinct: 8 })).toContain('8 distinct');
   });
+
+  it('shows numeric min/max/avg when present', () => {
+    chalk.level = 0;
+    const line = formatCoverageLine({
+      field: 'num_books', populated: 100, total: 100,
+      min: 1, max: 1137, avg: 47.25, distinct: 42,
+    });
+    expect(line).toContain('min 1');
+    expect(line).toContain('max 1,137');
+    expect(line).toContain('avg 47.3');
+    expect(line).toContain('42 distinct');
+  });
+
+  it('shows a lexical range for date-like strings without an average', () => {
+    chalk.level = 0;
+    const line = formatCoverageLine({
+      field: 'created_at', populated: 99, total: 100,
+      min: '2011-03-04', max: '2026-11-08', distinct: 1876,
+    });
+    expect(line).toContain('min 2011-03-04');
+    expect(line).toContain('max 2026-11-08');
+    expect(line).not.toContain('avg');
+    expect(line).toContain('1,876 distinct');
+  });
 });
 
 describe('runFieldCoverage', () => {
@@ -85,11 +109,12 @@ describe('runFieldCoverage', () => {
 
   it('prints the list_scrapes ledger section when the table exists', async () => {
     const db = getDb();
+    db.exec('DELETE FROM list_scrapes;');
     const ins = db.prepare(
-      'INSERT INTO list_scrapes (list_id, list_name, first_scraped, last_scraped) VALUES (?, ?, ?, ?)'
+      'INSERT INTO list_scrapes (list_id, list_name, first_scraped, last_scraped, num_scraped, num_books_scraped) VALUES (?, ?, ?, ?, ?, ?)'
     );
-    ins.run('1', 'A', '2026-09-09T10:00:00Z', '2026-09-09T10:00:00Z');
-    ins.run('2', 'B', '2026-09-10T10:00:00Z', '2026-09-12T10:00:00Z');
+    ins.run('1', 'A', '2026-09-09T10:00:00Z', '2026-09-09T10:00:00Z', 1, 10);
+    ins.run('2', 'B', '2026-09-10T10:00:00Z', '2026-09-12T10:00:00Z', 2, 20);
 
     chalk.level = 0;
     const out = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -108,6 +133,17 @@ describe('runFieldCoverage', () => {
     expect(range).toContain('09-10');
     const latest = lines.find((l) => l.includes('latest scrape'));
     expect(latest).toContain('09-12');
+    const numScraped = lines.find((l) => l.startsWith('  num_scraped'))!;
+    expect(numScraped).toContain('min 1');
+    expect(numScraped).toContain('max 2');
+    expect(numScraped).toContain('avg 1.5');
+    expect(numScraped).toContain('2 distinct');
+
+    const numBooks = lines.find((l) => l.startsWith('  num_books_scraped'))!;
+    expect(numBooks).toContain('min 10');
+    expect(numBooks).toContain('max 20');
+    expect(numBooks).toContain('avg 15.0');
+    expect(numBooks).toContain('2 distinct');
   });
 
   it('prints the list-tag harvest section with known/tagged/remaining', async () => {
@@ -168,6 +204,58 @@ describe('runFieldCoverage', () => {
     expect(lines.find((l) => l.startsWith('  publisher'))).toContain('2 distinct'); // Penguin, Harper
     expect(lines.find((l) => l.startsWith('  format'))).toContain('2 distinct'); // Hardcover, Paperback
     expect(lines.find((l) => l.startsWith('  language'))).toContain('2 distinct'); // English, Spanish
+  });
+
+  it('shows list_meta min/max/avg and distinct counts', async () => {
+    const db = getDb();
+    db.exec('DELETE FROM list_meta;');
+    const now = '2026-11-09T00:00:00Z';
+    const ins = db.prepare(
+      `INSERT INTO list_meta
+         (list_id, num_books, num_voters, created_at, creator_id, creator_name, num_likes, first_seen, last_seen)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    ins.run('1', 10, 2, '2013-05-01', 'u1', 'Alice', 5, now, now);
+    ins.run('2', 20, 4, '2015-01-01', 'u2', 'Bob', 0, now, now);
+    ins.run('3', 30, 6, '2020-12-31', 'u1', 'Alice', null, now, now);
+
+    chalk.level = 0;
+    const out = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runFieldCoverage();
+    const lines = out.mock.calls.map((c) => c.join(' '));
+    out.mockRestore();
+
+    const numBooks = lines.find((l) => l.startsWith('  num_books '))!;
+    expect(numBooks).toContain('min 10');
+    expect(numBooks).toContain('max 30');
+    expect(numBooks).toContain('avg 20.0');
+    expect(numBooks).toContain('3 distinct');
+
+    const numVoters = lines.find((l) => l.startsWith('  num_voters'))!;
+    expect(numVoters).toContain('min 2');
+    expect(numVoters).toContain('max 6');
+    expect(numVoters).toContain('avg 4.0');
+
+    const createdAt = lines.find((l) => l.startsWith('  created_at'))!;
+    expect(createdAt).toContain('min 2013-05-01');
+    expect(createdAt).toContain('max 2020-12-31');
+    expect(createdAt).toContain('3 distinct');
+    expect(createdAt).not.toContain('avg');
+
+    const creatorId = lines.find((l) => l.startsWith('  creator_id'))!;
+    expect(creatorId).toContain('2 distinct');
+    expect(creatorId).not.toContain('min');
+
+    const creatorName = lines.find((l) => l.startsWith('  creator_name'))!;
+    expect(creatorName).toContain('2 distinct');
+
+    const numLikes = lines.find((l) => l.startsWith('  num_likes'))!;
+    expect(numLikes).toContain('66.7%');
+    expect(numLikes).toContain('(1 missing)');
+    expect(numLikes).toContain('min 0');
+    expect(numLikes).toContain('max 5');
+    expect(numLikes).toContain('avg 2.5');
+    expect(numLikes).toContain('2 distinct');
   });
 });
 

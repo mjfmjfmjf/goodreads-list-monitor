@@ -198,6 +198,16 @@ describe('author rows', () => {
     expect(getAuthor('Explicit First Seen')!.firstSeen).toBe('2026-07-01T00:00:00.000Z');
   });
 
+  it('upsertAuthorById keeps real provenance and replaces unknown', () => {
+    upsertAuthorById('900', makeEntry({ id: '900', name: 'Source Keep', slug: '900.Source_Keep', source: 'author_mint' }));
+    upsertAuthorById('900', makeEntry({ id: '900', name: 'Source Keep', slug: '900.Source_Keep', source: 'author_rescan' }));
+    expect(getAuthor('Source Keep')!.source).toBe('author_mint');
+
+    upsertAuthorById('901', makeEntry({ id: '901', name: 'Unknown Source', slug: '901.Unknown_Source', source: 'unknown' }));
+    upsertAuthorById('901', makeEntry({ id: '901', name: 'Unknown Source', slug: '901.Unknown_Source', source: 'author_page_lookup' }));
+    expect(getAuthor('Unknown Source')!.source).toBe('author_page_lookup');
+  });
+
   it('getAuthor returns undefined for unknown names', () => {
     expect(getAuthor('Nobody Knows Me')).toBeUndefined();
   });
@@ -237,6 +247,32 @@ describe('syncAuthorsToCache seeding', () => {
     expect((cache as any)['777'].id).toBe('777');
     expect((cache as any)['777'].name).toBe('Seeded Author');
     expect(Object.keys(cache as any)).toEqual(['777']);
+  });
+
+  it('records the discovery source on new authors', async () => {
+    await syncAuthorsToCache([
+      { author: 'Sourced Author', authorSlug: '778.Sourced_Author', authorId: '778' },
+    ], {} as any, 'tag_shelf');
+    expect(getAuthor('Sourced Author')!.source).toBe('tag_shelf');
+  });
+
+  it('never overwrites an existing source, but fills a blank one', async () => {
+    const insert = getDb().prepare(
+      'INSERT INTO authors (id, name, slug, last_seen, source) VALUES (?, ?, ?, ?, ?)'
+    );
+    insert.run('779', 'Already Sourced', '779.Already_Sourced', '2026-01-01', 'first_source');
+    insert.run('780', 'Blank Sourced', '780.Blank_Sourced', '2026-01-01', null);
+    insert.run('781', 'Unknown Sourced', '781.Unknown_Sourced', '2026-01-01', 'unknown');
+
+    await syncAuthorsToCache([
+      { author: 'Already Sourced', authorSlug: '779.Already_Sourced', authorId: '779' },
+      { author: 'Blank Sourced', authorSlug: '780.Blank_Sourced', authorId: '780' },
+      { author: 'Unknown Sourced', authorSlug: '781.Unknown_Sourced', authorId: '781' },
+    ], {} as any, 'second_source');
+
+    expect(getAuthor('Already Sourced')!.source).toBe('first_source');
+    expect(getAuthor('Blank Sourced')!.source).toBe('second_source');
+    expect(getAuthor('Unknown Sourced')!.source).toBe('second_source');
   });
 
   it('leaves existing entries alone when the slug matches, re-seeds when it changes', async () => {
@@ -844,6 +880,25 @@ describe('list_scrapes', () => {
     upsertListScrape('143500', null, '2026-09-08T00:00:00.000Z');
     const row = loadListScrape('143500')!;
     expect(row.listName).toBe('Best Books of the Decade 2020s');
+  });
+
+  it('increments num_scraped and tracks books in the last crawl', () => {
+    const t1 = '2026-09-01T00:00:00.000Z';
+    const t2 = '2026-09-08T00:00:00.000Z';
+    upsertListScrape('196307', 'Best Books of 2024', t1, 42);
+    let row = loadListScrape('196307')!;
+    expect(row.numScraped).toBe(1);
+    expect(row.numBooksScraped).toBe(42);
+
+    upsertListScrape('196307', 'Best Books of 2024', t2, 0);
+    row = loadListScrape('196307')!;
+    expect(row.numScraped).toBe(2);
+    expect(row.numBooksScraped).toBe(0); // 0 overwrites (gone list)
+
+    upsertListScrape('196307', 'Best Books of 2024', '2026-09-09T00:00:00.000Z');
+    row = loadListScrape('196307')!;
+    expect(row.numScraped).toBe(3);
+    expect(row.numBooksScraped).toBe(0); // null leaves the old book count
   });
 
   it('returns undefined for lists never scraped', () => {

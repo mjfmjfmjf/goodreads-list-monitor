@@ -414,7 +414,7 @@ export async function addBookFromBuffer(bookIdOrUrl: string, rawInputArg?: strin
 
   // Sync author cache if author details exist
   if (finalAuthor && finalAuthor !== 'Unknown Author') {
-    syncAuthorsToCache([{ author: finalAuthor, authorId: finalAuthorId, authorSlug: finalAuthorId ? `${finalAuthorId}.${finalAuthor.replace(/\s+/g, '_')}` : undefined }], {});
+    syncAuthorsToCache([{ author: finalAuthor, authorId: finalAuthorId, authorSlug: finalAuthorId ? `${finalAuthorId}.${finalAuthor.replace(/\s+/g, '_')}` : undefined }], {}, 'add_book');
   }
 
   console.log(chalk.green.bold(`\n✅ Book ${bookId} successfully saved to booksCache.json!`));

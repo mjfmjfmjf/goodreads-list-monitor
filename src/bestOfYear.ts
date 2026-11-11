@@ -49,12 +49,12 @@ export async function runBestOfYear(options: BestOfYearOptions = {}): Promise<vo
     console.log(chalk.cyan.bold(`📅 Best of ${year}`));
     try {
       const books = applyBestOfYearPublished(
-        await scrapeListBooks(`best_of_year/${year}`, MAX_PAGES_PER_YEAR),
+        await scrapeListBooks(`best_of_year/${year}`, MAX_PAGES_PER_YEAR, 'scrape_best_of_year'),
         year
       );
       if (books.length > 0) {
         const { inserted, updated } = await syncBooksToCache(books, bookCache);
-        await syncAuthorsToCache(books, authorCache);
+        await syncAuthorsToCache(books, authorCache, 'scrape_best_of_year');
         console.log(chalk.green(`   Found ${books.length} books (+${inserted} new / ${updated} updated).`));
         totalBooks += books.length;
         totalInserted += inserted;

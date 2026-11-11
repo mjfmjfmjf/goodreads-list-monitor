@@ -22,7 +22,7 @@ export function resolveRemovedBookDetails(
   return cached ?? dbRow;
 }
 
-export async function performIngest(userId: string, force = false): Promise<void> {
+export async function performIngest(userId: string, force = false, source = 'ingest'): Promise<void> {
   const state = await loadState();
   // Don't load the full book cache (5.6M+ rows, several GB in JS memory) — the
   // SQLite row is the merge source of truth inside syncBooksToCache (getBook),
@@ -68,9 +68,9 @@ export async function performIngest(userId: string, force = false): Promise<void
     console.log(chalk.cyan.bold(`\n[${i + 1}/${listsToIngest.length}] Ingesting books for: "${listState.title}"`));
     
     try {
-      const books = await scrapeListBooks(id);
+      const books = await scrapeListBooks(id, Infinity, source);
       await syncBooksToCache(books, bookCache);
-      await syncAuthorsToCache(books, authorCache);
+      await syncAuthorsToCache(books, authorCache, source);
       
       listState.seenBookIds = books.map(b => b.id);
       listState.lastCount = books.length;
@@ -91,7 +91,7 @@ export async function performIngest(userId: string, force = false): Promise<void
   console.log(chalk.cyan.bold('\n🏁 Ingest process complete.'));
 }
 
-export async function checkUpdates(userId: string): Promise<void> {
+export async function checkUpdates(userId: string, source = 'check'): Promise<void> {
   const state = await loadState();
   // Same as performIngest: empty in-run book cache; DB row is the merge source.
   const bookCache: BookCache = {};
@@ -137,9 +137,9 @@ export async function checkUpdates(userId: string): Promise<void> {
       }
       
       console.log(chalk.gray(`   Scraping list "${list.title}" to identify new books and harvest metadata...`));
-      const currentBooks = await scrapeListBooks(listId);
+      const currentBooks = await scrapeListBooks(listId, Infinity, source);
       await syncBooksToCache(currentBooks, bookCache);
-      await syncAuthorsToCache(currentBooks, authorCache);
+      await syncAuthorsToCache(currentBooks, authorCache, source);
       
       const newBooks = currentBooks.filter(b => !targetList.seenBookIds.includes(b.id));
 
@@ -164,9 +164,9 @@ export async function checkUpdates(userId: string): Promise<void> {
     } else if (list.bookCount < targetList.lastCount) {
       console.log(chalk.red.bold(`⚠️ Book(s) removed from "${list.title}"! Count: ${targetList.lastCount} -> ${list.bookCount}`));
 
-      const currentBooks = await scrapeListBooks(listId);
+      const currentBooks = await scrapeListBooks(listId, Infinity, source);
       await syncBooksToCache(currentBooks, bookCache);
-      await syncAuthorsToCache(currentBooks, authorCache);
+      await syncAuthorsToCache(currentBooks, authorCache, source);
       
       const currentIds = currentBooks.map(b => b.id);
       const removedIds = targetList.seenBookIds.filter(id => !currentIds.includes(id));

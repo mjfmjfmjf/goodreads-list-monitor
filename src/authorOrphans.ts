@@ -274,6 +274,7 @@ export async function runOrphanScrape(
         slug,
         lastSeen: new Date().toISOString(),
         firstSeen: new Date().toISOString(),
+        source: 'author_orphans',
       };
       entry.name = stats.name || entry.name || name;
       entry.slug = stats.slug || entry.slug || slug;

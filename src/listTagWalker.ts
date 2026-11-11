@@ -10,6 +10,7 @@ export interface ListTagWalkerOptions {
   listMaxPages?: number;
   skipDays?: number;
   dryRun?: boolean;
+  source?: string;
 }
 
 interface ListWalkResult {
@@ -115,7 +116,10 @@ export async function runListTagWalker(options: ListTagWalkerOptions): Promise<L
     console.log(chalk.gray(`\n   📖 [${i + 1}/${lists.length}] ${chalk.white.bold(label)} (${l.id}) — crawling...`));
     let books;
     try {
-      books = await withConnectivityProbe(() => scrapeListBooks(l.id, options.listMaxPages ?? Infinity), { label: `list ${l.id}` });
+      books = await withConnectivityProbe(
+        () => scrapeListBooks(l.id, options.listMaxPages ?? Infinity, options.source ?? 'list_tag_walk'),
+        { label: `list ${l.id}` },
+      );
     } catch (error: any) {
       if (isConnectivityError(error)) throw error;
       console.error(chalk.red.bold(`   ❌ List ${l.id} failed: ${error?.message}`));
@@ -135,7 +139,7 @@ export async function runListTagWalker(options: ListTagWalkerOptions): Promise<L
     // Only a crawl that went all the way to the end counts as "scraped".
     // An explicit --list-max-pages cap means the list is only partially read.
     if (skipDays > 0 && options.listMaxPages === undefined && books.length > 0) {
-      upsertListScrape(l.id, label);
+      upsertListScrape(l.id, label, undefined, books.length);
       scrolled++;
     }
 

@@ -13,6 +13,8 @@ import {
   buildCoverageCounts,
   renderCoverageHistogram,
   runRatingsCoverageHistogram,
+  buildRatingsScopeCounts,
+  renderRatingsScopeHistogram,
 } from './summaryHistogram.ts';
 
 afterAll(() => {
@@ -93,6 +95,102 @@ describe('renderCoverageHistogram', () => {
     expect(out).toContain('20.0%');
     expect(out).toContain('25.0%');
     expect(out).toContain('Total: cache 10 | work-id 6 (60.0% of cache) | works 4 (40.0% of cache) | field 2 (20.0% of cache) | work+field 1 (25.0% of works)');
+  });
+});
+
+describe('buildRatingsScopeCounts', () => {
+  it('splits each bracket into all / work-id / works', () => {
+    const books = [
+      { ratings: '5,500,000', workId: 'w1', workRep: true },
+      { ratings: '4,000,000', workId: 'w1', workRep: false },
+      { ratings: '550,000', workId: 'w2', workRep: true },
+      { ratings: '550,000', workId: null, workRep: false },
+      { ratings: '0', workId: 'w3', workRep: true },
+    ];
+    const c = buildRatingsScopeCounts(books);
+    expect(c.totalAll).toBe(5);
+    expect(c.totalWork).toBe(4);
+    expect(c.totalWorks).toBe(3);
+
+    const big = bucketIndexFor(5_500_000);
+    expect(c.all[big]).toBe(1);
+    expect(c.work[big]).toBe(1);
+    expect(c.works[big]).toBe(1);
+
+    const mid = bucketIndexFor(550_000);
+    expect(c.all[mid]).toBe(2);
+    expect(c.work[mid]).toBe(1);
+    expect(c.works[mid]).toBe(1);
+
+    const zero = bucketIndexFor(0);
+    expect(c.all[zero]).toBe(1);
+    expect(c.work[zero]).toBe(1);
+    expect(c.works[zero]).toBe(1);
+  });
+});
+
+describe('renderRatingsScopeHistogram', () => {
+  const buckets = [
+    { label: 'high', min: 100, max: Infinity },
+    { label: 'mid', min: 10, max: 99 },
+    { label: 'low', min: 0, max: 9 },
+  ];
+
+  it('renders headers and the totals footer for every scope', () => {
+    chalk.level = 0;
+    const lines = renderRatingsScopeHistogram({
+      all: [1, 2, 7],
+      work: [1, 1, 2],
+      works: [0, 1, 1],
+      totalAll: 10,
+      totalWork: 4,
+      totalWorks: 2,
+    }, buckets);
+    const out = lines.join('\n');
+    expect(out).toContain('Book Cache Ratings Histogram by Scope');
+    expect(out).toContain('ALL ROLLUP');
+    expect(out).toContain('WORK-ID ROLLDOWN');
+    expect(out).toContain('WORKS #');
+    expect(out).toContain('Total: cache 10 | work-id 4 (40.0% of cache) | works 2 (20.0% of cache)');
+  });
+
+  it('computes inclusive cumulative rollup/rolldown per bracket', () => {
+    chalk.level = 0;
+    const lines = renderRatingsScopeHistogram({
+      all: [1, 2, 7], work: [0, 0, 0], works: [0, 0, 0],
+      totalAll: 10, totalWork: 0, totalWorks: 0,
+    }, buckets);
+    const plain = lines.map(l => l.replace(/\x1b\[[0-9;]*m/g, ''));
+    const cells = (row: string) => row.split('|').map(s => s.trim()).slice(1, 5);
+    const high = plain.find(l => l.startsWith('high'))!;
+    const mid = plain.find(l => l.startsWith('mid'))!;
+    const low = plain.find(l => l.startsWith('low'))!;
+    expect(cells(high)).toEqual(['1', '10.0%', '1', '10']);
+    expect(cells(mid)).toEqual(['2', '20.0%', '3', '9']);
+    expect(cells(low)).toEqual(['7', '70.0%', '10', '7']);
+  });
+
+  it('reddit mode drops the % and ROLLDOWN columns', () => {
+    chalk.level = 0;
+    const lines = renderRatingsScopeHistogram({
+      all: [1, 2, 7], work: [0, 0, 0], works: [0, 0, 0],
+      totalAll: 10, totalWork: 0, totalWorks: 0,
+    }, buckets, { reddit: true });
+    const out = lines.join('\n');
+    const plain = lines.map(l => l.replace(/\x1b\[[0-9;]*m/g, ''));
+
+    expect(out).toContain('Goodreads Ratings Histogram by Scope');
+    expect(out).not.toContain('ROLLDOWN');
+    const headerLine = plain.find(l => l.includes('RATING BRACKET'))!;
+    expect(headerLine).toContain('ALL ROLLUP');
+    expect(headerLine).toContain('WORK-ID ROLLUP');
+    expect(headerLine).toContain('WORKS ROLLUP');
+    expect(headerLine).not.toContain('%');
+
+    const high = plain.find(l => l.startsWith('high'))!;
+    const cells = high.split('|').map(s => s.trim());
+    expect(cells).toHaveLength(7); // label + (#, ROLLUP) x 3
+    expect(cells.slice(1)).toEqual(['1', '1', '0', '0', '0', '0']);
   });
 });
 

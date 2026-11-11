@@ -398,6 +398,7 @@ export interface ImportCounts {
   listTagsInserted?: number; listTagsUpdated?: number;
   authorSlugsInserted?: number; authorSlugsUpdated?: number;
   listTagWalkHistoryInserted?: number; listTagWalkHistoryUpdated?: number;
+  listMetaInserted?: number; listMetaUpdated?: number;
   popularByDateInserted: number; popularByDateUpdated: number; popularByDateSkipped: number;
   tagTailsInserted: number; tagTailsUpdated: number;
   tagTailStateInserted: number; tagTailStateUpdated: number;
@@ -537,7 +538,7 @@ export async function importAuthorsFile(
       numShelves: mergedAuthor.numShelves,
       catalogPages: mergedAuthor.catalogPages,
       ratingsRate: mergedAuthor.ratingsRate ?? null,
-      source: mergedAuthor.source || null,
+      source: mergedAuthor.source || (existing ? null : 'import'),
       isNew: !existing,
     });
   });
@@ -1071,6 +1072,96 @@ export async function importListsFile(
   return { total };
 }
 
+// ── list_meta import ───────────────────────────────────────────────
+// PK list_id. Immutable fields (created_at, creator_*) only fill in; mutable
+// counts fill in only when the local value is blank (fill-blank-only, matching
+// the import philosophy). first_seen keeps the earliest, last_seen the latest.
+export interface ListMetaImportRow {
+  listId: string;
+  numBooks: number | null;
+  numVoters: number | null;
+  createdAt: string | null;
+  creatorId: string | null;
+  creatorName: string | null;
+  numLikes: number | null;
+  firstSeen: string | null;
+  lastSeen: string | null;
+}
+
+export function decodeListMetaRow(headers: string[], fields: (string | null)[]): ListMetaImportRow | null {
+  const get = (name: string) => {
+    const ix = headers.indexOf(name);
+    return ix >= 0 ? fields[ix] : null;
+  };
+  const listId = get('list_id');
+  if (!listId) return null;
+  const num = (v: string | null): number | null => {
+    if (v == null || v === '') return null;
+    const n = parseInt(v, 10);
+    return Number.isNaN(n) ? null : n;
+  };
+  return {
+    listId,
+    numBooks: num(get('num_books')),
+    numVoters: num(get('num_voters')),
+    createdAt: get('created_at') || null,
+    creatorId: get('creator_id') || null,
+    creatorName: get('creator_name') || null,
+    numLikes: num(get('num_likes')),
+    firstSeen: get('first_seen') || null,
+    lastSeen: get('last_seen') || null,
+  };
+}
+
+export async function importListMetaFile(
+  db: import('better-sqlite3').Database,
+  file: string,
+  counts: ImportCounts
+): Promise<{ total: number }> {
+  const upsert = db.prepare(`
+    INSERT INTO list_meta (list_id, num_books, num_voters, created_at, creator_id, creator_name, num_likes, first_seen, last_seen)
+    VALUES (@listId, @numBooks, @numVoters, @createdAt, @creatorId, @creatorName, @numLikes, @firstSeen, @lastSeen)
+    ON CONFLICT(list_id) DO UPDATE SET
+      num_books = COALESCE(list_meta.num_books, excluded.num_books),
+      num_voters = COALESCE(list_meta.num_voters, excluded.num_voters),
+      created_at = COALESCE(list_meta.created_at, excluded.created_at),
+      creator_id = COALESCE(list_meta.creator_id, excluded.creator_id),
+      creator_name = COALESCE(list_meta.creator_name, excluded.creator_name),
+      num_likes = COALESCE(list_meta.num_likes, excluded.num_likes),
+      first_seen = MIN(list_meta.first_seen, excluded.first_seen),
+      last_seen = MAX(list_meta.last_seen, excluded.last_seen)
+  `);
+  const find = db.prepare('SELECT 1 FROM list_meta WHERE list_id = ?');
+  let batch: (ListMetaImportRow & { isNew: boolean })[] = [];
+  let total = 0;
+  await readCsvGz(file, (headers, fields) => {
+    const row = decodeListMetaRow(headers, fields);
+    if (!row) return;
+    total++;
+    const now = new Date().toISOString();
+    batch.push({
+      ...row,
+      firstSeen: row.firstSeen ?? now,
+      lastSeen: row.lastSeen ?? now,
+      isNew: !find.get(row.listId),
+    });
+    if (batch.length >= 20_000) { flush(); batch = []; }
+  });
+  flush();
+
+  function flush(): void {
+    const tx = db.transaction((rows: typeof batch) => {
+      for (const p of rows) {
+        upsert.run(p);
+        if (p.isNew) (counts.listMetaInserted = (counts.listMetaInserted || 0) + 1);
+        else (counts.listMetaUpdated = (counts.listMetaUpdated || 0) + 1);
+      }
+    });
+    tx(batch);
+  }
+  return { total };
+}
+
 // ── genre_tag_xref import ──────────────────────────────────────────
 // PK (genre_name, tag_name). Insert when absent; when present, prefer the
 // stronger kind so an 'exact' mapping is never downgraded to a weaker one.
@@ -1369,6 +1460,7 @@ export interface ImportOptions {
   listTagsFile?: string;
   authorSlugsFile?: string;
   listTagWalkHistoryFile?: string;
+  listMetaFile?: string;
   popularByDateFile?: string;
   tagTailsFile?: string;
   tagTailStateFile?: string;
@@ -1378,8 +1470,8 @@ export async function importData(
   db: import('better-sqlite3').Database,
   options: ImportOptions
 ): Promise<ImportCounts> {
-  if (!options.booksFile && !options.authorsFile && !options.tagBooksFile && !options.genresFile && !options.xrefFile && !options.bookPageFile && !options.tagStatsFile && !options.listsFile && !options.listTagsFile && !options.authorSlugsFile && !options.listTagWalkHistoryFile && !options.popularByDateFile && !options.tagTailsFile && !options.tagTailStateFile) {
-    throw new Error('Provide at least one of --books, --authors, --tagBooks, --genres, --xref, --bookPage, --tagStats, --lists, --listTags, --authorSlugs, --listTagWalkHistory, --popularByDate, --tagTails, or --tagTailState file paths.');
+  if (!options.booksFile && !options.authorsFile && !options.tagBooksFile && !options.genresFile && !options.xrefFile && !options.bookPageFile && !options.tagStatsFile && !options.listsFile && !options.listTagsFile && !options.authorSlugsFile && !options.listTagWalkHistoryFile && !options.listMetaFile && !options.popularByDateFile && !options.tagTailsFile && !options.tagTailStateFile) {
+    throw new Error('Provide at least one of --books, --authors, --tagBooks, --genres, --xref, --bookPage, --tagStats, --lists, --listTags, --authorSlugs, --listTagWalkHistory, --listMeta, --popularByDate, --tagTails, or --tagTailState file paths.');
   }
   const counts: ImportCounts = {
     booksInserted: 0, booksUpdated: 0, booksSkipped: 0,
@@ -1393,6 +1485,7 @@ export async function importData(
     listTagsInserted: 0, listTagsUpdated: 0,
     authorSlugsInserted: 0, authorSlugsUpdated: 0,
     listTagWalkHistoryInserted: 0, listTagWalkHistoryUpdated: 0,
+    listMetaInserted: 0, listMetaUpdated: 0,
     popularByDateInserted: 0, popularByDateUpdated: 0, popularByDateSkipped: 0,
     tagTailsInserted: 0, tagTailsUpdated: 0,
     tagTailStateInserted: 0, tagTailStateUpdated: 0,
@@ -1409,6 +1502,7 @@ export async function importData(
   if (options.listTagsFile) await importListTagsFile(db, options.listTagsFile, counts);
   if (options.authorSlugsFile) await importAuthorSlugsFile(db, options.authorSlugsFile, counts);
   if (options.listTagWalkHistoryFile) await importListTagWalkHistoryFile(db, options.listTagWalkHistoryFile, counts);
+  if (options.listMetaFile) await importListMetaFile(db, options.listMetaFile, counts);
   if (options.popularByDateFile) await importPopularByDateFile(db, options.popularByDateFile, counts);
   if (options.tagTailsFile) await importTagTailsFile(db, options.tagTailsFile, counts);
   if (options.tagTailStateFile) await importTagTailStateFile(db, options.tagTailStateFile, counts);
@@ -1428,6 +1522,7 @@ export function printImportResult(counts: ImportCounts, ratingPolicy: 'keep' | '
   console.log(chalk.white(`  list_tags:   ${(counts as any).listTagsInserted || 0} inserted, ${(counts as any).listTagsUpdated || 0} updated`));
   console.log(chalk.white(`  auth_slugs:  ${(counts as any).authorSlugsInserted || 0} inserted, ${(counts as any).authorSlugsUpdated || 0} updated`));
   console.log(chalk.white(`  walk_hist:   ${(counts as any).listTagWalkHistoryInserted || 0} inserted, ${(counts as any).listTagWalkHistoryUpdated || 0} updated`));
+  console.log(chalk.white(`  list_meta:   ${(counts as any).listMetaInserted || 0} inserted, ${(counts as any).listMetaUpdated || 0} updated`));
   console.log(chalk.white(`  pop_by_date: ${counts.popularByDateInserted} inserted, ${counts.popularByDateUpdated} updated, ${counts.popularByDateSkipped} skipped (older scrape)`));
   console.log(chalk.white(`  tag_tails:   ${counts.tagTailsInserted} inserted, ${counts.tagTailsUpdated} updated`));
   console.log(chalk.white(`  tag_state:   ${counts.tagTailStateInserted} inserted, ${counts.tagTailStateUpdated} updated`));

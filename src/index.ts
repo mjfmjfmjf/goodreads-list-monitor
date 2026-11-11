@@ -17,7 +17,7 @@ import { removeBookFromCache } from './removeBook.ts';
 import { runCheckQueue } from './checkQueue.ts';
 import { runSummaryByYear } from './summary.ts';
 import { runSummaryRatings } from './summaryRatings.ts';
-import { runRatingsHistogram, runRatingsCoverageHistogram } from './summaryHistogram.ts';
+import { runRatingsHistogram, runRatingsCoverageHistogram, runRatingsScopeHistogram } from './summaryHistogram.ts';
 import { runBooksAddedHistogram } from './booksAddedHistogram.ts';
 import { runRatingsByDateHistogram } from './ratingsByDateHistogram.ts';
 import { runSummarySeriesPos } from './summarySeriesPos.ts';
@@ -46,6 +46,7 @@ import { runBackfillSeriesPos } from './backfillSeriesPos.ts';
 import { runBackfillPages } from './backfillPages.ts';
 import { runBackfillRatingsStats } from './backfillRatingsStats.ts';
 import { runAvgHistogram } from './summaryAvgHistogram.ts';
+import { runWorkShelves } from './workShelves.ts';
 import { runAuthorTopBooks } from './authorTopBooks.ts';
 import { runAuthorTopStats } from './authorTopStats.ts';
 import { runAuthorTopBookHistogram } from './authorTopBookHistogram.ts';
@@ -59,6 +60,10 @@ import { runAuthorListDiff } from './authorListDiff.ts';
 import { runAuthorRescan } from './authorRescan.ts';
 import { runAuthorRecent } from './authorRecent.ts';
 import { runAuthorOne, runAuthorOneFile } from './authorOne.ts';
+import { runAuthorSitemapMonitor } from './authorSitemapMonitor.ts';
+import { AUTHOR_SITEMAP_INDEX_URL } from './authorSitemap.ts';
+import { runListSitemapMonitor } from './listSitemapMonitor.ts';
+import { LIST_SITEMAP_INDEX_URL } from './listSitemap.ts';
 import { runAuthorDedupe } from './authorDedupe.ts';
 import { runBrowserBookScrape } from './browserBookScrape.ts';
 import { runBrowserLogin } from './browserSession.ts';
@@ -71,6 +76,7 @@ import { runListTags } from './listTags.ts';
 import { runNextTagWalk } from './nextTagWalk.ts';
 import { runListTagHarvest } from './listTagHarvest.ts';
 import { runPopularByDate } from './popularByDate.ts';
+import { runGiveaways } from './giveaways.ts';
 import { runLibrarianRecentEdits } from './librarianRecentEdits.ts';
 import { runTagWalkBooks } from './tagWalkBooks.ts';
 import { runSummaryTop, runSummaryBottom } from './summaryTopRated.ts';
@@ -83,6 +89,7 @@ import { runPublisherStats } from './publisherStats.ts';
 import { runPublisherCatalog } from './publisherCatalog.ts';
 import { runPublisherTopBooks } from './publisherTopBooks.ts';
 import { runBooksWithoutWorkId } from './booksWithoutWorkId.ts';
+import { runPublishSite } from './publishSite.ts';
 import { runFacetCatalog, isFacetName } from './facetCatalog.ts';
 import { runAuthorLedgerMigrate } from './authorLedgerMigrate.ts';
 import { runShelfStats } from './shelfStats.ts';
@@ -176,6 +183,18 @@ program
       await runRatingsCoverageHistogram();
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate ratings coverage histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('ratings-scope-histogram')
+  .description('Ratings histogram across three scopes (ALL cached books, WORK-ID books, WORKS distinct works); for each scope shows #, % of that scope, ROLLUP (this bracket and above) and ROLLDOWN (this bracket and below)')
+  .option('--reddit', 'Compact table for a Reddit post: drops the % and ROLLDOWN columns (fits under 10k characters)', false)
+  .action(async (options: any) => {
+    try {
+      await runRatingsScopeHistogram({ reddit: options.reddit });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to generate ratings scope histogram:'), (error as any).message);
     }
   });
 
@@ -550,11 +569,27 @@ program
   .option('--step <number>', 'Grouping step (default 0.01; 0.01 or less = no grouping)', '0.01')
   .option('--minRatings <number>', 'Only include books with at least this many ratings')
   .option('--maxRatings <number>', 'Only include books with at most this many ratings')
+  .option('--hasDetails', 'Only include books that have a scraped details page (a book_page row) — ~282k of 14M books')
   .action(async (options) => {
     try {
       await runAvgHistogram(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to generate average rating histogram:'), (error as any).message);
+    }
+  });
+
+program
+  .command('work-shelves')
+  .description('Scrape all shelves from https://www.goodreads.com/work/shelves/<workId> (page 1 only) for top-rated books not recently scraped')
+  .option('--limit <number>', 'Maximum number of books to scrape (default 100)', '100')
+  .option('--minRatings <number>', 'Only include books with at least this many ratings (default 1000)', '1000')
+  .option('--maxAgeDays <number>', 'Re-scrape books not scraped in this many days (default 30)', '30')
+  .option('--dryRun', 'Show what would be scraped without making requests')
+  .action(async (options) => {
+    try {
+      await runWorkShelves(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to scrape work shelves:'), (error as any).message);
     }
   });
 
@@ -817,10 +852,11 @@ Examples:
 
 program
   .command('author-one [urlOrSlug]')
-  .description('Scrape the overall stats (avg rating, ratings, reviews, shelves) for a single author page and update the author cache. Accepts a full author URL, a slug like 14018357.Steve_the_Noob, or a numeric author ID. Add --multiPage to also crawl the author\'s full back catalog (all pages of their works list). Or pass --file <path> to scrape a whole list of author IDs/URLs/slugs (one per line), skipping any already in the cache.')
+  .description('Scrape the overall stats (avg rating, ratings, reviews, shelves) for a single author page and update the author cache. Accepts a full author URL, a slug like 14018357.Steve_the_Noob, or a numeric author ID. Add --multiPage to also crawl the author\'s full back catalog (all pages of their works list). Or pass --file <path> to scrape a whole list of author IDs/URLs/slugs (one per line), skipping any already in the cache. Pass --dryRun to report the new/cached counts without fetching or writing.')
   .option('--multiPage', 'Crawl the author\'s entire catalog (all pages of their works list) instead of the first page only')
   .option('--withCookie', 'Send the login cookie on author-page requests. Author pages need no auth, so crawls are anonymous by default and run faster; use this to opt back into cookie-authenticated pacing.')
-  .option('--file <path>', 'Scrape every author in <path> (one ID, URL, or slug per line; blank lines and # comments ignored). Authors already in the cache are skipped. Pair with --multiPage for a full back-catalog crawl.')
+  .option('--file <path>', 'Scrape every author in <path> (one ID, URL, or slug per line; blank lines and # comments ignored; Goodreads sitemap XML and .xml.gz also supported). Authors already in the cache are skipped. Pair with --multiPage for a full back-catalog crawl.')
+  .option('--dryRun', 'Parse the input/file and report how many author IDs are new vs already cached, without fetching or writing')
   .addHelpText('after', `
 Examples:
   $ npm run author-one -- 14018357.Steve_the_Noob
@@ -829,19 +865,78 @@ Examples:
   $ ./authorOne.sh 14018357.Steve_the_Noob
   $ ./authorOne.sh 8777 --multiPage
   # Batch: scrape a list of author IDs, full back catalog, skipping cached ones
-  $ ./authorOne.sh --file missed-author-ids.txt --multiPage`)
+  $ ./authorOne.sh --file missed-author-ids.txt --multiPage
+  # Preview a sitemap: counts only, no fetches/writes
+  $ ./authorOne.sh --file sitemap.178.xml --dryRun`)
   .action(async (urlOrSlug, options) => {
     try {
       if (options.file) {
-        await runAuthorOneFile(options.file, { multiPage: !!options.multiPage, withCookie: !!options.withCookie });
+        await runAuthorOneFile(options.file, { multiPage: !!options.multiPage, withCookie: !!options.withCookie, dryRun: !!options.dryRun });
       } else if (urlOrSlug) {
-        await runAuthorOne(urlOrSlug, { multiPage: !!options.multiPage, withCookie: !!options.withCookie });
+        await runAuthorOne(urlOrSlug, { multiPage: !!options.multiPage, withCookie: !!options.withCookie, dryRun: !!options.dryRun });
       } else {
         console.error(chalk.red.bold('Error: pass an author URL/slug/id, or --file <path> for a batch.'));
         process.exitCode = 1;
       }
     } catch (error) {
       console.error(chalk.red.bold('Failed to update author(s):'), (error as any).message);
+    }
+  });
+
+program
+  .command('author-sitemap-monitor')
+  .description('Monitor the Goodreads author sitemap: preview shards, enqueue new/changed authors, and scrape them. Use --dryRun to preview only.')
+  .option('--dryRun', 'Preview only: download/parse/report, no enqueue or scrape')
+  .option('--files <number>', 'Shards to ingest this run (default 2)')
+  .option('--start <shard>', 'First shard number (default: next unprocessed)')
+  .option('--index <url>', 'Author sitemap index URL', AUTHOR_SITEMAP_INDEX_URL)
+  .option('--force', 'Re-download and reparse even when hash/size say the shard is unchanged')
+  .option('--enqueueOnly', 'Preview and enqueue candidates without scraping')
+  .option('--authors <number>', 'Max author scrapes this run (0 = no cap; default 100)')
+  .option('--minAge <days>', 'Defer changed authors scraped within this many days (default 90)', '90')
+  .option('--only <new|changed>', 'Restrict queue draining to one candidate reason')
+  .option('--multiPage', 'Force a full back-catalog crawl for every candidate')
+  .option('--withCookie', 'Send the login cookie and use cookie-authenticated pacing')
+  .addHelpText('after', `
+Examples:
+  $ ./authorSitemapMonitor.sh --dryRun --files 3
+  $ ./authorSitemapMonitor.sh --files 3 --enqueueOnly
+  $ ./authorSitemapMonitor.sh --authors 100
+  $ ./authorSitemapMonitor.sh --files 3 --authors 100 --minAge 90`)
+  .action(async (options) => {
+    try {
+      await runAuthorSitemapMonitor(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Author sitemap monitor failed:'), (error as any).message);
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command('list-sitemap-monitor')
+  .description('Monitor the Goodreads list sitemap: scrape new lists and lists whose lastmod is newer than their last scrape and older than --minAge days. Use --dryRun to preview only.')
+  .option('--dryRun', 'Preview/classify only: no list scrapes and no ledger writes')
+  .option('--files <number>', 'Shards to walk this run (default: all)')
+  .option('--start <shard>', 'First shard number (default: first in the index)')
+  .option('--end <shard>', 'Last shard, inclusive (requires --start; excludes --files)')
+  .option('--index <url>', 'List sitemap index URL', LIST_SITEMAP_INDEX_URL)
+  .option('--force', 'Ignore an interrupted cursor and restart the shard at entry 0')
+  .option('--maxLists <number>', 'Max list scrapes this run (0 = no cap)', '0')
+  .option('--minAge <days>', 'Recency window for lastmod-vs-last-scrape', '90')
+  .option('--listMaxPages <number>', 'Cap pages per list (a capped crawl is never marked scraped)')
+  .addHelpText('after', `
+Examples:
+  $ ./listSitemapMonitor.sh --dryRun
+  $ ./listSitemapMonitor.sh
+  $ ./listSitemapMonitor.sh --files 1
+  $ ./listSitemapMonitor.sh --start 388 --end 390
+  $ ./listSitemapMonitor.sh --maxLists 500 --minAge 60`)
+  .action(async (options) => {
+    try {
+      await runListSitemapMonitor(options);
+    } catch (error) {
+      console.error(chalk.red.bold('List sitemap monitor failed:'), (error as any).message);
+      process.exitCode = 1;
     }
   });
 
@@ -1300,7 +1395,11 @@ Examples:
   $ npm run books -- --sort numReviews --minRatings 1000 --limit 20
   $ npm run books -- --sort numShelves --dedupe --limit 20
   $ npm run books -- --sort reviewRatio --minRatings 50000 --limit 10
+  $ npm run books -- --genre fiction --minPages 100 --dedupe --sort avgRatings --asc --limit 50
+  $ npm run books -- --genre comics,graphic-novels --notGenre manga --limit 20
+  $ npm run books -- --tag fantasy --minRatings 1000 --dedupe --limit 20
   $ npm run books -- --sort ratingsStddev --minRatings 50000 --limit 10   # from the ratings histogram
+  $ npm run books -- --hasDetails --minRatings 3000 --sort avgRatings --desc --limit 100000   # only books with a scraped details page
   $ npm run books -- '^j' --excludeReviewed          # uses cached library import
   $ npm run books -- '^j' --excludeReviewed --export ~/Downloads/goodreads_library_export.csv  # refresh cached import
   $ npm run books -- --import ~/Downloads/goodreads_library_export.csv   # import + validate + cache
@@ -1315,6 +1414,12 @@ Examples:
   .option('--maxRatings <number>', 'Only include books with at most this many ratings')
   .option('--minYear <year>', 'Only include books published in or after this year')
   .option('--maxYear <year>', 'Only include books published in or before this year')
+  .option('--tag <name>', 'Only include books carrying this tag (exact match via genre_tag_xref -> tag_books, e.g. fantasy, science-fiction; all xref kinds count; wide net over the tag_books universe)')
+  .option('--genre <list>', 'Only include books whose books.genres JSON column contains any of these genres (comma-separated, case-insensitive exact on the normalized label, e.g. fiction or "graphic novels"; populated on browser-scraped books only)')
+  .option('--notGenre <list>', 'Exclude books whose books.genres JSON column contains any of these genres (comma-separated, word-boundary match so "comics" also catches "Graphic Novels Comics" / "Dc Comics")')
+  .option('--minPages <number>', 'Only include books with at least this many pages (unknown pages excluded)')
+  .option('--maxPages <number>', 'Only include books with at most this many pages')
+  .option('--hasDetails', 'Only include books that have a scraped details page (a book_page row: description, genres, pages, reviews, ratings histogram) — ~282k of 14M books')
   .option('--asc', 'Sort ascending (default: descending for numeric fields, ascending for title/author)')
   .option('--desc', 'Sort descending')
   .option('--includeBad', 'Include books previously marked as bad (repeated fetch failures)')
@@ -1545,6 +1650,24 @@ program
   });
 
 program
+  .command('publish-site')
+  .description('Render static HTML reports from the local database (default output: ./publish)')
+  .option('--out <dir>', 'Output directory', 'publish')
+  .option('--limit <number>', 'Rows per report', '1000')
+  .addHelpText('after', `
+Examples:
+  $ npm run publish-site
+  $ npm run publish-site -- --out /tmp/site --limit 100`)
+  .action(async (options) => {
+    try {
+      await runPublishSite(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Publish failed:'), (error as any).message);
+      process.exitCode = 1;
+    }
+  });
+
+program
   .command('publisher-stats')
   .description('Rank your favorite publishers by your own star rating, from your read + rated books in the library export (grouped by publisher, min book count + top N)')
   .addHelpText('after', `
@@ -1753,7 +1876,7 @@ Examples:
 
 program
   .command('import-data')
-  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, author_slugs, tag_books, genres, genre_tag_xref, list_tags, list_tag_walk_history, book_page, tag_stats, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad (book_page and popular_by_date_book keep the newest scrape per row; lists seen_book_ids are union-merged; list_tags keep from_sidebar/from_directory provenance; author_slugs never move first_seen/last_seen backwards; list_tag_walk_history keeps the earliest first_walked and latest last_walked). Config, browser_scrape, author_scrape_failures, list_scrapes, list_walk, and the legacy list_tag_walks are not exported and not imported. Updates the schema automatically (current spec).')
+  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, author_slugs, tag_books, genres, genre_tag_xref, list_tags, list_tag_walk_history, list_meta, book_page, tag_stats, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad (book_page and popular_by_date_book keep the newest scrape per row; lists seen_book_ids are union-merged; list_tags keep from_sidebar/from_directory provenance; author_slugs never move first_seen/last_seen backwards; list_tag_walk_history keeps the earliest first_walked and latest last_walked). Config, browser_scrape, author_scrape_failures, list_scrapes, list_walk, and the legacy list_tag_walks are not exported and not imported. Updates the schema automatically (current spec).')
   .option('--books <file>', 'Path to the books .csv.gz file')
   .option('--authors <file>', 'Path to the authors .csv.gz file')
   .option('--authorSlugs <file>', 'Path to the author_slugs .csv.gz file (slug-history ledger; first_seen keeps earliest, last_seen keeps latest)')
@@ -1765,6 +1888,7 @@ program
   .option('--lists <file>', 'Path to the lists .csv.gz file (list discovery/ingest state; seen_book_ids unioned)')
   .option('--listTags <file>', 'Path to the list_tags .csv.gz file (unified list-tag xref; from_sidebar/from_directory provenance preserved)')
   .option('--listTagWalkHistory <file>', 'Path to the list_tag_walk_history .csv.gz file (walk-history ledger; earliest first_walked, latest last_walked, larger num_walks/num_lists)')
+  .option('--listMeta <file>', 'Path to the list_meta .csv.gz file (per-list header metadata; counts fill blank, created/creator fill blank, earliest first_seen / latest last_seen)')
   .option('--popularByDate <file>', 'Path to the popular_by_date_book .csv.gz file (rank snapshots; newest scraped_at wins)')
   .option('--tagTails <file>', 'Path to the tag_tail_scrapes .csv.gz file (tag-recent-monitor progress; newest last_scraped wins)')
   .option('--tagTailState <file>', 'Path to the tag_tail_monitor_state .csv.gz file (in-flight monitor run state)')
@@ -1779,7 +1903,7 @@ Examples:
   .action(async (options) => {
     try {
       const policy = options.ratingPolicy === 'update' ? 'update' : 'keep';
-      const files = [options.books, options.authors, options.authorSlugs, options.tagBooks, options.genres, options.xref, options.bookPage, options.tagStats, options.lists, options.listTags, options.listTagWalkHistory, options.popularByDate, options.tagTails, options.tagTailState].filter(Boolean);
+      const files = [options.books, options.authors, options.authorSlugs, options.tagBooks, options.genres, options.xref, options.bookPage, options.tagStats, options.lists, options.listTags, options.listTagWalkHistory, options.listMeta, options.popularByDate, options.tagTails, options.tagTailState].filter(Boolean);
       for (const f of files) {
         printAnalysis(await analyzeCsv(f));
       }
@@ -1795,6 +1919,7 @@ Examples:
         listsFile: options.lists,
         listTagsFile: options.listTags,
         listTagWalkHistoryFile: options.listTagWalkHistory,
+        listMetaFile: options.listMeta,
         popularByDateFile: options.popularByDate,
         tagTailsFile: options.tagTails,
         tagTailStateFile: options.tagTailState,
@@ -2276,10 +2401,21 @@ Throttling: same 60s cooldown + 1 retry + 2-consecutive abort behavior as browse
 
 program
   .command('librarian-recent-edits')
-  .description('Walk Goodreads Librarian Recent Edits (https://www.goodreads.com/librarian/recent_edits). REQUIRES CREDENTIALS in config.json (loadConfig().cookie). Harvests book_id and author_id; for unseen books inserts minimal row, for unseen authors inserts minimal row only (no back-catalog scrape).')
+  .description('Walk Goodreads Librarian Recent Edits (https://www.goodreads.com/librarian/recent_edits). REQUIRES CREDENTIALS in config.json (loadConfig().cookie). Harvests book_id and author_id; for unseen books inserts minimal row (id/title/author/authorId/ratings=0/published=Unknown), for unseen authors inserts minimal row only (no back-catalog scrape). Deduplicates per run.')
+  .addHelpText('after', `
+Examples:
+  $ ./librarianRecentEdits.sh                    (fetch pages 1-100, insert new books/authors)
+  $ ./librarianRecentEdits.sh --pages 10         (fetch first 10 pages)
+  $ ./librarianRecentEdits.sh --dryRun           (enumerate only, no writes)
+  $ LIBRARIAN_RECENT_EDITS_DELAY_MS="2000,3000" ./librarianRecentEdits.sh
+
+Notes:
+  - REQUIRES AUTHENTICATION: needs cookies in config.json (redirects without auth)
+  - Pages go up to ~100; page 101 returns 500
+  - Only inserts minimal rows for unseen books/authors; no detail scraping, no author back-catalog crawl`)
   .option('--pages <number>', 'Max pages to fetch (default 100, max 100)', '100')
   .option('--dryRun', 'Enumerate only, no writes')
-  .option('--delay-ms <number>', 'Fixed delay between pages in ms')
+  .option('--delay-ms <number>', 'Fixed delay between pages in ms (overrides random range)')
   .action(async (options) => {
     try {
       await runLibrarianRecentEdits({
@@ -2289,6 +2425,55 @@ program
       });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run librarian-recent-edits:'), (error as any).message);
+    }
+  });
+
+program
+  .command('giveaways')
+  .description('Walk the Goodreads Giveaways feed (https://www.goodreads.com/giveaway?sort=recently_listed): enumerate the giveaways on offer via Goodreads\' own AppSync getGiveaways pagination inside the page (endpoint + API key captured from the site\'s traffic), collect the BOOK id of each giveaway (details.book.legacyId, falling back to the cover imageUrl), then interleave a book detail-scrape right after the listing — walk a feed, read its books. BOOK-ID ONLY: nothing giveaway-specific is persisted (the book detail page is the canonical source for all book-level data). The listing is server-rendered, so the AppSync feed is driven entirely from inside the page; the server caps a page at 15 (~120 fetches for the current ~1.8k feeds).')
+  .addHelpText('after', `
+Examples:
+  $ ./giveaways.sh                          (recent giveaways → detail-scrape)
+  $ ./giveaways.sh --limit 500000           (detail-scrape every not-yet-scraped book)
+  $ ./giveaways.sh --sort ending            (ending soon first)
+  $ ./giveaways.sh --dryRun                 (enumerate + print ids, no writes)
+  $ ./giveaways.sh --no-details             (enumerate only, no detail-scrape)
+  $ GOODREADS_STRICT_THROTTLE=1 ./giveaways.sh --dryRun  (abort on 202/403)
+Skip: already-scraped books are skipped by browser-book-scrape's checkpoint, so
+re-walking the feed re-fetches nothing (use --force to re-scrape). The per-page
+detail-scrape reuses browser-book-scrape's candidate loop (checkpoint skip, --skip-has,
+cooldown + 1 retry, 2-consecutive abort, pacing) while keeping the browser open across
+the whole run. --limit caps the detail-scrape (500000 = all).
+Throttling: same 60s cooldown + 1 retry + 2-consecutive abort behavior as browser-book-scrape.`)
+  .option('--limit <number>', 'Cap on book detail-scrapes (default 100; 500000 = all)', '100')
+  .option('--skip-has <criteria>', 'Only fetch details for books MISSING all of these: genres|work-id|tags (default genres)', 'genres')
+  .option('--sort <sort>', 'Giveaway sort: recent|ending|popular|featured (default recent)', 'recent')
+  .option('--pages <number>', 'Max getGiveaways fetches to walk (default 130; ~120 fills the feed)', '130')
+  .option('--page-size <number>', 'Server page size per fetch (default 15 — server-capped)', '15')
+  .option('--engine <engine>', 'Detail fetch engine: browser (default) or axios', 'browser')
+  .option('--dryRun', 'Enumerate the feed (AppSync pagination, network) but write nothing and skip the detail-scrape')
+  .option('--no-details', 'Enumerate only; skip the detail-scrape')
+  .option('--force', 'Re-fetch books that already have ok checkpoints')
+  .option('--cooldown-ms <number>', 'Cooldown sleep after a throttled response before the single retry (default 60000)')
+  .option('--maxConsecutiveThrottles <number>', 'Give up after this many consecutive throttled fetches (default 2; 0 = keep going)', '2')
+  .action(async (options) => {
+    try {
+      const skipHas = String(options.skipHas).split(',').map((s: string) => s.trim()).filter(Boolean);
+      await runGiveaways({
+        limit: parseInt(options.limit, 10),
+        skipHas,
+        sort: options.sort,
+        pages: parseInt(options.pages, 10),
+        pageSize: parseInt(options.pageSize, 10),
+        engine: options.engine === 'axios' ? 'axios' : 'browser',
+        dryRun: !!options.dryRun,
+        noDetails: !!options.noDetails,
+        force: !!options.force,
+        cooldownMs: options.cooldownMs !== undefined ? parseInt(options.cooldownMs, 10) : undefined,
+        maxConsecutiveThrottles: parseInt(options.maxConsecutiveThrottles, 10),
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run giveaways:'), (error as any).message);
     }
   });
 
@@ -2356,9 +2541,12 @@ async function checkTokenExpiration() {
 
 async function main() {
   const startTime = Date.now();
+  // --reddit asks for clean, copy-pasteable output, so skip the startup cookie
+  // banner and the trailing run-time line.
+  const cleanOutput = process.argv.includes('--reddit');
   
   try {
-    await checkTokenExpiration();
+    if (!cleanOutput) await checkTokenExpiration();
     // Default to 'check' if no command is provided
     if (!process.argv.slice(2).length) {
       await program.parseAsync([...process.argv, 'check']);
@@ -2368,11 +2556,13 @@ async function main() {
   } catch (error) {
     console.error(chalk.red.bold('\nFatal error:'), (error as any).message);
   } finally {
-    const duration = (Date.now() - startTime) / 1000;
-    const minutes = Math.floor(duration / 60);
-    const seconds = (duration % 60).toFixed(1);
-    
-    console.log(chalk.cyan.bold(`\n⏱️  Total run time: ${minutes > 0 ? `${minutes}m ` : ''}${seconds}s`));
+    if (!cleanOutput) {
+      const duration = (Date.now() - startTime) / 1000;
+      const minutes = Math.floor(duration / 60);
+      const seconds = (duration % 60).toFixed(1);
+      
+      console.log(chalk.cyan.bold(`\n⏱️  Total run time: ${minutes > 0 ? `${minutes}m ` : ''}${seconds}s`));
+    }
   }
 }
 

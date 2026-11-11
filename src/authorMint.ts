@@ -121,8 +121,8 @@ export interface AuthorMintResult {
 // lock is held for exactly one statement at a time), idempotent via ON CONFLICT
 // DO NOTHING, so an aborted run is safe to replay.
 const MINT_SQL = `
-  INSERT INTO authors (id, name, slug, last_seen, first_seen)
-  VALUES (@id, @name, NULL, @lastSeen, @firstSeen)
+  INSERT INTO authors (id, name, slug, last_seen, first_seen, source)
+  VALUES (@id, @name, NULL, @lastSeen, @firstSeen, 'author_mint')
   ON CONFLICT(id) DO NOTHING
 `;
 

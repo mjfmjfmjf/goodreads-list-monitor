@@ -636,7 +636,27 @@ function initSchema(db: Database.Database) {
       list_id TEXT PRIMARY KEY,
       list_name TEXT,
       first_scraped TEXT NOT NULL,
-      last_scraped TEXT NOT NULL
+      last_scraped TEXT NOT NULL,
+      -- Number of completed scrapes (1 on first, +1 per re-crawl).
+      num_scraped INTEGER,
+      -- Books returned by the last completed crawl (0 for a gone 404/410 list).
+      num_books_scraped INTEGER
+    );
+
+    -- Per-list header metadata, read from the right-hand sidebar on page 1 of
+    -- EVERY list read (partial crawls included), unlike list_scrapes which only
+    -- gets a row when a crawl completes. Counts track the latest read; the
+    -- creation date and creator are immutable and only fill in.
+    CREATE TABLE IF NOT EXISTS list_meta (
+      list_id      TEXT PRIMARY KEY,
+      num_books    INTEGER,
+      num_voters   INTEGER,
+      created_at   TEXT,
+      creator_id   TEXT,
+      creator_name TEXT,
+      num_likes    INTEGER,
+      first_seen   TEXT NOT NULL,
+      last_seen    TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS tag_tail_scrapes (
@@ -700,6 +720,92 @@ function initSchema(db: Database.Database) {
       to_read INTEGER,
       editions_count INTEGER,
       scraped_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS author_sitemap_files (
+      shard_id            INTEGER PRIMARY KEY,
+      url                 TEXT NOT NULL,
+      index_lastmod       TEXT,
+      etag                TEXT,
+      last_modified       TEXT,
+      sha256              TEXT,
+      bytes_compressed    INTEGER,
+      bytes_uncompressed  INTEGER,
+      http_status         INTEGER,
+      duration_ms         INTEGER,
+      entries             INTEGER,
+      lastmod_min         TEXT,
+      lastmod_max         TEXT,
+      new_ids             INTEGER,
+      changed_ids         INTEGER,
+      unchanged_ids       INTEGER,
+      unknown_ids         INTEGER,
+      error_skipped_ids   INTEGER,
+      back_catalog_scraped INTEGER,
+      recent_scraped      INTEGER,
+      skipped_recent      INTEGER,
+      skipped_unchanged   INTEGER,
+      failed_ids          INTEGER,
+      preview_at          TEXT,
+      fetched_at          TEXT,
+      parsed_at           TEXT,
+      processed_at        TEXT,
+      status              TEXT NOT NULL DEFAULT 'pending',
+      error               TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS author_sitemap_candidates (
+      author_id       TEXT PRIMARY KEY,
+      shard_id        INTEGER NOT NULL,
+      slug            TEXT,
+      sitemap_lastmod TEXT,
+      reason          TEXT NOT NULL,
+      scrape_kind     TEXT NOT NULL,
+      status          TEXT NOT NULL DEFAULT 'pending',
+      not_before      TEXT,
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      first_seen      TEXT NOT NULL,
+      last_attempt    TEXT,
+      last_error      TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_author_sitemap_candidates_ready
+      ON author_sitemap_candidates(status, not_before, sitemap_lastmod DESC);
+    CREATE INDEX IF NOT EXISTS idx_author_sitemap_candidates_shard
+      ON author_sitemap_candidates(shard_id);
+
+    CREATE TABLE IF NOT EXISTS list_sitemap_files (
+      shard_id            INTEGER PRIMARY KEY,
+      url                 TEXT NOT NULL,
+      index_lastmod       TEXT,
+      etag                TEXT,
+      last_modified       TEXT,
+      sha256              TEXT,
+      bytes_compressed    INTEGER,
+      bytes_uncompressed  INTEGER,
+      http_status         INTEGER,
+      duration_ms         INTEGER,
+      entries             INTEGER,
+      lastmod_min         TEXT,
+      lastmod_max         TEXT,
+      cursor_list_id      TEXT,
+      cursor_index        INTEGER,
+      processed_entries   INTEGER NOT NULL DEFAULT 0,
+      new_ids             INTEGER NOT NULL DEFAULT 0,
+      stale_ids           INTEGER NOT NULL DEFAULT 0,
+      recent_ids          INTEGER NOT NULL DEFAULT 0,
+      unchanged_ids       INTEGER NOT NULL DEFAULT 0,
+      unknown_ids         INTEGER NOT NULL DEFAULT 0,
+      scraped             INTEGER NOT NULL DEFAULT 0,
+      failed              INTEGER NOT NULL DEFAULT 0,
+      gone_ids            INTEGER NOT NULL DEFAULT 0,
+      capped_ids          INTEGER NOT NULL DEFAULT 0,
+      pass_started_at     TEXT,
+      pass_completed_at   TEXT,
+      fetched_at          TEXT,
+      parsed_at           TEXT,
+      status              TEXT NOT NULL DEFAULT 'pending',
+      error               TEXT
     );
 
   `);
@@ -766,6 +872,23 @@ function initSchema(db: Database.Database) {
   const tagCols = db.prepare('PRAGMA table_info(tag_books)').all() as any[];
   if (!tagCols.some((c: any) => c.name === 'shelved')) {
     db.exec('ALTER TABLE tag_books ADD COLUMN shelved INTEGER');
+  }
+  const listScrapeCols = db.prepare('PRAGMA table_info(list_scrapes)').all() as any[];
+  if (!listScrapeCols.some((c: any) => c.name === 'num_scraped')) {
+    db.exec('ALTER TABLE list_scrapes ADD COLUMN num_scraped INTEGER');
+  }
+  if (!listScrapeCols.some((c: any) => c.name === 'num_books_scraped')) {
+    // num_scraped briefly meant "books in the last crawl". Move those values to
+    // num_books_scraped, then make num_scraped a completed-scrape counter
+    // (we can only prove 1 vs 2+ for existing rows, so re-scraped gets 2).
+    db.exec('ALTER TABLE list_scrapes ADD COLUMN num_books_scraped INTEGER');
+    if (listScrapeCols.some((c: any) => c.name === 'num_scraped')) {
+      db.exec('UPDATE list_scrapes SET num_books_scraped = num_scraped WHERE num_scraped IS NOT NULL');
+    }
+    db.exec(`
+      UPDATE list_scrapes
+      SET num_scraped = CASE WHEN first_scraped != last_scraped THEN 2 ELSE 1 END
+    `);
   }
   const booksCols = db.prepare('PRAGMA table_info(books)').all() as any[];
   if (!booksCols.some((c: any) => c.name === 'first_seen')) {

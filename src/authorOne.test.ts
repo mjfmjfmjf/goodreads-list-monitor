@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { gzipSync } from 'node:zlib';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
@@ -17,12 +18,24 @@ vi.mock('./scraper.ts', () => ({
 import { closeDb, getDb } from './db.ts';
 import { scrapeAuthorStats } from './scraper.ts';
 import { authorExistsById, upsertAuthor } from './storage.ts';
-import { runAuthorOneFile } from './authorOne.ts';
+import { runAuthorOne, runAuthorOneFile } from './authorOne.ts';
 
 const mockScrape = vi.mocked(scrapeAuthorStats);
 
 const TMP_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'goodreads-authorone-'));
 const LIST_FILE = path.join(TMP_DIR, 'authors.txt');
+const SITEMAP_FILE = path.join(TMP_DIR, 'sitemap.xml');
+const SITEMAP_GZ_FILE = path.join(TMP_DIR, 'sitemap.xml.gz');
+
+const sitemapXml = (entries: string[]): string => `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${entries.map((loc) => `  <url>
+    <loc>${loc}</loc>
+    <lastmod>2026-10-30T03:24:02-07:00</lastmod>
+    <changefreq>weekly</changefreq>
+  </url>`).join('\n')}
+</urlset>
+`;
 
 function fakeResult(slug: string) {
   return {
@@ -78,6 +91,77 @@ describe('runAuthorOneFile', () => {
     expect(out).toContain('scraped 2 (2 new / 0 already known)');
     // 2 authors x (3 new / 1 enriched) from the mocked scrape result.
     expect(out).toContain('Books: 6 new / 2 enriched');
+  });
+
+  it('parses sitemap XML loc entries and ignores the XML scaffolding', async () => {
+    upsertAuthor('Sitemap Cached', { id: '987', slug: '987.Sitemap_Cached', lastSeen: new Date().toISOString() });
+    fs.writeFileSync(SITEMAP_FILE, sitemapXml([
+      'https://www.goodreads.com/author/show/321.Sitemap_Author',
+      'https://www.goodreads.com/author/show/654.Another_Author',
+      'https://www.goodreads.com/author/show/987.Sitemap_Cached',
+    ]));
+
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (...a: any[]) => logs.push(a.map(String).join(' '));
+    await runAuthorOneFile(SITEMAP_FILE, { multiPage: true });
+    console.log = orig;
+
+    expect(mockScrape).toHaveBeenCalledTimes(2);
+    expect(mockScrape).toHaveBeenCalledWith('321.Sitemap_Author', expect.any(Function), true, undefined, false);
+    expect(mockScrape).toHaveBeenCalledWith('654.Another_Author', expect.any(Function), true, undefined, false);
+
+    const out = logs.join('\n');
+    expect(out).toContain('(sitemap)');
+    expect(out).toContain('0 unparseable');
+    expect(out).toContain('skipped (already cached) 1');
+  });
+
+  it('dryRun reports new/cached counts without scraping or writing', async () => {
+    upsertAuthor('Dry Cached', { id: '8801', slug: '8801.Dry_Cached', lastSeen: new Date().toISOString() });
+    fs.writeFileSync(SITEMAP_FILE, sitemapXml([
+      'https://www.goodreads.com/author/show/8801.Dry_Cached',
+      'https://www.goodreads.com/author/show/8802.Dry_New_A',
+      'https://www.goodreads.com/author/show/8803.Dry_New_B',
+    ]));
+
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (...a: any[]) => logs.push(a.map(String).join(' '));
+    await runAuthorOneFile(SITEMAP_FILE, { multiPage: true, dryRun: true });
+    console.log = orig;
+
+    expect(mockScrape).not.toHaveBeenCalled();
+    expect(authorExistsById('8802')).toBe(false);
+    expect(authorExistsById('8803')).toBe(false);
+
+    const out = logs.join('\n');
+    expect(out).toContain('would scrape 2');
+    expect(out).toContain('1 already cached');
+    expect(out).toContain('3 unique ids');
+    expect(out).toContain('dry run');
+  });
+
+  it('single-author dryRun reports cache status without scraping', async () => {
+    const logs: string[] = [];
+    const orig = console.log;
+    console.log = (...a: any[]) => logs.push(a.map(String).join(' '));
+    await runAuthorOne('8804.Dry_Single', { dryRun: true });
+    console.log = orig;
+
+    expect(mockScrape).not.toHaveBeenCalled();
+    expect(logs.join('\n')).toContain('would scrape');
+  });
+
+  it('reads gzipped sitemap files', async () => {
+    fs.writeFileSync(SITEMAP_GZ_FILE, gzipSync(Buffer.from(sitemapXml([
+      'https://www.goodreads.com/author/show/7123.Gz_Author',
+    ]))));
+
+    await runAuthorOneFile(SITEMAP_GZ_FILE);
+
+    expect(mockScrape).toHaveBeenCalledTimes(1);
+    expect(mockScrape).toHaveBeenCalledWith('7123.Gz_Author', expect.any(Function), false, undefined, false);
   });
 
   it('stops the batch on an exhausted connectivity error and keeps progress', async () => {

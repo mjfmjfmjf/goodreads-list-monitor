@@ -10,6 +10,7 @@ export interface ListPopularWalkerOptions {
   listMaxPages?: number;
   skipDays?: number;
   dryRun?: boolean;
+  source?: string;
 }
 
 interface ListWalkResult {
@@ -119,7 +120,10 @@ export async function runListPopularWalker(options: ListPopularWalkerOptions): P
       console.log(chalk.gray(`\n   📖 [${i + 1}/${lists.length}] ${chalk.white.bold(label)} (${l.id}) — crawling...`));
       let books;
       try {
-        books = await withConnectivityProbe(() => scrapeListBooks(l.id, options.listMaxPages ?? Infinity), { label: `list ${l.id}` });
+        books = await withConnectivityProbe(
+          () => scrapeListBooks(l.id, options.listMaxPages ?? Infinity, options.source ?? 'list_popular_walk'),
+          { label: `list ${l.id}` },
+        );
       } catch (error: any) {
         if (isConnectivityError(error)) throw error;
         console.error(chalk.red.bold(`   ❌ List ${l.id} failed: ${error?.message}`));
@@ -132,7 +136,7 @@ export async function runListPopularWalker(options: ListPopularWalkerOptions): P
       const authorsAdded = countAuthors() - authorsBefore;
 
       if (shouldMarkScraped(books.length, options.listMaxPages, skipDays)) {
-        upsertListScrape(l.id, label);
+        upsertListScrape(l.id, label, undefined, books.length);
         scrolled++;
       }
 

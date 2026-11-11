@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as cheerio from 'cheerio';
-import { extractAuthorId, acceptAuthorListMatch, findOnAuthorPage, extractShelfPageLinks, isPermanentAuthorPageFailure, parseTagListPage, parseAuthorStats, reanchorShelfPage, parseListTags } from './scraper.ts';
+import { extractAuthorId, acceptAuthorListMatch, findOnAuthorPage, extractShelfPageLinks, isPermanentAuthorPageFailure, parseTagListPage, parseAuthorStats, reanchorShelfPage, parseListTags, parseListMeta } from './scraper.ts';
 
 describe('extractAuthorId', () => {
   it('returns the bare id as-is', () => {
@@ -347,5 +347,87 @@ describe('parseListTags', () => {
   it('handles percent-encoded slugs', () => {
     const html = `<a class="actionLinkLite" href="/list/show_tag/100%25%20off">100% off</a>`;
     expect(parseListTags(cheerio.load(html))).toEqual(['100%-off']);
+  });
+});
+
+describe('parseListMeta', () => {
+  // Real markup from list/show/36647 (the right-hand sidebar + like container).
+  const page = `
+    <div class="stacked">
+      <div>
+        1,137 books &middot;
+        164 voters &middot;
+        list created May 1st, 2013
+        by <a href="/user/show/970632-mitchell-friedman">Mitchell Friedman</a>
+        <a class="greyText smallText" href="/list/user_vote/2278198">(votes)</a> .
+      </div>
+      <div>
+        Tags:
+        <a class="actionLinkLite" href="/list/show_tag/mjf">mjf</a>
+      </div>
+    </div>
+    <div>
+      <span class="likeItContainer" id="like_container_list_36647">
+        <a id="like_count_list_36647" href="/rating/voters/36647?resource_type=List">
+          <span class="likesCount">80 likes</span>
+        </a>
+      </span>
+    </div>`;
+
+  it('reads books, voters, creation date, creator and likes', () => {
+    expect(parseListMeta(cheerio.load(page))).toEqual({
+      numBooks: 1137,
+      numVoters: 164,
+      createdAt: '2013-05-01',
+      creatorId: '970632',
+      creatorName: 'Mitchell Friedman',
+      numLikes: 80,
+    });
+  });
+
+  it('handles an ordinal-less date and a creator whose id has no name slug', () => {
+    const html = `
+      <div class="stacked">
+        <div>12 books &middot; 3 voters &middot; list created June 2, 2020 by
+          <a href="/user/show/42">Somebody</a> .</div>
+      </div>
+      <span class="likeItContainer"><span class="likesCount">1 like</span></span>`;
+    expect(parseListMeta(cheerio.load(html))).toEqual({
+      numBooks: 12,
+      numVoters: 3,
+      createdAt: '2020-06-02',
+      creatorId: '42',
+      creatorName: 'Somebody',
+      numLikes: 1,
+    });
+  });
+
+  it('records 0 likes when the list has none (only the Like button renders)', () => {
+    const html = `
+      <div class="stacked"><div>5 books &middot; 2 voters</div></div>
+      <span class="likeItContainer"><a class="jsLike like_it">Like</a></span>`;
+    expect(parseListMeta(cheerio.load(html))).toEqual({ numBooks: 5, numVoters: 2, numLikes: 0 });
+  });
+
+  it('captures a deleted creator rendered as plain text (no user link)', () => {
+    const html = `
+      <div class="stacked">
+        <div>746 books &middot; 339 voters &middot; list created September 12th, 2013 by deleted user.</div>
+      </div>`;
+    expect(parseListMeta(cheerio.load(html))).toEqual({
+      numBooks: 746,
+      numVoters: 339,
+      createdAt: '2013-09-12',
+      creatorName: 'deleted user',
+    });
+  });
+
+  it('omits pieces the page does not carry instead of fabricating them', () => {
+    const html = `<div class="stacked"><div>10 books &middot; 2 voters</div></div>`;
+    expect(parseListMeta(cheerio.load(html))).toEqual({ numBooks: 10, numVoters: 2 });
+  });
+
+  it('returns an empty object when there is no header at all', () => {
+    expect(parseListMeta(cheerio.load('<div>nothing here</div>'))).toEqual({});
   });
 });

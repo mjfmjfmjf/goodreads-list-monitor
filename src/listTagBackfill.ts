@@ -10,6 +10,7 @@ export interface ListTagBackfillOptions {
   // Test hook: the shuffle is the one random thing in a crawl, so it has to be
   // assertable. Production leaves this undefined and uses the default Fisher-Yates.
   shuffle?: (ids: string[]) => string[];
+  source?: string;
 }
 
 export interface ListTagBackfillResult {
@@ -129,7 +130,10 @@ export async function runListTagBackfill(options: ListTagBackfillOptions = {}): 
     try {
       // Only page 1: the tag block repeats on every page, so one read per list
       // gets the whole tag set, and this keeps the command to one request a list.
-      books = await withConnectivityProbe(() => scrapeListBooks(listId, 1), { label: `list ${listId}` });
+      books = await withConnectivityProbe(
+        () => scrapeListBooks(listId, 1, options.source ?? 'list_tag_backfill'),
+        { label: `list ${listId}` },
+      );
     } catch (error: any) {
       // A dead list id must not end the run — that is the failure mode this
       // command exists to survive. Only a connectivity outage aborts (and even

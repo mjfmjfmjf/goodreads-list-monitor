@@ -115,12 +115,13 @@ async function migrate() {
     console.log(`   Found ${entries.length} authors in authorsCache.json`);
 
     const upsert = db.prepare(`
-      INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves)
-      VALUES (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves)
+      INSERT INTO authors (name, id, slug, last_seen, average_rating, num_ratings, num_reviews, num_shelves, source)
+      VALUES (@name, @id, @slug, @lastSeen, @averageRating, @numRatings, @numReviews, @numShelves, 'legacy_cache')
       ON CONFLICT(id) DO UPDATE SET
         name=COALESCE(authors.name, excluded.name), slug=excluded.slug, last_seen=excluded.last_seen,
         average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
-        num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves
+        num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
+        source=COALESCE(authors.source, excluded.source)
     `);
 
     const tx = db.transaction(() => {

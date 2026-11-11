@@ -6,8 +6,8 @@ import chalk from 'chalk';
 
 // Sanitized CSV+gzip export of the shareable library-data tables (books,
 // authors, author_slugs, tag_books, genres, genre_tag_xref, list_tags,
-// list_tag_walk_history, book_page, tag_stats, lists, popular_by_date_book,
-// tag_tail_scrapes, tag_tail_monitor_state).
+// list_tag_walk_history, list_meta, book_page, tag_stats, lists,
+// popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state).
 // Deliberately EXCLUDES config (live session cookies / userId), browser_scrape
 // and author_scrape_failures (operational scrape checkpoints), list_scrapes and
 // list_walk (crawl bookkeeping), and the legacy list_tag_walks (superseded by
@@ -21,7 +21,7 @@ import chalk from 'chalk';
 // unification, and it is being dropped — exporting it would produce a file with
 // no importer. list_tags carries the unified xref; list_tag_walk_history carries
 // the walk history (both exported and imported).
-export const EXPORT_TABLES = ['books', 'authors', 'author_slugs', 'tag_books', 'genres', 'genre_tag_xref', 'list_tags', 'list_tag_walk_history', 'book_page', 'tag_stats', 'lists', 'popular_by_date_book', 'tag_tail_scrapes', 'tag_tail_monitor_state'] as const;
+export const EXPORT_TABLES = ['books', 'authors', 'author_slugs', 'tag_books', 'genres', 'genre_tag_xref', 'list_tags', 'list_tag_walk_history', 'list_meta', 'book_page', 'tag_stats', 'lists', 'popular_by_date_book', 'tag_tail_scrapes', 'tag_tail_monitor_state'] as const;
 
 // While exporting a large table (books is 11M+ rows), emit a live row-count
 // tick every N rows so a multi-minute export doesn't look hung.
@@ -44,6 +44,9 @@ export const EXCLUDED_TABLES = [
   // and due to be dropped once pre-unification crawlers exit. Only written by
   // those old crawlers; never exported (a receiver can't import it).
   'list_tag_walks',
+  'author_sitemap_files',
+  'author_sitemap_candidates',
+  'list_sitemap_files',
   'authors_old_20261003',
   'emrys_09_04_books',
   'emrys_09_04_tags',
