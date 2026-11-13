@@ -83,7 +83,11 @@ const parseYear = (published?: string): number | null => {
 // requested field (descending), validated against min/max ratings. With
 // `onlyUntouched`, restrict to authors that have never been multi-page-crawled
 // (no catalogPages recorded yet) so a first pass only targets the remaining
-// tail instead of re-evaluating already-completed ones. The `topRatings` sort
+// tail instead of re-evaluating already-completed ones. Statless authors are
+// always kept: a `catalogPages` value only proves the catalog was walked, not
+// that the stats block parsed (the 2026/09/29 A/B layout incident left many
+// cataloged-but-statless rows), so skipping them here would lock the gap shut.
+// The `topRatings` sort
 // key (max ratings across the author's books in the books table) is new: it
 // orders by how popular the author's BOOKS are, not the author-page stats —
 // which are still 0 for authors minted but not yet author-scraped (e.g. by a
@@ -179,7 +183,7 @@ export function selectMultiPageAuthors(
       if (!(filterRatings >= opts.minRatings && filterRatings <= opts.maxRatings)) continue;
     } else {
       const isMultiPage = !entry.catalogPages || entry.catalogPages >= 2;
-      if (opts.onlyUntouched && entry.catalogPages && entry.catalogPages >= 2) continue;
+      if (opts.onlyUntouched && entry.catalogPages && entry.catalogPages >= 2 && !isStatless(entry)) continue;
       if (!isMultiPage) continue;
       if (!(filterRatings >= opts.minRatings && filterRatings <= opts.maxRatings)) continue;
     }

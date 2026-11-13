@@ -10,6 +10,13 @@ coverage/
 # Generated static publish output
 publish/
 
+# Local mirror of the HostPapa website
+hostpapa-site/
+mirrorHostpapa.py
+mirrorHostpapa.sh
+uploadHostpapa.py
+uploadHostpapa.sh
+
 # Large data/cache files
 authorsCache.json
 booksCache.json

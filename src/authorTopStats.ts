@@ -25,6 +25,7 @@ export interface AuthorTopStatsOptions {
   sortBy?: string;
   minRatings?: string;
   maxRatings?: string;
+  direction?: 'asc' | 'desc';
 }
 
 export interface SelectedAuthor {
@@ -104,8 +105,9 @@ export function selectAuthors(authorModels: Record<string, AuthorCacheEntry> | I
     }
   }
 
+  const direction = options.direction === 'asc' ? 'asc' : 'desc';
   authors.sort((a, b) => {
-    if (a.value !== b.value) return b.value - a.value;
+    if (a.value !== b.value) return direction === 'asc' ? a.value - b.value : b.value - a.value;
     const ar = parseNum(a.entry.numRatings);
     const br = parseNum(b.entry.numRatings);
     if (ar !== br) return br - ar;

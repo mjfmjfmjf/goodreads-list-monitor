@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { getDb } from './db.ts';
 import { iterateBooks, streamRows } from './storage.ts';
 
-interface RatingBucket {
+export interface RatingBucket {
   label: string;
   min: number;
   max: number;
@@ -304,7 +304,7 @@ export function renderCoverageHistogram(c: CoverageCounts, buckets: RatingBucket
   return lines;
 }
 
-export async function runRatingsCoverageHistogram(): Promise<void> {
+export function loadCoverageCounts(): CoverageCounts {
   const fieldIds = new Set(
     (getDb().prepare('SELECT book_id FROM book_page').all() as Array<{ book_id: string }>).map(r => r.book_id)
   );
@@ -321,7 +321,11 @@ export async function runRatingsCoverageHistogram(): Promise<void> {
       };
     }
   }
-  const counts = buildCoverageCounts(mapRows(), fieldIds);
+  return buildCoverageCounts(mapRows(), fieldIds);
+}
+
+export async function runRatingsCoverageHistogram(): Promise<void> {
+  const counts = loadCoverageCounts();
   for (const line of renderCoverageHistogram(counts)) console.log(line);
 }
 

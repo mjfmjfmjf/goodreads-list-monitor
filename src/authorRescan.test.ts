@@ -75,7 +75,7 @@ describe('selectMultiPageAuthors', () => {
 
   it('onlyUntouched keeps only never-multi-page-crawled authors (no catalogPages)', () => {
     const cache = {
-      done: entry('10', { catalogPages: 5 }),
+      done: entry('10', { catalogPages: 5, numRatings: '1000', averageRating: '4.1' }),
       single: entry('11', { catalogPages: 1 }),
       todo: entry('12'),
       todo2: entry('13'),
@@ -88,6 +88,21 @@ describe('selectMultiPageAuthors', () => {
     };
     const out = selectMultiPageAuthors(cache, { ...base, sortBy: 'topRatings', bookStats });
     expect(out.map((o) => o.name)).toEqual(['todo', 'todo2']);
+  });
+
+  it('onlyUntouched re-picks cataloged-but-statless authors instead of locking them out', () => {
+    // catalogPages only proves the catalog was walked, not that the stats block
+    // parsed (2026/09/29 A/B layout). Such a row must stay eligible.
+    const cache = {
+      catalogedButStatless: entry('20', { catalogPages: 26 }),
+      done: entry('21', { catalogPages: 5, numRatings: '1000', averageRating: '4.1' }),
+    };
+    const bookStats = {
+      '20': { topRatings: 42942083, newestYear: 2020, books: 1 },
+      '21': { topRatings: 99999, newestYear: 2020, books: 1 },
+    };
+    const out = selectMultiPageAuthors(cache, { ...base, sortBy: 'topRatings', bookStats });
+    expect(out.map((o) => o.name)).toEqual(['catalogedButStatless']);
   });
 
   it('without onlyUntouched includes catalogPages>=2 authors but never single-page catalogs', () => {

@@ -110,7 +110,7 @@ export function loadPublisherRows(): PublisherBookRow[] {
            b.avg_rating AS avg_rating
     FROM book_page bp
     JOIN books b ON b.id = bp.book_id
-    WHERE bp.publisher IS NOT NULL AND bp.publisher <> ''
+    WHERE bp.publisher IS NOT NULL AND TRIM(bp.publisher) <> ''
       AND b.is_bad = 0
   `).all() as any[];
   return rows.map((r) => ({

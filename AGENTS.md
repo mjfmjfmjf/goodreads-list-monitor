@@ -281,6 +281,15 @@ matter how much code it wrote.
   Do not re-add the backup to monitor.sh; do not make it skip when crawlers
   are running.
 
+## Static publish schedule
+- `publishAndUpload.sh` (launchd `com.goodreads.publishsite`, daily 09:00,
+  installed 2026/11/12) regenerates the site into
+  `~/Downloads/goodreadsZeitgeist` via `./publishSite.sh --out`, then uploads
+  with `uploadHostpapa.sh ~/.hostpapa-ftp.env <dir>`. Upload does NOT pass
+  `--delete`, so removed local reports stay on the server until cleaned up
+  explicitly. Log: `~/Library/Logs/goodreads-publish.log`. Check the job with
+  `launchctl print gui/$(id -u)/com.goodreads.publishsite`.
+
 ## Sanitized export / import (data sharing)
 - `export-data <basename>` writes gzipped CSVs for `EXPORT_TABLES`
   (exportData.ts): books, authors, tag_books, genres, genre_tag_xref, book_page,

@@ -340,6 +340,28 @@ Groups every read + rated book (on the `read` shelf with `My Rating` 1–5) by f
 ```
 The footer reports the total distinct shelves and how many books had none.
 
+### 9. Static Site Publishing
+Render the database as a self-contained static HTML site (no server, no
+external assets) and optionally push it to a HostPapa site directory.
+
+```bash
+./publishSite.sh                                   # render into ./publish
+./publishSite.sh --out ~/Downloads/goodreadsZeitgeist --limit 500
+```
+
+Pages cover overall/field coverage, the ratings histogram, authors, book/work
+IDs, works, book detail (publishers, languages, formats, page counts), titles,
+highest-rated-by-year, and lists. Each page is written atomically as soon as it
+is ready, so a regeneration never takes the published site down.
+
+`./publishAndUpload.sh` regenerates into `~/Downloads/goodreadsZeitgeist`, then
+uploads with `uploadHostpapa.sh` using `~/.hostpapa-ftp.env`. The uploader does
+**not** delete remote files, so removed local reports stay on the server until
+cleaned up explicitly. The FTP helper scripts are intentionally local-only
+(gitignored); the daily schedule is a launchd agent
+(`com.goodreads.publishsite`, 09:00) logging to
+`~/Library/Logs/goodreads-publish.log`.
+
 ## Testing
 - `./runUnitTests.sh` — fast, offline unit tests with code coverage (Vitest). Run after every change.
 - `./runIntegrationTests.sh` — live Goodreads lookups (~a dozen requests; run deliberately, needs `config.json` + cached export). Runs in strict-throttle mode: if Goodreads throttles, it gives up immediately — wait ~60s and retry before suspecting a parser bug.
