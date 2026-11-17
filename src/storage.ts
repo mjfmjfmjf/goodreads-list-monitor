@@ -679,9 +679,17 @@ export interface ListMeta {
   numBooks?: number;
   numVoters?: number;
   createdAt?: string; // YYYY-MM-DD
+  // Raw header date as Goodreads rendered it, e.g. "May 1st, 2013" or a
+  // year-less "January 17th" (current-year lists). Kept so the year assumed for
+  // createdAt can be audited/corrected later.
+  createdAtRaw?: string;
   creatorId?: string;
   creatorName?: string;
   numLikes?: number;
+  // Set when a read found no parseable header metadata (dead/deleted/static page).
+  metaMissing?: boolean;
+  // Set when the page states "This is a static list."
+  isStatic?: boolean;
 }
 
 export interface ListMetaRow extends ListMeta {
@@ -692,28 +700,37 @@ export interface ListMetaRow extends ListMeta {
 
 export function upsertListMeta(listId: string, meta: ListMeta, now = new Date().toISOString()): void {
   const hasAny = meta.numBooks != null || meta.numVoters != null || meta.createdAt != null ||
-    meta.creatorId != null || meta.creatorName != null || meta.numLikes != null;
-  // A page we could not parse must not mint an empty row.
+    meta.createdAtRaw != null || meta.creatorId != null || meta.creatorName != null ||
+    meta.numLikes != null || meta.metaMissing != null || meta.isStatic != null;
+  // A page we could not parse at all and know nothing about must not mint a row.
   if (!hasAny) return;
+  const metaMissing = meta.metaMissing ? 1 : 0;
+  const isStatic = meta.isStatic ? 1 : 0;
   getDb().prepare(`
-    INSERT INTO list_meta (list_id, num_books, num_voters, created_at, creator_id, creator_name, num_likes, first_seen, last_seen)
-    VALUES (@listId, @numBooks, @numVoters, @createdAt, @creatorId, @creatorName, @numLikes, @now, @now)
+    INSERT INTO list_meta (list_id, num_books, num_voters, created_at, created_at_raw, creator_id, creator_name, num_likes, meta_missing, is_static, first_seen, last_seen)
+    VALUES (@listId, @numBooks, @numVoters, @createdAt, @createdAtRaw, @creatorId, @creatorName, @numLikes, @metaMissing, @isStatic, @now, @now)
     ON CONFLICT(list_id) DO UPDATE SET
       num_books = COALESCE(excluded.num_books, list_meta.num_books),
       num_voters = COALESCE(excluded.num_voters, list_meta.num_voters),
       created_at = COALESCE(list_meta.created_at, excluded.created_at),
+      created_at_raw = COALESCE(list_meta.created_at_raw, excluded.created_at_raw),
       creator_id = COALESCE(list_meta.creator_id, excluded.creator_id),
       creator_name = COALESCE(list_meta.creator_name, excluded.creator_name),
       num_likes = COALESCE(excluded.num_likes, list_meta.num_likes),
+      meta_missing = CASE WHEN excluded.meta_missing = 1 THEN 1 ELSE list_meta.meta_missing END,
+      is_static = CASE WHEN excluded.is_static = 1 THEN 1 ELSE list_meta.is_static END,
       last_seen = excluded.last_seen
   `).run({
     listId,
     numBooks: meta.numBooks ?? null,
     numVoters: meta.numVoters ?? null,
     createdAt: meta.createdAt ?? null,
+    createdAtRaw: meta.createdAtRaw ?? null,
     creatorId: meta.creatorId ?? null,
     creatorName: meta.creatorName ?? null,
     numLikes: meta.numLikes ?? null,
+    metaMissing,
+    isStatic,
     now,
   });
 }
@@ -726,9 +743,12 @@ export function loadListMeta(listId: string): ListMetaRow | undefined {
     numBooks: row.num_books ?? undefined,
     numVoters: row.num_voters ?? undefined,
     createdAt: row.created_at ?? undefined,
+    createdAtRaw: row.created_at_raw ?? undefined,
     creatorId: row.creator_id ?? undefined,
     creatorName: row.creator_name ?? undefined,
     numLikes: row.num_likes ?? undefined,
+    metaMissing: !!row.meta_missing,
+    isStatic: !!row.is_static,
     firstSeen: row.first_seen,
     lastSeen: row.last_seen,
   };
@@ -1091,10 +1111,20 @@ const AUTHOR_UPSERT_SQL = `
   ON CONFLICT(id) DO UPDATE SET
     name=COALESCE(excluded.name, name), slug=excluded.slug, last_seen=excluded.last_seen,
     first_seen=COALESCE(authors.first_seen, excluded.first_seen),
-    average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
-    num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
-    catalog_pages=COALESCE(excluded.catalog_pages, catalog_pages),
-    ratings_rate=excluded.ratings_rate,
+    average_rating=CASE
+      WHEN excluded.average_rating IS NOT NULL AND excluded.average_rating > 0
+      THEN excluded.average_rating
+      ELSE authors.average_rating
+    END,
+    num_ratings=CASE WHEN excluded.num_ratings > authors.num_ratings THEN excluded.num_ratings ELSE authors.num_ratings END,
+    num_reviews=CASE WHEN excluded.num_reviews > authors.num_reviews THEN excluded.num_reviews ELSE authors.num_reviews END,
+    num_shelves=CASE WHEN excluded.num_shelves > authors.num_shelves THEN excluded.num_shelves ELSE authors.num_shelves END,
+    catalog_pages=CASE
+      WHEN excluded.catalog_pages IS NOT NULL AND (authors.catalog_pages IS NULL OR excluded.catalog_pages > authors.catalog_pages)
+      THEN excluded.catalog_pages
+      ELSE authors.catalog_pages
+    END,
+    ratings_rate=COALESCE(excluded.ratings_rate, authors.ratings_rate),
     source=CASE
       WHEN authors.source IS NULL OR authors.source = '' OR authors.source = 'unknown'
       THEN COALESCE(excluded.source, authors.source)

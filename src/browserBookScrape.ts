@@ -353,6 +353,9 @@ export async function processBook(
       const ts = new Date().toISOString();
       const slug = parsed.authorSlug || `${authorId}.${authorName.replace(/[^\w]/g, '').trim().replace(/\s+/g, '_')}`;
       withDbLockRetry(() =>
+        // Identity/slug/provenance only: never send rating counts here. A bare
+        // upsert would bind missing counts as 0 and (before monotonic guards)
+        // wiped real author stats; keep this call stat-free regardless.
         upsertAuthor(authorName, { id: authorId, slug, lastSeen: ts, firstSeen: ts, source: 'browser_book_scrape' })
       );
     }

@@ -586,6 +586,8 @@ export async function runFieldCoverage(): Promise<void> {
         COUNT(created_at) AS created_at,
         MIN(created_at) AS created_at_min, MAX(created_at) AS created_at_max,
         COUNT(DISTINCT created_at) AS created_at_distinct,
+        COUNT(created_at_raw) AS created_at_raw,
+        COUNT(DISTINCT created_at_raw) AS created_at_raw_distinct,
         COUNT(creator_id) AS creator_id, COUNT(DISTINCT creator_id) AS creator_id_distinct,
         COUNT(creator_name) AS creator_name, COUNT(DISTINCT creator_name) AS creator_name_distinct,
         COUNT(num_likes) AS num_likes,
@@ -610,6 +612,7 @@ export async function runFieldCoverage(): Promise<void> {
       console.log('  ' + formatCoverageLine(metaStat('num_books', { range: true, avg: true })));
       console.log('  ' + formatCoverageLine(metaStat('num_voters', { range: true, avg: true })));
       console.log('  ' + formatCoverageLine(metaStat('created_at', { range: true })));
+      console.log('  ' + formatCoverageLine(metaStat('created_at_raw')));
       console.log('  ' + formatCoverageLine(metaStat('creator_id')));
       console.log('  ' + formatCoverageLine(metaStat('creator_name')));
       console.log('  ' + formatCoverageLine(metaStat('num_likes', { range: true, avg: true })));

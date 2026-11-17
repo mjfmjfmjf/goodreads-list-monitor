@@ -5,9 +5,13 @@ import { iterateAuthors, streamRows } from './storage.ts';
 import { getDb } from './db.ts';
 import { selectAuthors, type SelectedAuthor } from './authorTopStats.ts';
 import { computePublisherCatalog, loadPublisherRows, type RankedPublisher } from './publisherCatalog.ts';
-import { stripTitleSuffix } from './utils.ts';
+import { getYear, stripTitleSuffix } from './utils.ts';
 import { extractFirstWord } from './titleFirstWordHistogram.ts';
 import { buildRatingBuckets, loadCoverageCounts, type CoverageCounts, type RatingBucket } from './summaryHistogram.ts';
+import { loadBooksAddedBuckets, type BooksAddedSummary } from './booksAddedHistogram.ts';
+import { loadAuthorArrivalBuckets, type AuthorArrivalSummary } from './authorArrivalHistogram.ts';
+import { loadAuthorTopBookHistogram, type AuthorTopBookHistogramData } from './authorTopBookHistogram.ts';
+import { loadTagFirstPagePicks, TAG_FIRST_PAGE_LIMIT, type TagFirstPagePickRow } from './tagFirstPagePicks.ts';
 
 // Static HTML publishing: render DB reports to a local directory of plain
 // files. See PLAN-static-publish.md for the full spec. Pages are built in
@@ -38,6 +42,7 @@ export const AUTHOR_REPORTS: AuthorReport[] = [
   { id: 'author/top-authors-by-catalog-pages', title: 'Top Authors by Catalog Pages', sortBy: 'catalogPages', minRatings: 0 },
   { id: 'author/top-authors-by-avg-rating-min-100k', title: 'Top Authors by Avg Rating (min 100k ratings)', sortBy: 'averageRating', minRatings: 100000 },
   { id: 'author/top-authors-by-avg-rating-min-10k', title: 'Top Authors by Avg Rating (min 10k ratings)', sortBy: 'averageRating', minRatings: 10000 },
+  { id: 'author/top-authors-by-avg-rating-min-1k', title: 'Top Authors by Avg Rating (min 1k ratings)', sortBy: 'averageRating', minRatings: 1000 },
   {
     id: 'author/bottom-authors-by-avg-rating-min-10k',
     title: 'Bottom Authors by Avg Rating (min 10k ratings)',
@@ -45,7 +50,20 @@ export const AUTHOR_REPORTS: AuthorReport[] = [
     minRatings: 10000,
     direction: 'asc',
   },
+  {
+    id: 'author/bottom-authors-by-avg-rating-min-1k',
+    title: 'Bottom Authors by Avg Rating (min 1k ratings)',
+    sortBy: 'averageRating',
+    minRatings: 1000,
+    direction: 'asc',
+  },
 ];
+
+export const AUTHOR_TOP_BOOK_HISTOGRAM_REPORT = {
+  id: 'author/top-book-ratings-histogram',
+  title: 'Author Top-Book Ratings Histogram',
+  navLabel: 'Top-Book Ratings Histogram',
+} as const;
 
 export interface PublishOptions {
   out?: string;
@@ -139,12 +157,17 @@ export const BOOK_METRICS: BookMetric[] = [
 
 export type DerivedReportId =
   | 'highest-skewness-min-100k'
+  | 'highest-skewness-min-10k'
   | 'highest-variance-min-100k'
+  | 'highest-variance-min-10k'
   | 'lowest-kurtosis-min-100k'
+  | 'lowest-kurtosis-min-10k'
   | 'highest-review-ratio-min-1k'
   | 'highest-avg-rating-min-100k'
   | 'highest-avg-rating-min-10k'
-  | 'lowest-avg-rating-min-10k';
+  | 'highest-avg-rating-min-1k'
+  | 'lowest-avg-rating-min-10k'
+  | 'lowest-avg-rating-min-1k';
 
 export type DerivedReportKind = 'skewness' | 'variance' | 'kurtosis' | 'review-ratio' | 'avg-rating';
 
@@ -174,6 +197,16 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     direction: 'desc',
   },
   {
+    id: 'highest-skewness-min-10k',
+    title: 'Highest Skewness (min 10k ratings)',
+    navLabel: 'Highest Skewness (min 10k)',
+    kind: 'skewness',
+    dataLabel: 'skewness',
+    valueLabel: 'Skewness',
+    minRatings: 10000,
+    direction: 'desc',
+  },
+  {
     id: 'highest-variance-min-100k',
     title: 'Highest Variance (min 100k ratings)',
     navLabel: 'Highest Variance (min 100k)',
@@ -184,6 +217,16 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     direction: 'desc',
   },
   {
+    id: 'highest-variance-min-10k',
+    title: 'Highest Variance (min 10k ratings)',
+    navLabel: 'Highest Variance (min 10k)',
+    kind: 'variance',
+    dataLabel: 'variance',
+    valueLabel: 'Variance',
+    minRatings: 10000,
+    direction: 'desc',
+  },
+  {
     id: 'lowest-kurtosis-min-100k',
     title: 'Lowest Kurtosis (min 100k ratings)',
     navLabel: 'Lowest Kurtosis (min 100k)',
@@ -191,6 +234,16 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     dataLabel: 'kurtosis',
     valueLabel: 'Kurtosis',
     minRatings: 100000,
+    direction: 'asc',
+  },
+  {
+    id: 'lowest-kurtosis-min-10k',
+    title: 'Lowest Kurtosis (min 10k ratings)',
+    navLabel: 'Lowest Kurtosis (min 10k)',
+    kind: 'kurtosis',
+    dataLabel: 'kurtosis',
+    valueLabel: 'Kurtosis',
+    minRatings: 10000,
     direction: 'asc',
   },
   {
@@ -224,6 +277,16 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     direction: 'desc',
   },
   {
+    id: 'highest-avg-rating-min-1k',
+    title: 'Highest Avg Rating (min 1k ratings)',
+    navLabel: 'Highest Avg Rating (min 1k)',
+    kind: 'avg-rating',
+    dataLabel: 'average rating',
+    valueLabel: 'Avg rating',
+    minRatings: 1000,
+    direction: 'desc',
+  },
+  {
     id: 'lowest-avg-rating-min-10k',
     title: 'Lowest Avg Rating (min 10k ratings)',
     navLabel: 'Lowest Avg Rating (min 10k)',
@@ -232,6 +295,50 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     valueLabel: 'Avg rating',
     minRatings: 10000,
     direction: 'asc',
+  },
+  {
+    id: 'lowest-avg-rating-min-1k',
+    title: 'Lowest Avg Rating (min 1k ratings)',
+    navLabel: 'Lowest Avg Rating (min 1k)',
+    kind: 'avg-rating',
+    dataLabel: 'average rating',
+    valueLabel: 'Avg rating',
+    minRatings: 1000,
+    direction: 'asc',
+  },
+];
+
+// HTML form of `avgHistogram.sh --hasDetails`: one page per ratings threshold,
+// each showing the same distribution at three bucket widths.
+export type AvgRatingHistogramStep = 0.5 | 0.2 | 0.1;
+
+export const AVG_RATING_HISTOGRAM_STEPS: AvgRatingHistogramStep[] = [0.5, 0.2, 0.1];
+
+export interface AvgRatingHistogramReport {
+  id: string;
+  title: string;
+  navLabel: string;
+  minRatings: number;
+}
+
+export const AVG_RATING_HISTOGRAM_REPORTS: AvgRatingHistogramReport[] = [
+  {
+    id: 'avg-ratings-histogram-min-100k',
+    title: 'Avg Rating Histogram (min 100k ratings)',
+    navLabel: 'Avg Rating Histogram (min 100k)',
+    minRatings: 100000,
+  },
+  {
+    id: 'avg-ratings-histogram-min-10k',
+    title: 'Avg Rating Histogram (min 10k ratings)',
+    navLabel: 'Avg Rating Histogram (min 10k)',
+    minRatings: 10000,
+  },
+  {
+    id: 'avg-ratings-histogram-min-1k',
+    title: 'Avg Rating Histogram (min 1k ratings)',
+    navLabel: 'Avg Rating Histogram (min 1k)',
+    minRatings: 1000,
   },
 ];
 
@@ -319,6 +426,12 @@ export const LIST_CREATOR_REPORT: ListCreatorReport = {
   navLabel: 'Creators with Most Lists',
 };
 
+export const STATIC_LISTS_REPORT = {
+  id: 'lists/static-lists',
+  title: 'Lists — Static Lists',
+  navLabel: 'Static Lists',
+} as const;
+
 export interface ListRow {
   listId: string;
   title: string;
@@ -328,6 +441,7 @@ export interface ListRow {
   createdAt: string | null;
   creatorId: string | null;
   creatorName: string | null;
+  isStatic: boolean;
 }
 
 export interface ListCreatorRow {
@@ -374,6 +488,7 @@ export interface YearBook {
   id: string;
   title: string;
   author: string;
+  authorId: string;
   avgRating: number;
   ratings: number;
   year: number;
@@ -433,6 +548,12 @@ export const LIST_TAG_REPORT = {
   navLabel: 'Top list tags',
 } as const;
 
+export const TAG_FIRST_PAGE_REPORT = {
+  id: 'tags/first-page-books',
+  title: 'Books on First Page of Tags',
+  navLabel: 'Books on First Page of Tags',
+} as const;
+
 // Sections with no items render a muted "soon" badge instead of dead links.
 export function buildNav(): NavSection[] {
   const bookSections: NavSection[] = BOOK_SCOPES.map((scope) => ({
@@ -448,6 +569,11 @@ export function buildNav(): NavSection[] {
         label: report.navLabel,
         href: `${scope.id}/${report.id}.html`,
       })),
+      ...AVG_RATING_HISTOGRAM_REPORTS.map((report) => ({
+        id: `${scope.id}/${report.id}`,
+        label: report.navLabel,
+        href: `${scope.id}/${report.id}.html`,
+      })),
     ],
   }));
 
@@ -458,15 +584,25 @@ export function buildNav(): NavSection[] {
         { id: 'overall', label: 'Overview', href: 'index.html' },
         { id: 'overall/per-field', label: 'Per Field', href: 'per-field.html' },
         { id: 'overall/ratings-histogram', label: 'Ratings histogram', href: 'ratings-histogram.html' },
+        { id: 'overall/publication-years', label: 'Publication years', href: 'publication-years.html' },
+        { id: 'overall/books-added', label: 'Books added', href: 'books-added.html' },
+        { id: 'overall/authors-added', label: 'Authors added', href: 'authors-added.html' },
       ],
     },
     {
       label: 'Author',
-      items: AUTHOR_REPORTS.map((report) => ({
-        id: report.id,
-        label: report.title,
-        href: `${report.id}.html`,
-      })),
+      items: [
+        ...AUTHOR_REPORTS.map((report) => ({
+          id: report.id,
+          label: report.title,
+          href: `${report.id}.html`,
+        })),
+        {
+          id: AUTHOR_TOP_BOOK_HISTOGRAM_REPORT.id,
+          label: AUTHOR_TOP_BOOK_HISTOGRAM_REPORT.navLabel,
+          href: `${AUTHOR_TOP_BOOK_HISTOGRAM_REPORT.id}.html`,
+        },
+      ],
     },
     ...bookSections,
     {
@@ -509,6 +645,11 @@ export function buildNav(): NavSection[] {
           href: `${report.id}.html`,
         })),
         {
+          id: STATIC_LISTS_REPORT.id,
+          label: STATIC_LISTS_REPORT.navLabel,
+          href: `${STATIC_LISTS_REPORT.id}.html`,
+        },
+        {
           id: LIST_CREATOR_REPORT.id,
           label: LIST_CREATOR_REPORT.navLabel,
           href: `${LIST_CREATOR_REPORT.id}.html`,
@@ -523,7 +664,13 @@ export function buildNav(): NavSection[] {
     { label: 'Genres', items: [] },
     {
       label: 'Tags',
-      items: [],
+      items: [
+        {
+          id: TAG_FIRST_PAGE_REPORT.id,
+          label: TAG_FIRST_PAGE_REPORT.navLabel,
+          href: `${TAG_FIRST_PAGE_REPORT.id}.html`,
+        },
+      ],
     },
   ];
 }
@@ -691,17 +838,28 @@ export interface DerivedAccumulator {
   count: number;
 }
 
+export interface AvgRatingHistogramAccumulator {
+  minRatings: number;
+  // Books counted at this threshold (the denominator for each table's share).
+  count: number;
+  buckets: Record<AvgRatingHistogramStep, number[]>;
+}
+
 export interface ScopeAccumulator {
   // Total books in the scope (from `books`), used as the ratings denominator.
   total: number;
   metrics: Record<BookMetricId, MetricAccumulator>;
   derived: Record<DerivedReportId, DerivedAccumulator>;
+  avgRatingHistograms: Record<string, AvgRatingHistogramAccumulator>;
 }
 
 export type Accumulators = Record<BookScopeId, ScopeAccumulator>;
 
 interface BooksRow {
   id: string;
+  title: string | null;
+  author: string | null;
+  author_id: string | null;
   ratings: number | null;
   avg_rating: number | null;
   published: string | null;
@@ -757,6 +915,13 @@ function compareYearWorstFirst(a: YearBook, b: YearBook): number {
   if (a.ratings !== b.ratings) return a.ratings - b.ratings;
   if (a.id === b.id) return 0;
   return a.id > b.id ? -1 : 1;
+}
+
+// One edition per year/work: keep the highest-ratings edition, lowest id on tie
+// (the same rule as recomputeWorkReps).
+function isBetterYearEdition(candidate: YearBook, current: YearBook): boolean {
+  if (candidate.ratings !== current.ratings) return candidate.ratings > current.ratings;
+  return Number(candidate.id) < Number(current.id);
 }
 
 // Derived reports rank by the stat in the report's direction, then by number
@@ -832,6 +997,31 @@ function derivedValue(row: BookPageRow, report: DerivedReport, ratings: number):
   }
 }
 
+// Average ratings are hundredths of a star; values outside 0.01–5.00 (and
+// non-numeric sentinels such as "Unknown") are excluded just as in the CLI.
+function avgRatingHundredths(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g, ''));
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  const hundredths = Math.round(parsed * 100);
+  return hundredths <= 500 ? hundredths : null;
+}
+
+function addAvgRatingHistograms(acc: ScopeAccumulator, row: BookPageRow): void {
+  const ratings = toInt(row.ratings) ?? 0;
+  const hundredths = avgRatingHundredths(row.avg_rating);
+  if (hundredths === null) return;
+  for (const report of AVG_RATING_HISTOGRAM_REPORTS) {
+    if (ratings < report.minRatings) continue;
+    const histogram = acc.avgRatingHistograms[report.id];
+    histogram.count++;
+    for (const step of AVG_RATING_HISTOGRAM_STEPS) {
+      const index = Math.floor(hundredths / Math.round(step * 100));
+      if (index >= 0 && index < histogram.buckets[step].length) histogram.buckets[step][index]++;
+    }
+  }
+}
+
 function addDerivedReports(acc: ScopeAccumulator, row: BookPageRow, limit: number): void {
   const ratings = toInt(row.ratings) ?? 0;
   for (const report of DERIVED_REPORTS) {
@@ -876,11 +1066,42 @@ export function createAccumulators(): Accumulators {
     for (const report of DERIVED_REPORTS) derived[report.id] = { heap: [], count: 0 };
     return derived;
   };
+  const makeAvgRatingHistograms = (): Record<string, AvgRatingHistogramAccumulator> => {
+    const histograms: Record<string, AvgRatingHistogramAccumulator> = {};
+    for (const report of AVG_RATING_HISTOGRAM_REPORTS) {
+      const buckets = {} as Record<AvgRatingHistogramStep, number[]>;
+      for (const step of AVG_RATING_HISTOGRAM_STEPS) {
+        buckets[step] = new Array(Math.floor(500 / Math.round(step * 100)) + 1).fill(0);
+      }
+      histograms[report.id] = { minRatings: report.minRatings, count: 0, buckets };
+    }
+    return histograms;
+  };
   return {
-    'book-id': { total: 0, metrics: makeMetrics(), derived: makeDerived() },
-    'work-id': { total: 0, metrics: makeMetrics(), derived: makeDerived() },
-    works: { total: 0, metrics: makeMetrics(), derived: makeDerived() },
-    'works-en': { total: 0, metrics: makeMetrics(), derived: makeDerived() },
+    'book-id': {
+      total: 0,
+      metrics: makeMetrics(),
+      derived: makeDerived(),
+      avgRatingHistograms: makeAvgRatingHistograms(),
+    },
+    'work-id': {
+      total: 0,
+      metrics: makeMetrics(),
+      derived: makeDerived(),
+      avgRatingHistograms: makeAvgRatingHistograms(),
+    },
+    works: {
+      total: 0,
+      metrics: makeMetrics(),
+      derived: makeDerived(),
+      avgRatingHistograms: makeAvgRatingHistograms(),
+    },
+    'works-en': {
+      total: 0,
+      metrics: makeMetrics(),
+      derived: makeDerived(),
+      avgRatingHistograms: makeAvgRatingHistograms(),
+    },
   };
 }
 
@@ -928,7 +1149,9 @@ export function scanBooks(
   limit: number,
   yearHeaps: Map<number, YearBook[]> = new Map(),
 ): void {
-  const sql = 'SELECT id, ratings, avg_rating, published, is_bad, work_id, is_work_rep, pages FROM books';
+  const sql =
+    'SELECT id, title, author, author_id, ratings, avg_rating, published, is_bad, work_id, is_work_rep, pages FROM books';
+  const yearCandidates = new Map<number, Map<string, YearBook>>();
   for (const row of streamRows<BooksRow>(sql)) {
     const value = toInt(row.ratings) ?? 0;
     const book: TopBook = {
@@ -953,27 +1176,46 @@ export function scanBooks(
       addValue(accumulators.works.metrics.ratings, value, book, limit);
     }
 
-    // Highest Rated by Year: drop flagged books, require >= 1,000 ratings.
+    // Highest Rated by Year: drop flagged books, require >= 1,000 ratings, and
+    // collapse editions of one work before filling the top-N heap.
     const year = parsePublishedYear(row.published);
     if (year !== null && Number(row.is_bad) !== 1 && value >= YEAR_MIN_RATINGS) {
       const avgRating = row.avg_rating === null || row.avg_rating === undefined ? null : Number(row.avg_rating);
       if (avgRating !== null && Number.isFinite(avgRating) && avgRating > 0) {
-        let heap = yearHeaps.get(year);
-        if (!heap) {
-          heap = [];
-          yearHeaps.set(year, heap);
+        const id = String(row.id);
+        const title = row.title ?? '';
+        const author = row.author ?? '';
+        const authorId = row.author_id ?? '';
+        const authorKey =
+          row.author_id !== null && row.author_id !== '' ? row.author_id : author.trim().toLowerCase();
+        const normalizedTitle = normalizeWorkTitle(title);
+        const groupKey = hasWorkId
+          ? `w:${row.work_id}`
+          : normalizedTitle === '' || authorKey === ''
+            ? `id:${id}`
+            : `t:${normalizedTitle}|a:${authorKey}`;
+
+        let candidates = yearCandidates.get(year);
+        if (!candidates) {
+          candidates = new Map();
+          yearCandidates.set(year, candidates);
         }
-        pushTop(
-          heap,
-          { id: String(row.id), title: '', author: '', avgRating, ratings: value, year },
-          YEAR_REPORT_LIMIT,
-          compareYearWorstFirst,
-        );
+        const candidate: YearBook = { id, title, author, authorId, avgRating, ratings: value, year };
+        const current = candidates.get(groupKey);
+        if (!current || isBetterYearEdition(candidate, current)) candidates.set(groupKey, candidate);
       }
     }
 
     const pages = toInt(row.pages);
     if (pages !== null && pages > 0) pageFrequency.set(pages, (pageFrequency.get(pages) ?? 0) + 1);
+  }
+
+  for (const [year, candidates] of yearCandidates) {
+    const heap: YearBook[] = [];
+    for (const candidate of candidates.values()) {
+      pushTop(heap, candidate, YEAR_REPORT_LIMIT, compareYearWorstFirst);
+    }
+    yearHeaps.set(year, heap);
   }
 }
 
@@ -1025,6 +1267,7 @@ export function resolveBookTitles(
       if (found) {
         book.title = found.title;
         book.author = found.author;
+        book.authorId = found.authorId;
       }
     }
   }
@@ -1042,14 +1285,17 @@ export function scanBookPages(accumulators: Accumulators, limit: number): void {
   for (const row of streamRows<BookPageRow>(sql)) {
     addBookPageMetrics(accumulators['book-id'], row, bookPageMetrics, limit);
     addDerivedReports(accumulators['book-id'], row, limit);
+    addAvgRatingHistograms(accumulators['book-id'], row);
     const hasWorkId = row.work_id !== null && row.work_id !== '';
     if (hasWorkId) {
       addBookPageMetrics(accumulators['work-id'], row, bookPageMetrics, limit);
       addDerivedReports(accumulators['work-id'], row, limit);
+      addAvgRatingHistograms(accumulators['work-id'], row);
     }
     if (Number(row.is_work_rep) === 1) {
       addBookPageMetrics(accumulators.works, row, bookPageMetrics, limit);
       addDerivedReports(accumulators.works, row, limit);
+      addAvgRatingHistograms(accumulators.works, row);
     }
   }
 }
@@ -1134,12 +1380,19 @@ export function scanEnglishWorks(accumulators: Accumulators, limit: number): voi
     );
     addBookPageMetrics(acc, row, bookPageMetrics, limit);
     addDerivedReports(acc, row, limit);
+    addAvgRatingHistograms(acc, row);
   }
 }
 
 // ---------------------------------------------------------------------------
 // Book rendering
 // ---------------------------------------------------------------------------
+
+function scopeUnitLabel(scopeId: BookScopeId): string {
+  if (scopeId === 'book-id') return 'Book IDs';
+  if (scopeId === 'work-id') return 'Work IDs';
+  return 'works';
+}
 
 export function renderHistogram(acc: MetricAccumulator, total: number): string {
   const rows = acc.buckets.map((bucket, index) => {
@@ -1191,11 +1444,12 @@ export function renderBookMetricPage(scope: BookScope, metric: BookMetric, acc: 
   const denominator = metric.source === 'books' ? acc.total : metricAcc.count;
   const parts: string[] = [];
 
+  const unit = scopeUnitLabel(scope.id);
   if (metric.source === 'books') {
-    parts.push(`<p>${formatCount(acc.total)} books in scope.</p>`);
+    parts.push(`<p>${formatCount(acc.total)} ${unit} in scope.</p>`);
   } else {
     parts.push(
-      `<p>Based on ${formatCount(metricAcc.count)} books with ${escapeHtml(metric.label.toLowerCase())} data (of ${formatCount(acc.total)} books in scope).</p>`,
+      `<p>Based on ${formatCount(metricAcc.count)} books with ${escapeHtml(metric.label.toLowerCase())} data (of ${formatCount(acc.total)} ${unit} in scope).</p>`,
     );
   }
 
@@ -1240,7 +1494,7 @@ export function renderDerivedTable(heap: DerivedBook[], report: DerivedReport, s
 
 export function renderDerivedPage(scope: BookScope, report: DerivedReport, acc: ScopeAccumulator, limit: number): string {
   const derived = acc.derived[report.id];
-  const intro = `Based on ${formatCount(derived.count)} books with ${report.dataLabel} data and at least ${formatCount(report.minRatings)} ratings (of ${formatCount(acc.total)} books in scope).`;
+  const intro = `Based on ${formatCount(derived.count)} books with ${report.dataLabel} data and at least ${formatCount(report.minRatings)} ratings (of ${formatCount(acc.total)} ${scopeUnitLabel(scope.id)} in scope).`;
   return [
     `<p>${escapeHtml(intro)}</p>`,
     `<h2>Top ${formatCount(Math.min(limit, derived.heap.length))}</h2>`,
@@ -1264,12 +1518,13 @@ export function renderScopeToggle(scope: BookScope, reportId: string): string {
   return `<p class="scope-toggle">View: ${allLanguages} · ${english}</p>`;
 }
 
-// Title labels (first character, first word) link to their Listopia tag page
-// only when the lowercase label is a known list_tags.tag_name.
+// Title labels (first character, first word) and publisher names link to their
+// Listopia tag page only when the normalized label is a known list_tags.tag_name.
+// Tag names/slugs are lowercased with spaces collapsed to dashes.
 function renderTagLabel(label: string, tagNames?: ReadonlySet<string>): string {
   const text = escapeHtml(label);
   if (!tagNames) return text;
-  const tag = label.toLowerCase();
+  const tag = label.toLowerCase().trim().replace(/\s+/g, '-');
   if (!tagNames.has(tag)) return text;
   const href = `https://www.goodreads.com/list/tag/${encodeURIComponent(tag)}`;
   return `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
@@ -1310,6 +1565,7 @@ interface ListMetaDbRow {
   created_at: string | null;
   creator_id: string | null;
   creator_name: string | null;
+  is_static: number | null;
 }
 
 // `list_meta` holds the sidebar header of every list read (~26k rows), while
@@ -1319,7 +1575,7 @@ export function loadListRows(): ListRow[] {
   const rows = getDb()
     .prepare(
       `SELECT m.list_id, s.list_name AS title, m.num_books, m.num_voters, m.num_likes,
-              m.created_at, m.creator_id, m.creator_name
+              m.created_at, m.creator_id, m.creator_name, m.is_static
        FROM list_meta m
        LEFT JOIN list_scrapes s ON s.list_id = m.list_id`,
     )
@@ -1333,6 +1589,7 @@ export function loadListRows(): ListRow[] {
     createdAt: row.created_at || null,
     creatorId: row.creator_id || null,
     creatorName: row.creator_name || null,
+    isStatic: Number(row.is_static) === 1,
   }));
 }
 
@@ -1412,25 +1669,63 @@ const LIST_FIELDS: { field: ListSortField; label: string }[] = [
   { field: 'createdAt', label: 'Created' },
 ];
 
-function listCell(row: ListRow, field: ListSortField): string {
-  switch (field) {
-    case 'numBooks':
-      return `<td class="num">${formatCount(row.numBooks)}</td>`;
-    case 'numVoters':
-      return `<td class="num">${formatCount(row.numVoters)}</td>`;
-    case 'numLikes':
-      return `<td class="num">${row.numLikes === null ? '—' : formatCount(row.numLikes)}</td>`;
-    case 'createdAt':
-      return `<td>${row.createdAt ? escapeHtml(row.createdAt) : '—'}</td>`;
-  }
+// Sort buttons use the ListSortField names; rows use shorter data-* attributes.
+// The mapping is inlined into the client script so the two cannot drift apart.
+export const LIST_SORT_ATTRIBUTES: Record<ListSortField, string> = {
+  numBooks: 'books',
+  numVoters: 'voters',
+  numLikes: 'likes',
+  createdAt: 'created',
+};
+
+export function renderAvgRatingHistogram(
+  histogram: AvgRatingHistogramAccumulator,
+  step: AvgRatingHistogramStep,
+): string {
+  const stepH = Math.round(step * 100);
+  const rows = histogram.buckets[step].flatMap((count, index) => {
+    if (count === 0) return [];
+    const startH = index * stepH;
+    const endH = Math.min((index + 1) * stepH, 501) - 1;
+    const label =
+      startH === endH
+        ? (startH / 100).toFixed(2)
+        : `${(startH / 100).toFixed(2)} to ${(endH / 100).toFixed(2)}`;
+    const share = histogram.count > 0 ? ((count / histogram.count) * 100).toFixed(1) : '0.0';
+    return [`<tr><td>${label}</td><td class="num">${formatCount(count)}</td><td class="num">${share}%</td></tr>`];
+  });
+  return [
+    `<h2>${step.toFixed(1)} star buckets</h2>`,
+    '<table>',
+    '<thead><tr><th>Range</th><th class="num">Books</th><th class="num">Share</th></tr></thead>',
+    '<tbody>',
+    rows.length > 0 ? rows.join('\n') : '<tr><td colspan="3">No books matched this report.</td></tr>',
+    '</tbody>',
+    '</table>',
+  ].join('\n');
+}
+
+export function renderAvgRatingHistogramPage(
+  scope: BookScope,
+  report: AvgRatingHistogramReport,
+  acc: ScopeAccumulator,
+): string {
+  const histogram = acc.avgRatingHistograms[report.id];
+  const intro = `Based on ${formatCount(histogram.count)} books with an average rating and at least ${formatCount(report.minRatings)} ratings (of ${formatCount(acc.total)} ${scopeUnitLabel(scope.id)} in scope). Only books with a scraped details page (book_page row) are included, matching <code>avgHistogram.sh --hasDetails</code>.`;
+  return [`<p>${intro}</p>`, ...AVG_RATING_HISTOGRAM_STEPS.map((step) => renderAvgRatingHistogram(histogram, step))].join(
+    '\n',
+  );
 }
 
 export function renderListTable(rows: ListRow[], sortBy: ListSortField): string {
   if (rows.length === 0) return '<p>No lists matched this report.</p>';
 
-  const ordered = [sortBy, ...LIST_FIELDS.map((field) => field.field).filter((field) => field !== sortBy)];
   const labelOf = (field: ListSortField): string =>
     LIST_FIELDS.find((candidate) => candidate.field === field)!.label;
+  const sortableHead = (field: ListSortField): string => {
+    const cls = field === 'createdAt' ? '' : ' class="num"';
+    return `<th${cls}><button type="button" class="sort-btn" data-sort="${field}">${escapeHtml(labelOf(field))} <span class="sort-arrow" aria-hidden="true"></span></button></th>`;
+  };
 
   const body = rows
     .map((row, index) => {
@@ -1439,16 +1734,17 @@ export function renderListTable(rows: ListRow[], sortBy: ListSortField): string 
       const creator = row.creatorId
         ? `<a href="https://www.goodreads.com/list/created/${encodeURIComponent(row.creatorId)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.creatorName || row.creatorId)}</a>`
         : escapeHtml(row.creatorName || '—');
-      const cells = ordered.map((field) => listCell(row, field)).join('');
-      return `<tr><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td>${cells}<td>${creator}</td></tr>`;
+      const likes = row.numLikes === null ? '—' : formatCount(row.numLikes);
+      const likesValue = row.numLikes === null ? '' : String(row.numLikes);
+      const created = row.createdAt ? escapeHtml(row.createdAt) : '—';
+      const createdValue = row.createdAt ? escapeHtml(row.createdAt) : '';
+      return `<tr data-list-id="${escapeHtml(row.listId)}" data-books="${row.numBooks}" data-voters="${row.numVoters}" data-likes="${likesValue}" data-created="${createdValue}"><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td class="num">${formatCount(row.numBooks)}</td><td class="num">${formatCount(row.numVoters)}</td><td class="num">${likes}</td><td>${created}</td><td>${creator}</td></tr>`;
     })
     .join('\n');
 
-  const head = ordered
-    .map((field) => `<th${field === 'createdAt' ? '' : ' class="num"'}>${escapeHtml(labelOf(field))}</th>`)
-    .join('');
+  const head = LIST_FIELDS.map((field) => sortableHead(field.field)).join('');
   return [
-    '<table>',
+    `<table id="lists-table" data-default-sort="${sortBy}">`,
     `<thead><tr><th class="num">#</th><th>List</th>${head}<th>Creator</th></tr></thead>`,
     '<tbody>',
     body,
@@ -1456,6 +1752,56 @@ export function renderListTable(rows: ListRow[], sortBy: ListSortField): string 
     '</table>',
   ].join('\n');
 }
+
+export const LIST_SORT_SCRIPT = `
+(function () {
+  var table = document.querySelector('#lists-table');
+  if (!table) return;
+  var tbody = table.querySelector('tbody');
+  if (!tbody) return;
+  var rows = Array.prototype.slice.call(tbody.rows);
+  var key = table.getAttribute('data-default-sort') || 'numBooks';
+  var dir = (key === 'createdAt') ? 'asc' : 'desc';
+  var dataAttrs = ${JSON.stringify(LIST_SORT_ATTRIBUTES)};
+  function value(row, field) {
+    var raw = row.getAttribute('data-' + (dataAttrs[field] || field));
+    if (raw === null || raw === '') return null;
+    return field === 'createdAt' ? raw : Number(raw);
+  }
+  function listId(row) {
+    return row.getAttribute('data-list-id') || '';
+  }
+  function refresh() {
+    Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+      var field = button.getAttribute('data-sort');
+      var arrow = button.querySelector('.sort-arrow');
+      if (arrow) arrow.textContent = field === key ? (dir === 'asc' ? '\\u2191' : '\\u2193') : '';
+    });
+  }
+  function apply(field, direction) {
+    key = field;
+    dir = direction;
+    rows.sort(function (a, b) {
+      var av = value(a, field);
+      var bv = value(b, field);
+      if (av === null && bv === null) return listId(a) < listId(b) ? -1 : listId(a) > listId(b) ? 1 : 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      if (av !== bv) return (av < bv ? -1 : 1) * (direction === 'asc' ? 1 : -1);
+      return listId(a) < listId(b) ? -1 : listId(a) > listId(b) ? 1 : 0;
+    });
+    rows.forEach(function (row) { tbody.appendChild(row); });
+    refresh();
+  }
+  Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+    button.addEventListener('click', function () {
+      var field = button.getAttribute('data-sort');
+      apply(field, field === key && dir === 'desc' ? 'asc' : 'desc');
+    });
+  });
+  refresh();
+})();
+`.trim();
 
 const LIST_CREATOR_SORT_SCRIPT = `
 (function () {
@@ -1578,19 +1924,61 @@ export function renderListTagTable(rows: ListTagCount[]): string {
   ].join('\n');
 }
 
+export function renderTagFirstPagePicksTable(rows: TagFirstPagePickRow[]): string {
+  if (rows.length === 0) return '<p>No books matched this report.</p>';
+
+  const body = rows
+    .map((row, index) => {
+      const title = escapeHtml(row.title || row.bookId);
+      const href = `https://www.goodreads.com/book/show/${encodeURIComponent(row.bookId)}`;
+      const author = renderAuthorLink(row.author, row.authorId || '');
+      const avg = row.avgRating == null ? '—' : row.avgRating.toFixed(2);
+      return `<tr><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td>${author}</td><td class="num">${formatCount(row.tagCount)}</td><td class="num">${formatCount(row.ratings)}</td><td class="num">${avg}</td></tr>`;
+    })
+    .join('\n');
+
+  return [
+    '<table>',
+    '<thead><tr><th class="num">#</th><th>Title</th><th>Author</th><th class="num">First-page tags</th><th class="num">Ratings</th><th class="num">Avg</th></tr></thead>',
+    '<tbody>',
+    body,
+    '</tbody>',
+    '</table>',
+  ].join('\n');
+}
+
+export function renderAuthorTopBookHistogram(data: AuthorTopBookHistogramData): string {
+  const intro = `<p>For each author, take their highest-rated book (by rating count) and bin it. Authors: ${formatCount(data.totalAuthors)} — ${formatCount(data.inAuthorCache)} in author cache, ${formatCount(data.notInAuthorCache)} not.</p>`;
+  const body = data.buckets.map((bucket, i) => {
+    const count = data.counts[i] || 0;
+    const pct = data.totalAuthors > 0 ? ((count / data.totalAuthors) * 100).toFixed(1) : '0.0';
+    return `<tr><td>${escapeHtml(bucket.label)}</td><td class="num">${formatCount(count)}</td><td class="num">${pct}%</td><td class="num">${formatCount(data.cumGE[i] || 0)}</td><td class="num">${formatCount(data.cumLE[i] || 0)}</td></tr>`;
+  }).join('\n');
+
+  return [
+    intro,
+    '<table>',
+    '<thead><tr><th>Rating bracket</th><th class="num">Count</th><th class="num">%</th><th class="num">CUM &gt;=</th><th class="num">CUM &lt;=</th></tr></thead>',
+    '<tbody>',
+    body,
+    '</tbody>',
+    '</table>',
+  ].join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // Highest Rated by Year rendering
 // ---------------------------------------------------------------------------
 
 export function renderYearTable(books: YearBook[], year: number): string {
-  const intro = `<p>Books published in ${year} with at least ${formatCount(YEAR_MIN_RATINGS)} ratings, excluding flagged books.</p>`;
+  const intro = `<p>Books published in ${year} with at least ${formatCount(YEAR_MIN_RATINGS)} ratings, excluding flagged books. One edition per work (highest-ratings edition kept).</p>`;
   if (books.length === 0) return `${intro}\n<p>No books matched this report.</p>`;
 
   const ordered = [...books].sort((a, b) => compareYearWorstFirst(b, a));
   const rows = ordered.map((book, index) => {
     const title = escapeHtml(book.title || book.id);
     const href = `https://www.goodreads.com/book/show/${encodeURIComponent(book.id)}`;
-    const author = escapeHtml(book.author || '—');
+    const author = renderAuthorLink(book.author, book.authorId);
     return `<tr><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td>${author}</td><td class="num">${book.avgRating.toFixed(2)}</td><td class="num">${formatCount(book.ratings)}</td><td class="num">${book.year}</td></tr>`;
   });
   return [
@@ -1674,39 +2062,71 @@ export function renderFirstWordTable(words: TitleWordCount[], tagNames?: Readonl
   ].join('\n');
 }
 
-const PAGE_COUNT_SORT_SCRIPT = `
-(function () {
-  var tbody = document.querySelector('#page-counts tbody');
-  if (!tbody) return;
-  var rows = Array.prototype.slice.call(tbody.rows);
-  function sortBy(key) {
-    rows.sort(function (a, b) {
-      var av = Number(a.getAttribute('data-' + key));
-      var bv = Number(b.getAttribute('data-' + key));
-      if (key === 'count') return bv - av;
-      return av - bv;
-    });
-    rows.forEach(function (row) { tbody.appendChild(row); });
+interface PageCountBucket {
+  label: string;
+  min: number;
+  max: number; // inclusive; Infinity for open-ended
+}
+
+function buildPageCountBuckets(maxPages: number): PageCountBucket[] {
+  const buckets: PageCountBucket[] = [{ label: '0', min: 0, max: 0 }];
+  // 1-25, 26-50, ... up to 300
+  for (let start = 1; start <= 276; start += 25) {
+    const end = start + 24;
+    buckets.push({ label: `${start}-${end}`, min: start, max: end });
   }
-  Array.prototype.forEach.call(document.querySelectorAll('[data-sort]'), function (button) {
-    button.addEventListener('click', function () { sortBy(button.getAttribute('data-sort')); });
-  });
-  sortBy('page');
-})();
-`.trim();
+  // 301-350, ... up to 600
+  for (let start = 301; start <= 551; start += 50) {
+    const end = start + 49;
+    buckets.push({ label: `${start}-${end}`, min: start, max: end });
+  }
+  // 601-700 and 100-wide buckets upward, covering maxPages
+  if (maxPages >= 601) {
+    let start = 601;
+    while (start <= maxPages) {
+      const end = start + 99;
+      buckets.push({ label: `${start}-${end}`, min: start, max: end });
+      start = end + 1;
+    }
+  }
+  return buckets;
+}
+
+function pageCountBucketIndex(pages: number, buckets: PageCountBucket[]): number {
+  for (let i = 0; i < buckets.length; i++) {
+    const b = buckets[i];
+    if (pages >= b.min && pages <= b.max) return i;
+  }
+  // Fallback: clamp into last bucket (should not happen if buckets cover max)
+  return buckets.length - 1;
+}
 
 export function renderPageCountPage(frequency: Map<number, number>): string {
-  const entries = [...frequency.entries()].sort((a, b) => a[0] - b[0]);
-  const total = entries.reduce((sum, [, count]) => sum + count, 0);
-  const rows = entries.map(([pages, count]) => {
+  let total = 0;
+  let maxPages = 0;
+  for (const [pages, count] of frequency) {
+    total += count;
+    if (pages > maxPages) maxPages = pages;
+  }
+
+  const buckets = buildPageCountBuckets(maxPages);
+  const counts = buckets.map(() => 0);
+  for (const [pages, count] of frequency) {
+    if (pages < 0) continue;
+    counts[pageCountBucketIndex(pages, buckets)] += count;
+  }
+
+  const rows = buckets.flatMap((bucket, index) => {
+    const count = counts[index];
+    if (count === 0) return [];
     const share = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
-    return `<tr data-page="${pages}" data-count="${count}"><td class="num">${formatCount(pages)}</td><td class="num">${formatCount(count)}</td><td class="num">${share}%</td></tr>`;
+    return [`<tr><td>${escapeHtml(bucket.label)}</td><td class="num">${formatCount(count)}</td><td class="num">${share}%</td></tr>`];
   });
+
   return [
     `<p>Based on ${formatCount(total)} books with a page count.</p>`,
-    '<p class="sort-controls">Sort by: <button type="button" data-sort="page">Page count</button> <button type="button" data-sort="count">Number of books</button></p>',
-    '<table id="page-counts">',
-    '<thead><tr><th class="num">Pages</th><th class="num">Books</th><th class="num">Share</th></tr></thead>',
+    '<table>',
+    '<thead><tr><th>Pages</th><th class="num">Books</th><th class="num">Share</th></tr></thead>',
     '<tbody>',
     rows.join('\n'),
     '</tbody>',
@@ -1714,7 +2134,7 @@ export function renderPageCountPage(frequency: Map<number, number>): string {
   ].join('\n');
 }
 
-export function renderPublisherTable(publishers: RankedPublisher[], sortBy: 'books' | 'totalRatings'): string {
+export function renderPublisherTable(publishers: RankedPublisher[], sortBy: 'books' | 'totalRatings', tagNames?: ReadonlySet<string>): string {
   if (publishers.length === 0) return '<p>No publishers matched this report.</p>';
 
   const booksHead = '<th class="num">Books</th>';
@@ -1724,7 +2144,7 @@ export function renderPublisherTable(publishers: RankedPublisher[], sortBy: 'boo
     const books = `<td class="num">${formatCount(publisher.books)}</td>`;
     const ratings = `<td class="num">${formatCount(publisher.totalRatings)}</td>`;
     const cells = sortBy === 'books' ? `${books}${ratings}` : `${ratings}${books}`;
-    return `<tr><td class="num">${index + 1}</td><td>${escapeHtml(publisher.publisher)}</td>${cells}</tr>`;
+    return `<tr><td class="num">${index + 1}</td><td>${renderTagLabel(publisher.publisher, tagNames)}</td>${cells}</tr>`;
   });
   return [
     '<table>',
@@ -1856,6 +2276,7 @@ export function loadFieldCoverageRows(): FieldCoverageRow[] {
       SUM(CASE WHEN num_books IS NOT NULL THEN 1 ELSE 0 END) AS 'num_books',
       SUM(CASE WHEN num_voters IS NOT NULL THEN 1 ELSE 0 END) AS 'num_voters',
       SUM(CASE WHEN created_at IS NOT NULL THEN 1 ELSE 0 END) AS 'created_at',
+      SUM(CASE WHEN created_at_raw IS NOT NULL THEN 1 ELSE 0 END) AS 'created_at_raw',
       SUM(CASE WHEN creator_id IS NOT NULL THEN 1 ELSE 0 END) AS 'creator_id',
       SUM(CASE WHEN creator_name IS NOT NULL THEN 1 ELSE 0 END) AS 'creator_name',
       SUM(CASE WHEN num_likes IS NOT NULL THEN 1 ELSE 0 END) AS 'num_likes'
@@ -1984,6 +2405,165 @@ export function renderOverallRatingsHistogram(
     `<tr class="total"><td>Total</td>${totalCells}</tr>`,
     '</tbody>',
     '</table>',
+  ].join('\n');
+}
+
+export interface PublicationYearSummary {
+  years: { year: number; count: number }[];
+  unknown: number;
+  other: { label: string; count: number }[];
+  total: number;
+}
+
+// HTML form of `summary-year`: every cached book grouped by the year parsed
+// from `published`, plus the command's Unknown/unparseable buckets. Streams a
+// narrow projection so the full books table is never materialized.
+export function buildPublicationYearSummary(
+  rows: Iterable<{ published: string | null }>,
+): PublicationYearSummary {
+  const yearCounts = new Map<number, number>();
+  const otherCounts = new Map<string, number>();
+  let unknown = 0;
+  let total = 0;
+
+  for (const row of rows) {
+    total++;
+    const year = getYear(row.published ?? '');
+    if (year !== null) {
+      yearCounts.set(year, (yearCounts.get(year) ?? 0) + 1);
+    } else if (!row.published || row.published === 'Unknown') {
+      unknown++;
+    } else {
+      otherCounts.set(row.published, (otherCounts.get(row.published) ?? 0) + 1);
+    }
+  }
+
+  return {
+    years: [...yearCounts.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([year, count]) => ({ year, count })),
+    unknown,
+    other: [...otherCounts.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .map(([label, count]) => ({ label, count })),
+    total,
+  };
+}
+
+export function loadPublicationYearSummary(): PublicationYearSummary {
+  return buildPublicationYearSummary(streamRows<{ published: string | null }>('SELECT published FROM books'));
+}
+
+export function renderPublicationYearsPage(summary: PublicationYearSummary): string {
+  const rows = summary.years.map(
+    (row) => `<tr><td class="num">${row.year}</td><td class="num">${formatCount(row.count)}</td></tr>`,
+  );
+  if (summary.unknown > 0) {
+    rows.push(`<tr class="muted"><td>Unknown</td><td class="num">${formatCount(summary.unknown)}</td></tr>`);
+  }
+  for (const row of summary.other) {
+    rows.push(`<tr class="muted"><td>${escapeHtml(row.label)}</td><td class="num">${formatCount(row.count)}</td></tr>`);
+  }
+
+  return [
+    '<p>Every cached book grouped by the year parsed from its <code>published</code> string — the HTML form of <code>summary-year</code>. Unparseable values are listed individually after the years.</p>',
+    '<table id="publication-years">',
+    '<thead><tr><th class="num">Year</th><th class="num">Books</th></tr></thead>',
+    '<tbody>',
+    rows.join('\n'),
+    `<tr class="total"><td>Total books in cache</td><td class="num">${formatCount(summary.total)}</td></tr>`,
+    '</tbody>',
+    '</table>',
+  ].join('\n');
+}
+
+export const BOOKS_ADDED_DAYS = 1000;
+
+// HTML form of `books-added-histogram --days 1000`: one row per UTC day of
+// `books.first_seen`, plus the command's footer totals. Avg/max ratings are for
+// the books added that day (not cumulative), matching the CLI.
+export function renderBooksAddedPage(summary: BooksAddedSummary): string {
+  const pctOf = (n: number): string =>
+    summary.totalBooks > 0 ? `${((n / summary.totalBooks) * 100).toFixed(1)}%` : '0.0%';
+
+  const firstNonZero = summary.buckets.findIndex((bucket) => bucket.total > 0 || bucket.added > 0);
+  const buckets = firstNonZero === -1 ? [] : summary.buckets.slice(firstNonZero);
+
+  const rows = buckets.map((bucket) => {
+    const avg = bucket.added > 0 ? formatCount(bucket.avgRatings) : '—';
+    const max = bucket.added > 0 && bucket.maxRatings > 0 ? formatCount(bucket.maxRatings) : '—';
+    return [
+      '<tr>',
+      `<td>${escapeHtml(bucket.start)}</td>`,
+      `<td class="num">${formatCount(bucket.added)}</td>`,
+      `<td class="num">${formatCount(bucket.total)}</td>`,
+      `<td class="num">${escapeHtml(pctOf(bucket.total))}</td>`,
+      `<td class="num">${avg}</td>`,
+      `<td class="num">${max}</td>`,
+      '</tr>',
+    ].join('');
+  });
+
+  return [
+    `<p>Books first seen per UTC day over the last ${formatCount(summary.buckets.length)} days (oldest first), driven by <code>books.first_seen</code> — the HTML form of <code>books-added-histogram --days ${formatCount(summary.buckets.length)}</code>.</p>`,
+    '<table id="books-added">',
+    '<thead><tr><th>Period</th><th class="num">Added</th><th class="num">Total</th><th class="num">Of DB</th><th class="num">Avg rating</th><th class="num">Max rating</th></tr></thead>',
+    '<tbody>',
+    rows.join('\n'),
+    '</tbody>',
+    '</table>',
+    '<ul class="notes">',
+    `<li>Total books in DB: ${formatCount(summary.totalBooks)}</li>`,
+    `<li>${formatCount(summary.addedInWindow)} added in the window · ${formatCount(summary.beforeWindow)} predate the window (cumulative baseline, not in-window counts).</li>`,
+    `<li>First-seen unknown for ${formatCount(summary.missingFirstSeen)} books (${escapeHtml(pctOf(summary.missingFirstSeen))} of DB) — excluded from the totals above.</li>`,
+    '<li>Avg rating / max rating are among the books added that day, not cumulative.</li>',
+    '</ul>',
+    '<p class="note">Caveat: <code>first_seen</code> did not exist from the start. Older books were backfilled with <code>last_updated - 1 day</code>, so buckets before live stamping began are synthetic proxies, not real arrival times.</p>',
+  ].join('\n');
+}
+
+// HTML form of `./authorHist.sh --by day`: every contiguous UTC day between the
+// buffer-authors' earliest and latest first_seen, driven by authors.first_seen.
+// Avg/max are `authors.num_ratings` among that day's additions (not cumulative).
+export function renderAuthorsAddedPage(summary: AuthorArrivalSummary): string {
+  const pctOf = (n: number): string =>
+    summary.totalAuthors > 0 ? `${((n / summary.totalAuthors) * 100).toFixed(1)}%` : '0.0%';
+
+  const rows = summary.buckets.map((bucket) => {
+    const avg = bucket.added > 0 ? formatCount(bucket.avgRatings) : '—';
+    const max = bucket.added > 0 && bucket.maxRatings > 0 ? formatCount(bucket.maxRatings) : '—';
+    return [
+      '<tr>',
+      `<td>${escapeHtml(bucket.label)}</td>`,
+      `<td class="num">${formatCount(bucket.added)}</td>`,
+      `<td class="num">${formatCount(bucket.total)}</td>`,
+      `<td class="num">${escapeHtml(pctOf(bucket.total))}</td>`,
+      `<td class="num">${avg}</td>`,
+      `<td class="num">${max}</td>`,
+      '</tr>',
+    ].join('');
+  });
+
+  const earliest = summary.earliestFirstSeen
+    ? `<li>Earliest first_seen: ${escapeHtml(summary.earliestFirstSeen)}</li>`
+    : '';
+
+  return [
+    `<p>Authors first seen per UTC day, spanning the earliest to latest <code>authors.first_seen</code> (oldest first) — the HTML form of <code>authorHist.sh --by day</code>.</p>`,
+    '<table id="authors-added">',
+    '<thead><tr><th>Period</th><th class="num">Added</th><th class="num">Total</th><th class="num">Of DB</th><th class="num">Avg rating</th><th class="num">Max rating</th></tr></thead>',
+    '<tbody>',
+    rows.join('\n'),
+    '</tbody>',
+    '</table>',
+    '<ul class="notes">',
+    `<li>Total authors in DB: ${formatCount(summary.totalAuthors)}</li>`,
+    `<li>${formatCount(summary.addedInWindow)} added in the window · ${formatCount(summary.beforeWindow)} predate the window (cumulative baseline, not in-window counts).</li>`,
+    `<li>First-seen unknown for ${formatCount(summary.missingFirstSeen)} authors (${escapeHtml(pctOf(summary.missingFirstSeen))} of DB) — excluded from the totals above.</li>`,
+    '<li>Avg rating / max rating are among the authors added that day, not cumulative.</li>',
+    earliest,
+    '</ul>',
+    '<p class="note">Caveat: <code>first_seen</code> did not exist from the start. Older authors were backfilled with <code>last_seen - 1 day</code>, so buckets before live stamping began are synthetic proxies, not real arrival times.</p>',
   ].join('\n');
 }
 
@@ -2135,6 +2715,15 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
         content: renderScopeToggle(scope, report.id) + renderDerivedPage(scope, report, acc, limit),
       });
     }
+    for (const report of AVG_RATING_HISTOGRAM_REPORTS) {
+      writePage(path.join(outDir, scope.id, `${report.id}.html`), {
+        title: `${scope.label} — ${report.title}`,
+        nav,
+        activeId: `${scope.id}/${report.id}`,
+        rootPrefix: '../',
+        content: renderScopeToggle(scope, report.id) + renderAvgRatingHistogramPage(scope, report, acc),
+      });
+    }
     console.log(chalk.gray(`   ${scope.label}: ${formatCount(acc.total)} books`));
   }
 
@@ -2237,7 +2826,6 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
     activeId: 'book-detail/by-page-count',
     rootPrefix: '../',
     content: renderPageCountPage(pageFrequency),
-    script: PAGE_COUNT_SORT_SCRIPT,
   });
 
   console.log(chalk.gray('   Loading publishers...'));
@@ -2253,7 +2841,7 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
       nav,
       activeId: report.id,
       rootPrefix: '../',
-      content: `<p>Top ${formatCount(PUBLISHER_REPORT_LIMIT)} publishers by ${metric} (distinct works; each (publisher, work) is counted once using its highest-rated edition).</p>\n${renderPublisherTable(publishers, report.sortBy)}`,
+      content: `<p>Top ${formatCount(PUBLISHER_REPORT_LIMIT)} publishers by ${metric} (distinct works; each (publisher, work) is counted once using its highest-rated edition).</p>\n${renderPublisherTable(publishers, report.sortBy, listTagNames)}`,
     });
     console.log(chalk.gray(`   ${report.title}: ${publishers.length} publisher(s)`));
   }
@@ -2272,10 +2860,24 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
       nav,
       activeId: report.id,
       rootPrefix: '../',
-      content: `<p>${intro}</p>\n${renderListTable(sorted, report.sortBy)}`,
+      content: `<p>${intro} Click a column heading to sort.</p>\n${renderListTable(sorted, report.sortBy)}`,
+      script: LIST_SORT_SCRIPT,
     });
     console.log(chalk.gray(`   ${report.title}: ${sorted.length} list(s)`));
   }
+
+  const staticLists = listRows
+    .filter((row) => row.isStatic)
+    .sort((a, b) => (Number(a.listId) || 0) - (Number(b.listId) || 0));
+  writePage(path.join(outDir, `${STATIC_LISTS_REPORT.id}.html`), {
+    title: STATIC_LISTS_REPORT.title,
+    nav,
+    activeId: STATIC_LISTS_REPORT.id,
+    rootPrefix: '../',
+    content: `<p>${formatCount(staticLists.length)} static lists (is_static=1), ordered by list ID. Click a column heading to sort.</p>\n${renderListTable(staticLists, 'createdAt')}`,
+    script: LIST_SORT_SCRIPT,
+  });
+  console.log(chalk.gray(`   ${STATIC_LISTS_REPORT.title}: ${staticLists.length} list(s)`));
 
   const allCreators = aggregateListCreators(listRows);
   const topCreators = sortListCreators(allCreators).slice(0, limit);
@@ -2300,6 +2902,28 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
   });
   console.log(chalk.gray(`   ${LIST_TAG_REPORT.title}: ${listTagRows.length} tag(s)`));
 
+  console.log(chalk.gray('   Loading books on first page of tags...'));
+  const firstPagePicks = loadTagFirstPagePicks({ limit: TAG_FIRST_PAGE_LIMIT });
+  writePage(path.join(outDir, `${TAG_FIRST_PAGE_REPORT.id}.html`), {
+    title: TAG_FIRST_PAGE_REPORT.title,
+    nav,
+    activeId: TAG_FIRST_PAGE_REPORT.id,
+    rootPrefix: '../',
+    content: `<p>Books appearing on the most tag first pages (positions 1–50), based on ${formatCount(firstPagePicks.totalTags)} tags and ${formatCount(firstPagePicks.totalDistinctBooks)} distinct first-page books (${formatCount(firstPagePicks.uncached)} not in cache). Top ${formatCount(firstPagePicks.picks.length)} shown.</p>\n${renderTagFirstPagePicksTable(firstPagePicks.picks)}`,
+  });
+  console.log(chalk.gray(`   ${TAG_FIRST_PAGE_REPORT.title}: ${firstPagePicks.picks.length} book(s)`));
+
+  console.log(chalk.gray('   Loading author top-book ratings histogram...'));
+  const authorTopBookHistogram = loadAuthorTopBookHistogram();
+  writePage(path.join(outDir, `${AUTHOR_TOP_BOOK_HISTOGRAM_REPORT.id}.html`), {
+    title: AUTHOR_TOP_BOOK_HISTOGRAM_REPORT.title,
+    nav,
+    activeId: AUTHOR_TOP_BOOK_HISTOGRAM_REPORT.id,
+    rootPrefix: '../',
+    content: renderAuthorTopBookHistogram(authorTopBookHistogram),
+  });
+  console.log(chalk.gray(`   ${AUTHOR_TOP_BOOK_HISTOGRAM_REPORT.title}: ${authorTopBookHistogram.totalAuthors} author(s)`));
+
   console.log(chalk.gray('   Loading field coverage...'));
   const fieldCoverageRows = loadFieldCoverageRows();
   writePage(path.join(outDir, 'per-field.html'), {
@@ -2321,6 +2945,39 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
     content: renderOverallRatingsHistogram(ratingsCoverage),
   });
   console.log(chalk.gray(`   Ratings Histogram: ${formatCount(ratingsCoverage.totalAll)} book(s)`));
+
+  console.log(chalk.gray('   Loading publication years...'));
+  const publicationYears = loadPublicationYearSummary();
+  writePage(path.join(outDir, 'publication-years.html'), {
+    title: 'Publication Years',
+    nav,
+    activeId: 'overall/publication-years',
+    rootPrefix: '',
+    content: renderPublicationYearsPage(publicationYears),
+  });
+  console.log(chalk.gray(`   Publication Years: ${formatCount(publicationYears.total)} book(s)`));
+
+  console.log(chalk.gray('   Loading books added by day...'));
+  const booksAdded = loadBooksAddedBuckets({ days: BOOKS_ADDED_DAYS });
+  writePage(path.join(outDir, 'books-added.html'), {
+    title: 'Books Added',
+    nav,
+    activeId: 'overall/books-added',
+    rootPrefix: '',
+    content: renderBooksAddedPage(booksAdded),
+  });
+  console.log(chalk.gray(`   Books Added: ${formatCount(booksAdded.addedInWindow)} in the last ${BOOKS_ADDED_DAYS} days`));
+
+  console.log(chalk.gray('   Loading authors added by day...'));
+  const authorsAdded = loadAuthorArrivalBuckets();
+  writePage(path.join(outDir, 'authors-added.html'), {
+    title: 'Authors Added',
+    nav,
+    activeId: 'overall/authors-added',
+    rootPrefix: '',
+    content: renderAuthorsAddedPage(authorsAdded),
+  });
+  console.log(chalk.gray(`   Authors Added: ${formatCount(authorsAdded.addedInWindow)} across ${formatCount(authorsAdded.buckets.length)} day(s)`));
 
   writePage(path.join(outDir, 'index.html'), {
     title: 'Overview',

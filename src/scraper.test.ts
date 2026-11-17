@@ -379,9 +379,28 @@ describe('parseListMeta', () => {
       numBooks: 1137,
       numVoters: 164,
       createdAt: '2013-05-01',
+      createdAtRaw: 'May 1st, 2013',
       creatorId: '970632',
       creatorName: 'Mitchell Friedman',
       numLikes: 80,
+    });
+  });
+
+  it('assumes the current year when Goodreads omits it (current-year lists)', () => {
+    // Real shape from list/show/380105: no year in the header at all.
+    const html = `
+      <div class="stacked">
+        <div>232 books &middot; 37 voters &middot; list created January 17th by
+          <a href="/user/show/970632-brittiny-harrand">Brittiny Harrand</a>
+          <a class="greyText smallText" href="/list/user_vote/1">(votes)</a> .</div>
+      </div>`;
+    expect(parseListMeta(cheerio.load(html), new Date('2026-11-14T12:00:00Z'))).toEqual({
+      numBooks: 232,
+      numVoters: 37,
+      createdAt: '2026-01-17',
+      createdAtRaw: 'January 17th',
+      creatorId: '970632',
+      creatorName: 'Brittiny Harrand',
     });
   });
 
@@ -396,6 +415,7 @@ describe('parseListMeta', () => {
       numBooks: 12,
       numVoters: 3,
       createdAt: '2020-06-02',
+      createdAtRaw: 'June 2, 2020',
       creatorId: '42',
       creatorName: 'Somebody',
       numLikes: 1,
@@ -418,6 +438,7 @@ describe('parseListMeta', () => {
       numBooks: 746,
       numVoters: 339,
       createdAt: '2013-09-12',
+      createdAtRaw: 'September 12th, 2013',
       creatorName: 'deleted user',
     });
   });
@@ -429,5 +450,9 @@ describe('parseListMeta', () => {
 
   it('returns an empty object when there is no header at all', () => {
     expect(parseListMeta(cheerio.load('<div>nothing here</div>'))).toEqual({});
+  });
+
+  it('detects a static list marker', () => {
+    expect(parseListMeta(cheerio.load('<div>This is a static list.</div>'))).toEqual({ isStatic: true });
   });
 });

@@ -178,6 +178,22 @@ describe('author rows', () => {
     expect(getAuthor('Overwrite Author')!.numRatings).toBe('20');
   });
 
+  it('never lowers author rating/review/shelf counts on upsert (bare upserts must not zero)', () => {
+    upsertAuthor('Monotonic Author', makeEntry({ id: '334', slug: '334.Monotonic_Author', averageRating: '4.50', numRatings: '34000000', numReviews: '1000000', numShelves: '2000000' }));
+    // A provenance/slug-only upsert (missing stats bind as 0) must not wipe.
+    upsertAuthor('Monotonic Author', { id: '334', slug: '334.Monotonic_Author', lastSeen: '2026-09-01T00:00:00.000Z', source: 'browser_book_scrape' } as any);
+    const got = getAuthor('Monotonic Author')!;
+    expect(got.averageRating).toBe('4.5');
+    expect(got.numRatings).toBe('34000000');
+    expect(got.numReviews).toBe('1000000');
+    expect(got.numShelves).toBe('2000000');
+    // But a real increase still applies.
+    upsertAuthor('Monotonic Author', makeEntry({ id: '334', slug: '334.Monotonic_Author', averageRating: '4.60', numRatings: '35000000', numReviews: '1100000', numShelves: '2100000' }));
+    const up = getAuthor('Monotonic Author')!;
+    expect(up.numRatings).toBe('35000000');
+    expect(up.numReviews).toBe('1100000');
+  });
+
   it('first_seen defaults to lastSeen on insert and is preserved on update', () => {
     upsertAuthor('First Seen Author', makeEntry({
       id: '555', slug: '555.First_Seen', lastSeen: '2026-08-01T00:00:00.000Z',

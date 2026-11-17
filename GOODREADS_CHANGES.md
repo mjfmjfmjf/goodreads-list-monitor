@@ -3,6 +3,17 @@
 Record whenever Goodreads changes a page in a way that forces a code change.
 Newest entry on top. Timestamp format: `YYYY/MM/DD HH:MM` (local time).
 
+## 2026/11/14 16:14 — List header omits the creation year for current-year lists
+
+Goodreads drops the year from a list's header meta when the list was created in
+the **current calendar year**: `list created January 17th by …` (list/show/380105)
+rather than `list created May 1st, 2013`. `parseListMeta()` required a 4-digit
+year, so those lists silently got NULL `created_at` (missing/mis-sorted on
+earliest/latest-created, and `list-meta-backfill` re-walked them forever).
+Fix: the year is optional and a missing year assumes the current year at parse
+time; the raw header text is stored in the new `list_meta.created_at_raw` column
+so the assumption is auditable. No throttling/pacing change.
+
 ## 2026/10/18 21:10 — bookGenres serves COMPOUND legacy genre labels (~13% of books)
 
 Not a page change — data-shape finding while adding `books --genre/--notGenre`.

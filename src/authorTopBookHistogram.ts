@@ -116,7 +116,17 @@ export function computeCumulatives(counts: number[]): { cumGE: number[]; cumLE: 
   return { cumGE, cumLE };
 }
 
-export async function runAuthorTopBookHistogram(): Promise<void> {
+export interface AuthorTopBookHistogramData {
+  buckets: RatingBucket[];
+  counts: number[];
+  cumGE: number[];
+  cumLE: number[];
+  totalAuthors: number;
+  inAuthorCache: number;
+  notInAuthorCache: number;
+}
+
+export function loadAuthorTopBookHistogram(): AuthorTopBookHistogramData {
   // Only the id/name membership sets are needed, built by streaming the authors
   // table once instead of materializing the full ~960k-row cache object.
   const authorNames = new Set<string>();
@@ -129,6 +139,13 @@ export async function runAuthorTopBookHistogram(): Promise<void> {
   const buckets = buildAuthorBucketBuckets();
   const { counts, totalAuthors, inAuthorCache, notInAuthorCache } =
     computeAuthorTopBookHistogram(iterateBooks(), authorNames, authorIds);
+  const { cumGE, cumLE } = computeCumulatives(counts);
+  return { buckets, counts, cumGE, cumLE, totalAuthors, inAuthorCache, notInAuthorCache };
+}
+
+export async function runAuthorTopBookHistogram(): Promise<void> {
+  const { buckets, counts, cumGE, cumLE, totalAuthors, inAuthorCache, notInAuthorCache } =
+    loadAuthorTopBookHistogram();
 
   console.log(chalk.cyan.bold('\n🏆 Author Top-Book Ratings Histogram'));
   console.log(chalk.gray('   For each author, take their highest-rated book (by rating count) and bin it.'));
@@ -139,31 +156,6 @@ export async function runAuthorTopBookHistogram(): Promise<void> {
   const pctOf = (count: number) =>
     totalAuthors > 0 ? ((count / totalAuthors) * 100).toFixed(1) + '%' : '0.0%';
   const PW = Math.max(4, ...counts.map(c => pctOf(c).length)); // header: %
-
-  // Running counts. Buckets are ordered high-to-low (idx 0 = the
-  // `> 1,000,000` band). `cumGE` builds up from the bottom of the table so at
-  // row i it holds the sum of this band plus every lower (higher index) band
-  // -> authors whose top book has >= this band's ratings (CUM >=). `cumLE`
-  // Running counts, matching ./ratingsHistogram.sh's column semantics where
-  // buckets are high-to-low (idx 0 = highest). At row i:
-  //   CUM >= = Σ counts[0..i]  (this band + every higher band)
-  //   CUM <= = Σ counts[i..end] (this band + every lower band)
-  const cumGE = new Array<number>(buckets.length).fill(0);
-  {
-    let acc = 0;
-    for (let i = 0; i < buckets.length; i++) {
-      acc += counts[i];
-      cumGE[i] = acc;
-    }
-  }
-  const cumLE = new Array<number>(buckets.length).fill(0);
-  {
-    let acc = 0;
-    for (let i = buckets.length - 1; i >= 0; i--) {
-      acc += counts[i];
-      cumLE[i] = acc;
-    }
-  }
 
   const FORW = Math.max('CUM >='.length, ...counts.map(c => formatNum(c).length));
   const rule = '-'.repeat(LW + CW + PW + FORW * 2 + 11);

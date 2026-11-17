@@ -99,6 +99,7 @@
     "next-tag-walk": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts next-tag-walk",
     "list-popular-walk": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-popular-walk",
     "list-tag-backfill": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-tag-backfill",
+    "list-meta-backfill": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-meta-backfill",
     "list-tag-stats": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-tag-stats",
     "list-tags": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-tags",
     "author-roles": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts author-roles",

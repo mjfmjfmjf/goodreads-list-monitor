@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { getDb } from './db.ts';
 import { loadTagBooks, getBook } from './storage.ts';
 import type { TagBookRow, BookCache, CachedBook } from './storage.ts';
 import { loadLibraryExport, loadLibraryExportCache, matchesReviewed, LibraryExport } from './libraryExport.ts';
@@ -29,6 +30,78 @@ export interface TagFirstPageResult {
 }
 
 const FIRST_PAGE_MAX = 50;
+
+export interface TagFirstPagePickRow {
+  bookId: string;
+  title: string;
+  author: string;
+  authorId: string | null;
+  published: string | null;
+  pages: number | null;
+  ratings: number;
+  avgRating: number | null;
+  tagCount: number;
+}
+
+export interface TagFirstPagePicksSummary {
+  picks: TagFirstPagePickRow[];
+  totalTags: number;
+  totalDistinctBooks: number;
+  uncached: number;
+  limit: number;
+}
+
+export const TAG_FIRST_PAGE_LIMIT = 1000;
+
+// Static-site loader: one aggregate query for the ranked page (no per-book
+// getBook calls) plus the footer counts the CLI prints. Mirrors
+// `findTagFirstPagePicks` (position 1-50, skip is_bad/Unknown) and the
+// `--terse --includeReviewed` invocation (no library-export filter).
+export function loadTagFirstPagePicks(
+  options: { limit?: number } = {},
+): TagFirstPagePicksSummary {
+  const limit = options.limit ?? TAG_FIRST_PAGE_LIMIT;
+  const db = getDb();
+  const firstPage = 'position BETWEEN 1 AND 50';
+
+  const totalTags = Number(
+    (db.prepare(`SELECT COUNT(DISTINCT tag_name) AS c FROM tag_books WHERE ${firstPage}`).get() as { c: number }).c,
+  );
+  const totalDistinctBooks = Number(
+    (db.prepare(`SELECT COUNT(DISTINCT book_id) AS c FROM tag_books WHERE ${firstPage}`).get() as { c: number }).c,
+  );
+  const uncached = Number(
+    (db.prepare(
+      `SELECT COUNT(*) AS c
+       FROM (SELECT DISTINCT book_id FROM tag_books WHERE ${firstPage}) t
+       LEFT JOIN books b ON b.id = t.book_id
+       WHERE b.id IS NULL`,
+    ).get() as { c: number }).c,
+  );
+
+  const picks = db.prepare(`
+    SELECT
+      tb.book_id AS bookId,
+      b.title AS title,
+      b.author AS author,
+      b.author_id AS authorId,
+      b.published AS published,
+      b.pages AS pages,
+      COALESCE(b.ratings, 0) AS ratings,
+      b.avg_rating AS avgRating,
+      COUNT(*) AS tagCount
+    FROM tag_books tb
+    JOIN books b ON b.id = tb.book_id
+    WHERE tb.${firstPage}
+      AND COALESCE(b.is_bad, 0) = 0
+      AND b.title != 'Unknown'
+    GROUP BY tb.book_id
+    ORDER BY tagCount DESC, ratings DESC, b.title ASC
+    LIMIT ?
+  `).all(limit) as TagFirstPagePickRow[];
+
+  return { picks, totalTags, totalDistinctBooks, uncached, limit };
+}
 
 // Books picked by breadth of tag exposure: count the distinct tags whose FIRST
 // PAGE (position 1-50 on the tag's shelf) each cached book appears on. The most

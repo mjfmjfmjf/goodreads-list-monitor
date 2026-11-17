@@ -3,7 +3,7 @@ import { getDb } from './db.ts';
 
 const formatNum = (n: number): string => n.toLocaleString('en-US');
 
-interface PeriodBucket {
+export interface PeriodBucket {
   label: string;
   start: string; // ISO date 'YYYY-MM-DD' (inclusive)
   end: string; // ISO date 'YYYY-MM-DD' (inclusive)
@@ -11,6 +11,20 @@ interface PeriodBucket {
   total: number;
   avgRatings: number;
   maxRatings: number;
+}
+
+export type BooksAddedUnit = 'day' | 'week' | 'month';
+
+// Shared by the CLI (`books-added-histogram`) and the static publish page:
+// the requested period buckets plus the totals the footer reports.
+export interface BooksAddedSummary {
+  unit: BooksAddedUnit;
+  buckets: PeriodBucket[];
+  totalBooks: number;
+  missingFirstSeen: number;
+  beforeWindow: number;
+  addedInWindow: number;
+  earliestFirstSeen: string | null;
 }
 
 // Most recent Monday on or before `date`, as an ISO date string.
@@ -65,7 +79,9 @@ export function monthBuckets(n: number, todayIso: string = new Date().toISOStrin
   return out;
 }
 
-export function runBooksAddedHistogram(options: { days?: number; weeks?: number; months?: number } = {}): void {
+export function loadBooksAddedBuckets(
+  options: { days?: number; weeks?: number; months?: number; todayIso?: string } = {},
+): BooksAddedSummary {
   const db = getDb();
 
   const nDays = options.days ?? 0;
@@ -77,10 +93,10 @@ export function runBooksAddedHistogram(options: { days?: number; weeks?: number;
   }
 
   let buckets: PeriodBucket[];
-  let unit: string;
-  if (nWeeks > 0) { buckets = weekBuckets(nWeeks); unit = 'week'; }
-  else if (nMonths > 0) { buckets = monthBuckets(nMonths); unit = 'month'; }
-  else { buckets = dayBuckets(nDays > 0 ? nDays : 7); unit = 'day'; }
+  let unit: BooksAddedUnit;
+  if (nWeeks > 0) { buckets = weekBuckets(nWeeks, options.todayIso); unit = 'week'; }
+  else if (nMonths > 0) { buckets = monthBuckets(nMonths, options.todayIso); unit = 'month'; }
+  else { buckets = dayBuckets(nDays > 0 ? nDays : 7, options.todayIso); unit = 'day'; }
 
   const totalBooks = (db.prepare('SELECT COUNT(*) AS c FROM books').get() as any).c;
   const missing = (db.prepare('SELECT COUNT(*) AS c FROM books WHERE first_seen IS NULL OR first_seen = \'\'').get() as any).c;
@@ -133,6 +149,28 @@ export function runBooksAddedHistogram(options: { days?: number; weeks?: number;
 
   let totalsAdded = 0;
   for (const b of buckets) totalsAdded += b.added;
+
+  return {
+    unit,
+    buckets,
+    totalBooks,
+    missingFirstSeen: missing,
+    beforeWindow,
+    addedInWindow: totalsAdded,
+    earliestFirstSeen: first ?? null,
+  };
+}
+
+export function runBooksAddedHistogram(options: { days?: number; weeks?: number; months?: number } = {}): void {
+  const {
+    buckets,
+    unit,
+    totalBooks,
+    missingFirstSeen: missing,
+    beforeWindow,
+    addedInWindow: totalsAdded,
+    earliestFirstSeen: first,
+  } = loadBooksAddedBuckets(options);
 
   const pctOf = (n: number) => (totalBooks > 0 ? (n / totalBooks * 100).toFixed(1) + '%' : '0.0%');
 

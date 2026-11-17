@@ -212,12 +212,12 @@ describe('runFieldCoverage', () => {
     const now = '2026-11-09T00:00:00Z';
     const ins = db.prepare(
       `INSERT INTO list_meta
-         (list_id, num_books, num_voters, created_at, creator_id, creator_name, num_likes, first_seen, last_seen)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (list_id, num_books, num_voters, created_at, created_at_raw, creator_id, creator_name, num_likes, first_seen, last_seen)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
-    ins.run('1', 10, 2, '2013-05-01', 'u1', 'Alice', 5, now, now);
-    ins.run('2', 20, 4, '2015-01-01', 'u2', 'Bob', 0, now, now);
-    ins.run('3', 30, 6, '2020-12-31', 'u1', 'Alice', null, now, now);
+    ins.run('1', 10, 2, '2013-05-01', 'May 1st, 2013', 'u1', 'Alice', 5, now, now);
+    ins.run('2', 20, 4, '2015-01-01', 'January 1st, 2015', 'u2', 'Bob', 0, now, now);
+    ins.run('3', 30, 6, '2020-12-31', null, 'u1', 'Alice', null, now, now);
 
     chalk.level = 0;
     const out = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -241,6 +241,10 @@ describe('runFieldCoverage', () => {
     expect(createdAt).toContain('max 2020-12-31');
     expect(createdAt).toContain('3 distinct');
     expect(createdAt).not.toContain('avg');
+
+    const createdAtRaw = lines.find((l) => l.startsWith('  created_at_raw'))!;
+    expect(createdAtRaw).toContain('2 distinct');
+    expect(createdAtRaw).not.toContain('min');
 
     const creatorId = lines.find((l) => l.startsWith('  creator_id'))!;
     expect(creatorId).toContain('2 distinct');

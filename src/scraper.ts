@@ -613,13 +613,16 @@ export function parseListTags($: cheerio.CheerioAPI): string[] {
   return tags;
 }
 
-// "May 1st, 2013" -> "2013-05-01". The ordinal suffix is optional.
-function ordinalMonthDateToIso(raw: string): string | undefined {
-  const m = raw.match(/([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i);
+// "May 1st, 2013" -> "2013-05-01". The ordinal suffix is optional, and so is
+// the year: Goodreads omits it for lists created in the CURRENT calendar year
+// ("list created January 17th by …"), so a missing year means the year of the
+// read. Callers keep the raw text so a wrong assumption can be audited later.
+function ordinalMonthDateToIso(raw: string, now: Date): string | undefined {
+  const m = raw.match(/([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?/i);
   if (!m) return undefined;
   const month = new Date(`${m[1]} 1, 2000`).getMonth();
   const day = parseInt(m[2], 10);
-  const year = parseInt(m[3], 10);
+  const year = m[3] ? parseInt(m[3], 10) : now.getFullYear();
   if (Number.isNaN(month) || day < 1 || day > 31) return undefined;
   return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
@@ -634,7 +637,7 @@ function ordinalMonthDateToIso(raw: string): string | undefined {
 //
 // Pure + unit-testable. Missing pieces are simply omitted (never fabricated), so
 // a layout change yields a partial object rather than wrong data.
-export function parseListMeta($: cheerio.CheerioAPI): ListMeta {
+export function parseListMeta($: cheerio.CheerioAPI, now = new Date()): ListMeta {
   const meta: ListMeta = {};
 
   // The meta line is the sidebar div that carries the book count (the next
@@ -650,9 +653,10 @@ export function parseListMeta($: cheerio.CheerioAPI): ListMeta {
   const voters = text.match(/([\d,]+)\s+voters?\b/i);
   if (voters) meta.numVoters = parseInt(voters[1].replace(/,/g, ''), 10);
 
-  const created = text.match(/list created\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})/i);
+  const created = text.match(/list created\s+([A-Za-z]+\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s*\d{4})?)/i);
   if (created) {
-    const iso = ordinalMonthDateToIso(created[1]);
+    meta.createdAtRaw = created[1];
+    const iso = ordinalMonthDateToIso(created[1], now);
     if (iso) meta.createdAt = iso;
   }
 
@@ -679,6 +683,12 @@ export function parseListMeta($: cheerio.CheerioAPI): ListMeta {
   if ($like.length) {
     const likes = $like.find('.likesCount').text().match(/([\d,]+)\s+likes?\b/i);
     meta.numLikes = likes ? parseInt(likes[1].replace(/,/g, ''), 10) : 0;
+  }
+
+  // Goodreads marks some lists as static ("This is a static list."); they often
+  // have no voter/like sidebar metadata, so we record the flag explicitly.
+  if (/This is a static list\.?/i.test($.root().text())) {
+    meta.isStatic = true;
   }
 
   return meta;

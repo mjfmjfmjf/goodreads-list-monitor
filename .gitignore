@@ -6,6 +6,7 @@ node_modules/
 npm-debug.log*
 .DS_Store
 coverage/
+__pycache__/
 
 # Generated static publish output
 publish/
@@ -57,6 +58,8 @@ genres.txt
 nextAuthor.txt
 sql.txt
 whatCouldBeNext.txt
+nextReport.txt
+nextFeature*.txt
 
 # Sanitized export-data outputs (gzipped CSVs, large data dumps)
 *.csv.gz
@@ -66,6 +69,7 @@ config.json*
 
 # Local scripts/backups
 *.bak
+AGENTS.md.old.*
 memory/
 
 rawGoodreadsToken*

@@ -506,10 +506,20 @@ export async function importAuthorsFile(
     ON CONFLICT(id) DO UPDATE SET
       name=excluded.name, slug=excluded.slug, last_seen=excluded.last_seen,
       first_seen=COALESCE(authors.first_seen, excluded.first_seen),
-      average_rating=excluded.average_rating, num_ratings=excluded.num_ratings,
-      num_reviews=excluded.num_reviews, num_shelves=excluded.num_shelves,
-      catalog_pages=excluded.catalog_pages,
-      ratings_rate=excluded.ratings_rate,
+      average_rating=CASE
+        WHEN excluded.average_rating IS NOT NULL AND excluded.average_rating > 0
+        THEN excluded.average_rating
+        ELSE authors.average_rating
+      END,
+      num_ratings=CASE WHEN excluded.num_ratings > authors.num_ratings THEN excluded.num_ratings ELSE authors.num_ratings END,
+      num_reviews=CASE WHEN excluded.num_reviews > authors.num_reviews THEN excluded.num_reviews ELSE authors.num_reviews END,
+      num_shelves=CASE WHEN excluded.num_shelves > authors.num_shelves THEN excluded.num_shelves ELSE authors.num_shelves END,
+      catalog_pages=CASE
+        WHEN excluded.catalog_pages IS NOT NULL AND (authors.catalog_pages IS NULL OR excluded.catalog_pages > authors.catalog_pages)
+        THEN excluded.catalog_pages
+        ELSE authors.catalog_pages
+      END,
+      ratings_rate=COALESCE(excluded.ratings_rate, authors.ratings_rate),
       source=CASE WHEN excluded.source IS NULL OR excluded.source = '' THEN authors.source ELSE COALESCE(authors.source, excluded.source) END
   `);
 
@@ -1081,9 +1091,12 @@ export interface ListMetaImportRow {
   numBooks: number | null;
   numVoters: number | null;
   createdAt: string | null;
+  createdAtRaw: string | null;
   creatorId: string | null;
   creatorName: string | null;
   numLikes: number | null;
+  metaMissing: number | null;
+  isStatic: number | null;
   firstSeen: string | null;
   lastSeen: string | null;
 }
@@ -1100,14 +1113,21 @@ export function decodeListMetaRow(headers: string[], fields: (string | null)[]):
     const n = parseInt(v, 10);
     return Number.isNaN(n) ? null : n;
   };
+  const boolInt = (v: string | null): number | null => {
+    if (v == null || v === '') return null;
+    return v === '1' || v.toLowerCase() === 'true' ? 1 : 0;
+  };
   return {
     listId,
     numBooks: num(get('num_books')),
     numVoters: num(get('num_voters')),
     createdAt: get('created_at') || null,
+    createdAtRaw: get('created_at_raw') || null,
     creatorId: get('creator_id') || null,
     creatorName: get('creator_name') || null,
     numLikes: num(get('num_likes')),
+    metaMissing: boolInt(get('meta_missing')),
+    isStatic: boolInt(get('is_static')),
     firstSeen: get('first_seen') || null,
     lastSeen: get('last_seen') || null,
   };
@@ -1119,15 +1139,18 @@ export async function importListMetaFile(
   counts: ImportCounts
 ): Promise<{ total: number }> {
   const upsert = db.prepare(`
-    INSERT INTO list_meta (list_id, num_books, num_voters, created_at, creator_id, creator_name, num_likes, first_seen, last_seen)
-    VALUES (@listId, @numBooks, @numVoters, @createdAt, @creatorId, @creatorName, @numLikes, @firstSeen, @lastSeen)
+    INSERT INTO list_meta (list_id, num_books, num_voters, created_at, created_at_raw, creator_id, creator_name, num_likes, meta_missing, is_static, first_seen, last_seen)
+    VALUES (@listId, @numBooks, @numVoters, @createdAt, @createdAtRaw, @creatorId, @creatorName, @numLikes, @metaMissing, @isStatic, @firstSeen, @lastSeen)
     ON CONFLICT(list_id) DO UPDATE SET
       num_books = COALESCE(list_meta.num_books, excluded.num_books),
       num_voters = COALESCE(list_meta.num_voters, excluded.num_voters),
       created_at = COALESCE(list_meta.created_at, excluded.created_at),
+      created_at_raw = COALESCE(list_meta.created_at_raw, excluded.created_at_raw),
       creator_id = COALESCE(list_meta.creator_id, excluded.creator_id),
       creator_name = COALESCE(list_meta.creator_name, excluded.creator_name),
       num_likes = COALESCE(list_meta.num_likes, excluded.num_likes),
+      meta_missing = CASE WHEN excluded.meta_missing = 1 OR list_meta.meta_missing = 1 THEN 1 ELSE 0 END,
+      is_static = CASE WHEN excluded.is_static = 1 OR list_meta.is_static = 1 THEN 1 ELSE 0 END,
       first_seen = MIN(list_meta.first_seen, excluded.first_seen),
       last_seen = MAX(list_meta.last_seen, excluded.last_seen)
   `);
@@ -1141,6 +1164,8 @@ export async function importListMetaFile(
     const now = new Date().toISOString();
     batch.push({
       ...row,
+      metaMissing: row.metaMissing ?? 0,
+      isStatic: row.isStatic ?? 0,
       firstSeen: row.firstSeen ?? now,
       lastSeen: row.lastSeen ?? now,
       isNew: !find.get(row.listId),

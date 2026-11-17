@@ -2,10 +2,12 @@
 
 Status: in progress — page shell, collapsible left nav, per-field coverage,
 overall ratings histogram, author, book id, work id, works, works (English),
-book detail (including publisher tables), lists, highest-rated-by-year, titles,
-top-list-tags, and derived-stat book reports (including avg-rating top/bottom)
-implemented; remaining titles reports, extended book sort fields, and genres
-planned.
+book detail (including publisher tables), lists (including the metadata
+backfill), highest-rated-by-year, titles, top-list-tags, and derived-stat book
+reports (including avg-rating top/bottom and the lower-threshold variants)
+implemented; the remaining titles reports, extended book sort fields, tag
+first-page picks, and genres planned. Database growth/arrival histograms (publication years, books
+added, authors added) implemented.
 Created: 2026-11-11
 
 ## Goal
@@ -13,6 +15,17 @@ Created: 2026-11-11
 Publish reports from the local SQLite database as static HTML. Published locally
 first (`./publish`), then pushed to a website. This is a long-lived surface:
 new sections and reports will be added over time.
+
+## How report requirements are written
+
+A report is often described by the existing shell wrapper / CLI command that
+captures the requirement (for example `./booksAddedHistogram.sh --days 1000`,
+`./summaryYear.sh`, or `./authorHist.sh --by day`). That reference names the
+report's **intent and exact behavior/metrics**; it is **not an implementation
+mandate**. The static publisher computes each report directly from SQLite and
+must not shell out to, or depend on, the wrapper. Where a report cites a CLI
+module for its bucket/filter math (e.g. `src/booksAddedHistogram.ts`), reuse that
+logic, not the CLI's console formatting.
 
 ## Command
 
@@ -30,17 +43,20 @@ publish/
   index.html
   per-field.html
   ratings-histogram.html
-  author/          7 reports (see below)
-  book-id/         five histograms + seven derived-stat tables (see below)
-  work-id/         same twelve reports
-  works/           same twelve reports
-  works-en/        same twelve reports (English editions, deduped)
+  publication-years.html
+  books-added.html
+  authors-added.html
+  author/          9 reports (see below)
+  book-id/         five histograms + twelve derived-stat tables (see below)
+  work-id/         same reports
+  works/           same reports
+  works-en/        same reports (English editions, deduped)
   book-detail/     by-language, by-format, by-page-count,
                    publishers-most-books, publishers-most-ratings
   titles/          first-char, last-char, first-word (see below)
   year/            27 reports (2026..2000, see below)
   lists/           7 reports (see below), incl. top-list-tags
-  tags/            (no reports yet — Tag-specific reports only)
+  tags/            books-on-tag-first-pages (see below)
 ```
 
 ## Page shell
@@ -131,9 +147,96 @@ twice. Render a **two-row grouped header**:
   scan (`id, ratings, work_id, is_work_rep`); no whole-cache materialization.
   Unlike `per-field.html`, this report shows no percentages.
 
+## Overall: Database growth & arrival histograms (implemented)
+
+Three existing terminal reports should also be published as Overall subpages,
+so the growth/arrival history is browsable next to Per Field and the Ratings
+Histogram. They are aggregate tables (not subject to `--limit`) and cover the
+whole DB (not `--scope`). Nav order after Ratings histogram:
+
+- `overall/publication-years` → `publication-years.html`
+- `overall/books-added` → `books-added.html`
+- `overall/authors-added` → `authors-added.html`
+
+### Publication years (`summary-year`)
+
+HTML form of `./summaryYear.sh` (`runSummaryByYear` in `src/summary.ts`): one
+ascending row per publication year with the number of `books` rows whose
+`published` parses to that year, then the non-year buckets the command prints —
+`Unknown` (empty / `"Unknown"`) and every other unparseable `published` string
+as its own label — plus the total book count. Mirror the command exactly: no
+year filtering (including the Goodreads BCE-as-positive outliers) and no
+de-duplication by work. Implement as a streaming `iterateBooks()` pass that
+keeps only a `Map<year, count>` (O(1) memory); do not materialize the cache.
+
+### Books added by day (last 1000 days; implemented)
+
+1000 contiguous UTC day buckets ending today, oldest first, driven by
+`books.first_seen` (same bucket math as `src/booksAddedHistogram.ts`).
+
+| column | meaning |
+| --- | --- |
+| Period | bucket-start date (`YYYY-MM-DD`) |
+| Added | books first seen that day |
+| Total | running count first seen on/before that day |
+| Of DB | `Total / all books`, one decimal |
+| Avg rating | mean `books.ratings` of that day's additions, rounded |
+| Max rating | largest `books.ratings` among that day's additions (`—` when 0) |
+
+Footer: total books in DB, added in window, count predating the window
+(cumulative baseline), and books with missing `first_seen`. Avg/max are for
+that day's additions, not cumulative. Reuse the command's bucket math: extract
+a loader (`loadBooksAddedBuckets({ days, todayIso })`) shared by the CLI and
+the page; pass `todayIso` explicitly so tests are deterministic.
+
+### Authors added by day (`authorHist.sh --by day`; implemented)
+
+HTML form of `./authorHist.sh --by day`, driven by `authors.first_seen`. Unlike
+books-added, there is **no fixed 1,000-day window**: buckets are contiguous UTC
+days spanning the data's own `min(first_seen)` → `max(first_seen)`, oldest
+first, including empty days. Every row uses `authors.num_ratings` (author-level
+ratings, not a book's).
+
+| column | meaning |
+| --- | --- |
+| Period | bucket date (`YYYY-MM-DD`) |
+| Added | authors first seen that day |
+| Total | running count first seen on/before that day |
+| Of DB | `Total / all authors`, one decimal |
+| Avg rating | mean `authors.num_ratings` of that day's additions, rounded |
+| Max rating | largest `authors.num_ratings` among that day's additions (`—` when 0) |
+
+Footer: total authors in DB, added in the window, count predating the window
+(cumulative baseline), authors with missing/empty `first_seen`, and the
+earliest `first_seen`. Avg/max are for that day's additions, not cumulative.
+`Of DB` divides by **all** authors, so authors with unknown `first_seen` stay in
+the denominator while being excluded from the buckets and additions totals
+(same convention as books-added). Show the shared growth caveat below.
+
+`authorHist.sh` is currently a standalone Node script embedded in the shell, so
+promote its bucket math to `src/authorArrivalHistogram.ts` (pure builder +
+loader, mirroring `booksAddedHistogram.loadBooksAddedBuckets`) with an
+injectable bounds argument for tests; the static page uses it, and the shell can
+delegate to the same module (follow-up) so the two cannot drift.
+
+### Caveat shown on both growth pages
+
+`first_seen` did not exist from the start: old `books` / `authors` rows were
+backfilled (`books.first_seen = last_updated - 1 day`,
+`authors.first_seen = last_seen - 1 day`). Buckets before live stamping began
+are synthetic proxies (a few giant spikes), not real arrival times. Render the
+same note the commands print, above the table.
+
+### Cost
+
+Publication years is one streaming `books` pass; books-added is one indexed
+`first_seen` group-by plus small counts; authors-added is one `authors`
+group-by. None materializes the cache; the 1000-day window is rendered in full
+(~100KB of HTML).
+
 ## Author section (first pass)
 
-Seven reports, up to 1000 authors each:
+Nine implemented reports, up to 1000 authors each:
 
 | page | sort field | min ratings |
 | --- | --- | --- |
@@ -158,6 +261,20 @@ Data: `authors` table (`num_ratings`, `num_reviews`, `num_shelves`,
 `catalog_pages`, `average_rating`) via
 `selectAuthors(iterateAuthors(), …)`.
 
+### Author reports (min 1,000 ratings) (implemented)
+
+Two average-rating reports with the same shape and rules, for authors with at
+least **1,000** `num_ratings`:
+
+| page | sort field | min ratings |
+| --- | --- | --- |
+| `author/top-authors-by-avg-rating-min-1k` | `averageRating` | 1000 |
+| `author/bottom-authors-by-avg-rating-min-1k` | `averageRating` (asc) | 1000 |
+
+Nav labels: `Top Authors by Avg Rating (min 1k ratings)` and `Bottom Authors by
+Avg Rating (min 1k ratings)`. The top report ties by more ratings, then name;
+the bottom report sorts ascending but still puts more ratings first on a tie,
+then name. These are additions — the min-100k/min-10k reports stay.
 ## What is a work? (book id vs work id vs work)
 
 Goodreads has three related identities; the reports use all three:
@@ -220,12 +337,17 @@ Derived-stat top-N tables (no histogram), using the
 | page suffix | sort | filter |
 | --- | --- | --- |
 | `highest-skewness-min-100k` | `ratings_skewness` desc | `books.ratings >= 100000` |
+| `highest-skewness-min-10k` | `ratings_skewness` desc | `books.ratings >= 10000` |
 | `highest-variance-min-100k` | `ratings_variance` desc | `books.ratings >= 100000` |
+| `highest-variance-min-10k` | `ratings_variance` desc | `books.ratings >= 10000` |
 | `lowest-kurtosis-min-100k` | `ratings_kurtosis` asc | `books.ratings >= 100000` |
+| `lowest-kurtosis-min-10k` | `ratings_kurtosis` asc | `books.ratings >= 10000` |
 | `highest-review-ratio-min-1k` | `reviews_count / books.ratings` desc | `books.ratings >= 1000` |
 | `highest-avg-rating-min-100k` | `books.avg_rating` desc | `books.ratings >= 100000` |
 | `highest-avg-rating-min-10k` | `books.avg_rating` desc | `books.ratings >= 10000` |
+| `highest-avg-rating-min-1k` | `books.avg_rating` desc | `books.ratings >= 1000` |
 | `lowest-avg-rating-min-10k` | `books.avg_rating` asc | `books.ratings >= 10000` |
+| `lowest-avg-rating-min-1k` | `books.avg_rating` asc | `books.ratings >= 1000` |
 
 - The minimum-ratings filter uses the **advertised** `books.ratings`, not the
   histogram `ratings_total`.
@@ -241,10 +363,16 @@ Derived-stat top-N tables (no histogram), using the
   rating 2 decimals) and counts use thousands separators. The review-ratio
   table adds a `Reviews` column: `#`, Title, Author, [Work ID], Reviews /
   Ratings (3 decimals), Reviews, # ratings.
-- Nav labels: `Highest Skewness (min 100k)`, `Highest Variance (min 100k)`,
-  `Lowest Kurtosis (min 100k)`, `Highest Review Ratio (min 1k)`, `Highest Avg
-  Rating (min 100k)`, `Highest Avg Rating (min 10k)`, `Lowest Avg Rating (min
-  10k)`.
+- Nav labels: `Highest Skewness (min 100k)`, `Highest Skewness (min 10k)`,
+  `Highest Variance (min 100k)`, `Highest Variance (min 10k)`, `Lowest
+  Kurtosis (min 100k)`, `Lowest Kurtosis (min 10k)`, `Highest Review Ratio (min
+  1k)`, `Highest Avg Rating (min 100k)`, `Highest Avg Rating (min 10k)`,
+  `Highest Avg Rating (min 1k)`, `Lowest Avg Rating (min 10k)`, `Lowest Avg
+  Rating (min 1k)`.
+
+The lower-threshold variants (`min-10k`/`min-1k`) are additional rows rather
+than replacements: 12 reports × 4 scopes = 48 pages (20 added below the
+original seven).
 
 ### Book sort fields (parity with `books.sh --sort`)
 
@@ -333,11 +461,11 @@ desc, then publisher name asc. Size is fixed at 1,000 per report (not
 
 - A full run over the live DB (~18.6M books) takes ~3–4 minutes: the narrow
   `books` scan plus the title-only pass dominate (measured 3m9s on
-  2026-11-11 with the derived-stat pages, 74 pages; the Per Field aggregate
-  adds a full `books` pass, and the Overall ratings histogram adds another).
-  The English works pass adds one `book_page` join + window over the
-  ~318k English work rows, deduped in memory; the live run now publishes ~100
-  pages.
+  2026-11-11 with the derived-stat pages, 74 pages; the lower-threshold variants
+  add 20 more; the Per Field aggregate adds a full `books` pass, and the
+  Overall ratings histogram adds another). The English works pass adds one
+  `book_page` join + window over the ~318k English work rows, deduped in
+  memory; the live run now publishes ~120 pages.
 - That pass selects only `id, ratings, work_id, is_work_rep, pages` (no
   title/author strings) and resolves title/author for only the surviving
   top-N ids afterwards. One joined pass over `book_page` (~411k rows) handles
@@ -423,13 +551,48 @@ Planned (needs decisions):
 - This is the first section expected to hold many reports (27), so it is the
   motivating case for the collapsible nav.
 
+### Year-page de-duplication (implemented)
+
+Each year page (`year/<YYYY>.html`) collapses editions to **one row per work**
+(hardcover/paperback/translation editions with different book ids no longer
+appear several times):
+
+- Group by `books.work_id` when it is non-empty.
+- Otherwise group by normalized title (`stripTitleSuffix`, case/punctuation
+  folded) + `author_id` (falling back to lowercased author name).
+- Within a group keep the highest-`books.ratings` edition; tie → lower numeric
+  `books.id` (same rule as `recomputeWorkReps`).
+- Dedupe during the existing single `books` scan — the query already selects
+  `work_id`/`is_work_rep` — using a per-year candidate map, then build the
+  1,000-row heap from the survivors. Do not dedupe after the heap, or a year
+  could end up with fewer than 1,000 distinct works.
+- The page intro notes "one edition per work (highest-ratings edition kept)".
+  No new column is required.
+
+### Author links (planned)
+
+Year rows should link the author name the same way every other book report
+does; today `renderYearTable` prints `books.author` as plain text, making it
+the only book table without the author link.
+
+- Add `authorId` to `YearBook` and populate it from `books.author_id` in the
+  existing single `books` scan (the query already selects the needed columns).
+- `resolveBookTitles` must copy `authorId` onto year rows as well (it already
+  resolves `author_id` for the ratings top-N).
+- `renderYearTable` renders the author with the shared
+  `renderAuthorLink(author, authorId)` helper: link to
+  `https://www.goodreads.com/author/show/<author_id>` when an id is present,
+  otherwise plain text (and `—` when the name is empty). Same
+  `target="_blank" rel="noopener noreferrer"` as the other tables.
+- No new column and no extra query.
+
 ## Lists (implemented)
 
-Top-N tables (N = `--limit`, default 1000) over `list_meta` (~26k lists),
-plus the **top list tags** report over the unified `list_tags` xref. List
-titles come from `list_scrapes.list_name` (nearly every row has one); `lists`
-only holds a few hundred rows, so it is not used. These are small tables, not
-histograms.
+Top-N tables (N = `--limit`, default 1000) over `list_meta` (~46k lists and
+growing), plus the **top list tags** report over the unified `list_tags` xref.
+List titles come from `list_scrapes.list_name` (nearly every row has one);
+`lists` only holds a few hundred rows, so it is not used. These are small
+tables, not histograms.
 
 | page | sort attribute | direction |
 | --- | --- | --- |
@@ -469,9 +632,100 @@ are ranked (~16k distinct; a small number of lists have no creator id and are
 excluded). The Creator cell uses the shared lists-created link described above.
 
 Data: `list_meta` (`num_books`, `num_voters`, `num_likes`, `created_at`,
-`creator_id`, `creator_name`) joined to `list_scrapes.list_name`. All ~26k
-rows fit in memory, so this is a small single pass (unlike the 18.6M-book
-pass).
+`creator_id`, `creator_name`) joined to `list_scrapes.list_name`. All rows fit
+in memory, so this is a small single pass (unlike the 18.6M-book pass).
+
+### List metadata backfill (implemented)
+
+The six list reports and the creators report only rank lists that have a
+`list_meta` row, so lists that were discovered but never book-crawled are
+invisible. Coverage today: 122,277 lists in `list_scrapes`, but only 46,247
+`list_meta` rows (76,031 lists with no metadata), and ~5,970 existing rows have
+at least one NULL field. `list-meta-backfill` reads only the first page of each
+such list and records the header metadata and sidebar tags (`src/listMetaBackfill.ts`).
+
+- **Candidates.** Every list id known to the DB (`list_scrapes`, plus the
+  handful of `list_tags`-only lists), **earliest-discovered first**: order by
+  `list_scrapes.first_scraped` ascending, then `list_id` ascending; ids with no
+  scrape row go after those. This walks the oldest lists first.
+- **Filter.** Keep a list when its `list_meta` row is absent, or any of
+  `num_books`, `num_voters`, `num_likes`, `created_at` is NULL, or both
+  `creator_id` and `creator_name` are NULL. A deleted-user list legitimately
+  has no `creator_id`; a stored `creator_name` satisfies the creator
+  requirement so it is not re-walked forever.
+- **Fetch.** Exactly one request per list:
+  `GET https://www.goodreads.com/list/show/<list_id>` (page 1 only). No
+  pagination and no book rows. The header metadata and `Tags:` sidebar repeat
+  on every page, so page 1 is sufficient.
+- **Parse / persist.** Reuse `parseListMeta()` + `parseListTags()` and
+  `upsertListMeta()` / `upsertListTags()` (idempotent single-statement upserts;
+  tags recorded with `from_sidebar = 1`). Counts track the latest read; the
+  creation date and creator only fill blanks.
+- **Do not touch `list_scrapes`.** This is a metadata backfill, not a crawl:
+  leave `first_scraped`, `last_scraped`, `num_scraped`, and
+  `num_books_scraped` untouched so book-crawl schedules and the "not yet
+  scraped" set are unaffected. `list_meta.last_seen` still advances.
+- **Politeness / resume.** Sequential requests paced with the same plain
+  `delay()` gap `scrapeListBooks` uses between list pages (~0.25–3.1s; note
+  `delay()` scales its bounds by 1.5 and adds 100ms); on 202/403/429 the run
+  stops (the page fetch itself is bounded, no unbounded retry). `--limit`
+  batches the queue, and re-running resumes naturally because completed rows
+  fall out of the filter.
+  The run logs added/filled/no-metadata/unreadable/tag counts.
+- **Command.** `list-meta-backfill` (`--limit`, `--dryRun`) plus the
+  `backfillListMeta.sh` wrapper, matching the existing wrapper conventions.
+- **Effect.** Re-run `publishSite.sh` afterwards: the new rows flow into all
+  six list reports and the creators report, and (because `list_meta` is in
+  `EXPORT_TABLES`) into data sharing.
+
+### List creation-date parsing (implemented 2026/11/14)
+
+Goodreads **omits the year** in a list's header meta when the list was created
+in the current calendar year:
+
+- `232 books · 37 voters · list created January 17th by Brittiny Harrand` —
+  [list/380105](https://www.goodreads.com/list/show/380105)
+- `100 books · 1 voter · list created November 1st by Mitchell Friedman` —
+  [list/424056](https://www.goodreads.com/list/show/424056.Most_popular_3rd_book_in_a_series)
+- [list/291061](https://www.goodreads.com/list/show/291061) is probably the last
+  2025 list that still carries a year.
+
+`parseListMeta()` matches `/list created <Month> <day>, <YYYY>/`
+(`src/scraper.ts:653`) and `ordinalMonthDateToIso()` requires a 4-digit year
+(`src/scraper.ts:617`), so a year-less date leaves `createdAt` undefined and the
+list silently gets a NULL `created_at`. Impact:
+
+- Current-year lists are absent or mis-sorted on `lists/earliest-created` and
+  `lists/latest-created`, and are omitted from the `Created` column.
+- `list-meta-backfill` **re-walks them every run**, because its filter treats a
+  NULL `created_at` as incomplete metadata (never converges).
+- `field-coverage` undercounts `created_at` coverage.
+
+Implemented fix:
+
+- The year is now optional in `parseListMeta()`'s creation regex; when absent,
+  `ordinalMonthDateToIso()` assumes the **current calendar year** at parse time
+  (`new Date().getFullYear()`; `parseListMeta` accepts an injectable `now` for
+  deterministic tests). Goodreads only drops the year for the actual current
+  year.
+- **Raw creation text is captured** alongside the derived ISO date: nullable
+  `created_at_raw TEXT` on `list_meta` (created-column migration for existing
+  DBs; fill-blank-only like `created_at`), stored via `upsertListMeta()`,
+  round-tripped through export/import, and surfaced in `field-coverage` (CLI)
+  and the publish-site coverage page. The ISO `created_at` stays the sortable
+  value. `list-meta-backfill` records it too.
+- Covered by scraper tests for both shapes (`"May 1st, 2013"` and a year-less
+  `"January 17th"`), a backfill integration-style test, and the field-coverage
+  distinct-count test.
+- Still to run against live data: `./backfillListMeta.sh` to repopulate the
+  NULL `created_at` rows; with the fix the queue drains and
+  earliest/latest-created pick up the new lists.
+
+Related, still open: early **2008** lists
+(`SELECT * FROM list_meta WHERE created_at IS NOT NULL ORDER BY created_at ASC`)
+do not render correctly on `lists/earliest-created.html`. `created_at_raw` is
+now captured, so the next step is to confirm whether their ISO dates are wrong,
+NULL, or simply sorted out by the tie-break/limit before changing the report.
 
 ### Top list tags (moved here from Tags; implemented)
 
@@ -487,14 +741,40 @@ pass).
   e.g. `https://www.goodreads.com/list/tag/romance`).
 - Includes every tag (no `--exclude-walked` filter).
 
+## Tags (planned)
+
+### Books on first page of tags (`tagFirstPagePicks.sh --limit 1000 --terse --includeReviewed`)
+
+- `tags/books-on-tag-first-pages` — **top 1,000** books ranked by how many
+  distinct tags they appear on that tag's **first page** (position 1–50).
+  HTML form of `./tagFirstPagePicks.sh --limit 1000 --terse --includeReviewed`.
+  Path `tags/books-on-tag-first-pages.html`; nav label
+  "Books on tag first pages".
+- Data: `tag_books` rows with `position BETWEEN 1 AND 50`, joined to `books`.
+  Skip books missing from the cache; drop `books.is_bad = 1` and
+  `title = 'Unknown'`. Count distinct `tag_name` per `book_id`.
+- Rank: tag count desc, then `books.ratings` desc, then title asc. Render the
+  top 1,000 rows. `--includeReviewed` means **no** library-export filter — show
+  books you have already reviewed too.
+- `--terse` parity: no tag-name lists, just the count.
+- Columns: `#`, Title (book detail link), Author (author link), Year, Pages,
+  Tags (distinct first-page tag count).
+- Footer: tags with first-page data, distinct books on a tag first page,
+  books not in cache, and displayed count. (The CLI's "Excluded (already
+  reviewed)" count is always 0 here because reviewed books are included.)
+- Add a loader (`loadTagFirstPagePicks({ limit })`) over one aggregate query so
+  the page does not issue 1,000 `getBook` calls; keep the existing pure
+  `findTagFirstPagePicks` for the CLI and its unit tests. Tag names are
+  lowercased at the storage boundary.
+
 ## Genres / Tags (later)
 
 - Genres: `genres`, `genre_tag_xref`, `tag_books`.
 - Tags: `tag_stats`, `list_tag_walk_history`.
 
 `list_tags` also backs the top-list-tags report (now under Lists) and the
-optional tag links on the title reports (above). The **Tags** nav section is
-empty — rendered with the `soon` badge — until a tag-specific report is added.
+optional tag links on the title reports (above). The **Tags** nav section is no
+longer empty: it holds the books-on-tag-first-pages report above (planned).
 
 ## Future
 
@@ -521,6 +801,12 @@ empty — rendered with the `soon` badge — until a tag-specific report is adde
   the creators report) use
   `https://www.goodreads.com/list/created/<creator_id>`, not `/user/show/`
   (implemented).
+- List metadata backfill: `list-meta-backfill` (`src/listMetaBackfill.ts`,
+  `backfillListMeta.sh`) reads page 1 of every known list missing metadata,
+  earliest-discovered first, and writes `list_meta` + sidebar `list_tags`
+  without touching `list_scrapes` (no scrape date, no book rows).
+  `--limit`/`--dryRun` supported; a dead list is skipped, throttling stops the
+  run, and re-running resumes.
 - Titles: three reports (first char, last char, first word) from a second
   title-only pass; first/last char rows require **>= 1,000 books**; first
   words are top `--limit` (default 1000). On `titles/first-char` and
@@ -540,6 +826,10 @@ empty — rendered with the `soon` badge — until a tag-specific report is adde
   `highest-avg-rating-min-100k`, `highest-avg-rating-min-10k`, and
   `lowest-avg-rating-min-10k` (avg-rating rows filtered on `books.ratings >=
   100000`/`10000`); NULL stats are excluded, and the stats are per edition.
+- Lower-threshold derived-stat additions (all four scopes):
+  `highest-skewness-min-10k`, `highest-variance-min-10k`,
+  `lowest-kurtosis-min-10k`, `highest-avg-rating-min-1k`, and
+  `lowest-avg-rating-min-1k` (20 new pages).
 - Works (English): a sibling scope under Works, selecting the highest-ratings
   English edition per `work_id` and deduping by normalized title + author;
   works with no known English edition are excluded. Each Works and Works
@@ -556,12 +846,24 @@ empty — rendered with the `soon` badge — until a tag-specific report is adde
   present; otherwise the name is plain text.
 - Author section adds `bottom-authors-by-avg-rating-min-10k` (ascending average
   rating, ties by more ratings then name), alongside the two top-average
-  reports.
+  reports, plus `top-authors-by-avg-rating-min-1k` and
+  `bottom-authors-by-avg-rating-min-1k` (min `num_ratings = 1000`).
 - Overall adds `per-field.html`, a compact `fieldCoverage.sh` over the core
   tables (books, authors, book_page, tag_books, lists, list_meta, list_tags).
 - Overall adds `ratings-histogram.html`, the `ratingsCoverageHistogram.sh`
   coverage histogram: the CLI rating brackets split into ALL / WORK-ID / WORKS /
   FIELD / WORK+FIELD, each shown as `#` plus `ROLLUP` (this bracket and above).
+- Overall adds `publication-years.html` (`summary-year`), `books-added.html`
+  (last 1000 days), and `authors-added.html`
+  (`authorHist.sh --by day`): the same aggregate tables as the terminal
+  reports, driven by `published`, `books.first_seen`, and `authors.first_seen`.
+  They are not `--limit`-capped.
+- Highest Rated by Year pages dedupe to one row per work: group by
+  `books.work_id` when non-empty, else normalized title + author (`author_id`,
+  falling back to lowercased name); keep the highest-ratings edition, tie →
+  lower numeric book id. The title+author fallback is accepted: only ~9.2k of
+  ~309k year candidates lack a `work_id`, and it matches the Works (English)
+  de-dupe rule.
 
 ## Open questions
 

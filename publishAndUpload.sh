@@ -3,7 +3,7 @@
 # Scheduled by launchd agent com.goodreads.publishsite (daily 09:00, see
 # ~/Library/LaunchAgents/com.goodreads.publishsite.plist).
 #
-# Output goes to ~/Downloads/goodreadsZeitgeist, the same directory
+# Output goes to ~/goodreadsZeitgeist, the same directory
 # uploadHostpapa.py uses by default. The upload does NOT delete remote files;
 # removed local reports stay on the server until explicitly cleaned up.
 set -euo pipefail
@@ -12,7 +12,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 nvm use 22 > /dev/null
 
-out="$HOME/Downloads/goodreadsZeitgeist"
+out="$HOME/goodreadsZeitgeist"
 envfile="$HOME/.hostpapa-ftp.env"
 
 echo starting publishAndUpload.sh

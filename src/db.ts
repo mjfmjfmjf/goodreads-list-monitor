@@ -652,9 +652,19 @@ function initSchema(db: Database.Database) {
       num_books    INTEGER,
       num_voters   INTEGER,
       created_at   TEXT,
+      -- Raw header date as Goodreads rendered it ("May 1st, 2013", or a
+      -- year-less "January 17th" for current-year lists); created_at assumes
+      -- the current year in that case, so this preserves the evidence.
+      created_at_raw TEXT,
       creator_id   TEXT,
       creator_name TEXT,
       num_likes    INTEGER,
+      -- 1 when a read found no parseable header metadata (e.g. dead/deleted page
+      -- or a list with no sidebar meta), so backfill can stop re-queueing it.
+      meta_missing INTEGER NOT NULL DEFAULT 0,
+      -- 1 when the page states "This is a static list." (Goodreads marks some
+      -- lists as static; these often have no voter/like sidebar metadata).
+      is_static    INTEGER NOT NULL DEFAULT 0,
       first_seen   TEXT NOT NULL,
       last_seen    TEXT NOT NULL
     );
@@ -876,6 +886,16 @@ function initSchema(db: Database.Database) {
   const listScrapeCols = db.prepare('PRAGMA table_info(list_scrapes)').all() as any[];
   if (!listScrapeCols.some((c: any) => c.name === 'num_scraped')) {
     db.exec('ALTER TABLE list_scrapes ADD COLUMN num_scraped INTEGER');
+  }
+  const listMetaCols = db.prepare('PRAGMA table_info(list_meta)').all() as any[];
+  if (!listMetaCols.some((c: any) => c.name === 'created_at_raw')) {
+    db.exec('ALTER TABLE list_meta ADD COLUMN created_at_raw TEXT');
+  }
+  if (!listMetaCols.some((c: any) => c.name === 'meta_missing')) {
+    db.exec('ALTER TABLE list_meta ADD COLUMN meta_missing INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!listMetaCols.some((c: any) => c.name === 'is_static')) {
+    db.exec('ALTER TABLE list_meta ADD COLUMN is_static INTEGER NOT NULL DEFAULT 0');
   }
   if (!listScrapeCols.some((c: any) => c.name === 'num_books_scraped')) {
     // num_scraped briefly meant "books in the last crawl". Move those values to

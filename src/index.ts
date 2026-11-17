@@ -71,6 +71,7 @@ import { runListWalker } from './listWalker.ts';
 import { runListTagWalker } from './listTagWalker.ts';
 import { runListPopularWalker } from './listPopularWalker.ts';
 import { runListTagBackfill } from './listTagBackfill.ts';
+import { runListMetaBackfill } from './listMetaBackfill.ts';
 import { runListTagStats } from './listTagStats.ts';
 import { runListTags } from './listTags.ts';
 import { runNextTagWalk } from './nextTagWalk.ts';
@@ -1167,6 +1168,34 @@ skipped, never fatal — only a connectivity outage aborts the run.`)
       });
     } catch (error) {
       console.error(chalk.red.bold('Failed to run list tag backfill:'), (error as any).message);
+    }
+  });
+
+program
+  .command('list-meta-backfill')
+  .description('Fill missing Listopia header metadata (most books, most voters, most likes, creation date, creator) for every list the DB knows about, plus its sidebar tags. Reads ONLY page 1 of each list, earliest-discovered first, and does NOT update list_scrapes (no scrape date / book crawl). Re-run until the queue is empty.')
+  .addHelpText('after', `
+Examples:
+  $ ./backfillListMeta.sh                     # fill every known list missing metadata
+  $ ./backfillListMeta.sh --limit 500         # just the next 500, earliest first
+  $ ./backfillListMeta.sh --dryRun            # show the queue, read nothing
+Candidate lists are every id in list_scrapes/lists/list_tags that has no list_meta
+row or is missing num_books/num_voters/num_likes/created_at/creator, ordered by
+earliest first_scraped. One request per list captures the whole header + tag
+sidebar (both repeat on every page), and list_scrapes is deliberately left
+untouched so this is not mistaken for a book crawl. A dead list is counted and
+skipped, never fatal; only a connectivity outage or Goodreads throttling stops
+the run.`)
+  .option('--limit <number>', 'Stop after this many lists (default: the whole queue)')
+  .option('--dryRun', 'Show the queue but fetch nothing')
+  .action(async (options) => {
+    try {
+      await runListMetaBackfill({
+        limit: options.limit !== undefined ? parseInt(options.limit, 10) : undefined,
+        dryRun: !!options.dryRun,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run list metadata backfill:'), (error as any).message);
     }
   });
 
