@@ -14,6 +14,7 @@ import {
   deleteBook,
   findAuthorBySlug,
   getAuthor,
+  getAuthorById,
   getBook,
   iterateBooks,
   loadAuthorCache,
@@ -526,6 +527,43 @@ describe('syncBooksToCache merge semantics', () => {
     const got = getBook('9109')!;
     expect(got.title).toBe('New Title');
     expect(got.avgRating).toBe('0');
+  });
+});
+
+describe('author-page merge mints credited authors', () => {
+  it('inserts an authors row for every credited author, not just the page owner', () => {
+    mergeBooksFromAuthorPage([{
+      id: '9201',
+      title: 'Black House',
+      author: 'Stephen KingPeter Straub',
+      authorId: '77001',
+      credits: [
+        { id: '77001', name: 'Stephen King', slug: '77001.Stephen_King' },
+        { id: '77002', name: 'Peter Straub', slug: '77002.Peter_Straub' },
+      ],
+    }]);
+    expect(getAuthorById('77001')!.slug).toBe('77001.Stephen_King');
+    expect(getAuthorById('77002')!.name).toBe('Peter Straub');
+    expect(getAuthorById('77002')!.slug).toBe('77002.Peter_Straub');
+  });
+
+  it('never overwrites an existing author name or stats while minting credits', () => {
+    upsertAuthorById('77003', makeEntry({
+      id: '77003',
+      name: 'Canonical Name',
+      slug: '77003.Canonical_Name',
+      numRatings: '500',
+    }));
+    mergeBooksFromAuthorPage([{
+      id: '9202',
+      title: 'Some Book',
+      author: 'Canonical Name',
+      authorId: '77003',
+      credits: [{ id: '77003', name: 'Stale Name', slug: '77003.Stale_Slug' }],
+    }]);
+    const author = getAuthorById('77003')!;
+    expect(author.name).toBe('Canonical Name');
+    expect(author.numRatings).toBe('500');
   });
 });
 

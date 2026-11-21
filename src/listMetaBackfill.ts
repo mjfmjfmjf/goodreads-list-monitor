@@ -12,6 +12,8 @@ export interface ListMetaBackfillOptions {
   dryRun?: boolean;
   // Test hook: replaces the network read with a supplied HTML body.
   fetchListPage?: (listId: string) => Promise<string>;
+  // Test hook: replaces the inter-list sleep so pacing can be asserted.
+  wait?: () => Promise<void>;
 }
 
 export interface ListMetaBackfillResult {
@@ -175,6 +177,13 @@ export async function runListMetaBackfill(
   const db = getDb();
   const rowExists = db.prepare('SELECT 1 FROM list_meta WHERE list_id = ?');
 
+  // Every path through the loop (success, 404, unreadable page, failed write)
+  // must be paced — otherwise a run that starts with a block of dead ids hammers
+  // Goodreads with back-to-back requests and no "(Waiting ...)" gaps.
+  const pace = async (index: number): Promise<void> => {
+    if (index < queue.length - 1) await (options.wait ?? delay)();
+  };
+
   const results: ListMetaBackfillResult[] = [];
   const runStart = Date.now();
   let failed = 0;
@@ -202,11 +211,23 @@ export async function runListMetaBackfill(
         throw error;
       }
       // A dead/404 list must never end the run — that is the failure mode this
-      // backlog is full of.
+      // backlog is full of. Mark terminal HTTP failures so the next run does not
+      // re-queue the same bad ids forever.
+      const status = error?.response?.status;
+      if (status === 404 || status === 410) {
+        try {
+          upsertListMeta(listId, { metaMissing: true });
+        } catch (writeError: any) {
+          console.log(
+            chalk.gray(`   ⏭  [${i + 1}/${queue.length}] list ${listId} — could not mark dead: ${writeError?.message ?? writeError}`),
+          );
+        }
+      }
       failed++;
       console.log(
         chalk.gray(`   ⏭  [${i + 1}/${queue.length}] list ${listId} — ${error?.message ?? 'failed'}`),
       );
+      await pace(i);
       continue;
     }
 
@@ -222,6 +243,7 @@ export async function runListMetaBackfill(
       console.log(
         chalk.gray(`   ⏭  [${i + 1}/${queue.length}] list ${listId} — write failed: ${error?.message ?? error}`),
       );
+      await pace(i);
       continue;
     }
 
@@ -257,7 +279,7 @@ export async function runListMetaBackfill(
         console.log(
           chalk.gray(`   ⏭  [${i + 1}/${queue.length}] list ${listId} — write failed: ${error?.message ?? error}`),
         );
-        if (i < queue.length - 1) await delay();
+        await pace(i);
         continue;
       }
       noMeta++;
@@ -265,9 +287,7 @@ export async function runListMetaBackfill(
       console.log(chalk.gray(`   [${i + 1}/${queue.length}] list ${listId} — ${reason}`));
     }
 
-    if (i < queue.length - 1) {
-      await delay();
-    }
+    await pace(i);
   }
 
   const totalMs = Date.now() - runStart;

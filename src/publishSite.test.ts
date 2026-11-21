@@ -18,8 +18,13 @@ import {
   AVG_RATING_HISTOGRAM_STEPS,
   BOOKS_ADDED_DAYS,
   BOOK_METRICS,
+  BOOK_METRIC_SORT_ATTRIBUTES,
+  BOOK_METRIC_SORT_SCRIPT,
   BOOK_SCOPES,
   DERIVED_REPORTS,
+  GENRE_SORT_ATTRIBUTES,
+  GENRE_SORT_SCRIPT,
+  GENRE_STATS_REPORT,
   LIST_CREATOR_REPORT,
   LIST_REPORTS,
   LIST_SORT_ATTRIBUTES,
@@ -28,8 +33,19 @@ import {
   PUBLISHER_REPORTS,
   STATIC_LISTS_REPORT,
   PUBLISHER_REPORT_LIMIT,
+  TAG_DIRECTORY_REPORT,
+  TAG_DIRECTORY_REPORT_LIMIT,
+  TAG_BOOK_REPORTS,
+  TAG_BOOK_REPORT_LIMIT,
+  TAG_BOOK_TAGS,
+  TAG_BOOK_SORT_ATTRIBUTES,
+  TAG_BOOK_SORT_SCRIPT,
+  tagBookReportsByRanking,
+  TOP_TAG_SORT_ATTRIBUTES,
+  TOP_TAG_SORT_SCRIPT,
   TITLE_MIN_BOOKS,
   TITLE_REPORTS,
+  TOP_RATED_YEAR_REPORTS,
   YEAR_REPORTS,
   aggregateListCreators,
   buildNav,
@@ -46,6 +62,7 @@ import {
   renderDerivedTable,
   renderFieldCoveragePage,
   renderFirstWordTable,
+  renderGenreStatsTable,
   renderFrequencyPage,
   renderHistogram,
   renderListCreatorTable,
@@ -61,14 +78,24 @@ import {
   renderPublisherTable,
   renderScopeToggle,
   renderTopBooks,
+  renderTopRatedYearTable,
   renderYearTable,
   runPublishSite,
   scanBookPages,
   scanEnglishWorks,
+  loadFieldCoverageRows,
+  loadTagBookReports,
+  loadTagBookReportsByTagCount,
+  loadTopTagRows,
+  renderTagBookIntro,
+  renderTagBookTable,
+  renderTopTagIntro,
+  renderTopTagTable,
   sortListRows,
   writeFileAtomic,
 } from './publishSite.ts';
 import type { BookScopeId, DerivedBook, DerivedReportId, ListRow, YearBook } from './publishSite.ts';
+import { REPORTED_TABLES } from './fieldCoverage.ts';
 import type { SelectedAuthor } from './authorTopStats.ts';
 import type { AuthorCacheEntry } from './storage.ts';
 
@@ -183,36 +210,53 @@ describe('static publish', () => {
     expect(DERIVED_REPORTS.map((report) => report.id)).toEqual([
       'highest-skewness-min-100k',
       'highest-skewness-min-10k',
+      'lowest-skewness-min-100k',
+      'lowest-skewness-min-10k',
       'highest-variance-min-100k',
       'highest-variance-min-10k',
+      'lowest-variance-min-100k',
+      'lowest-variance-min-10k',
+      'highest-kurtosis-min-100k',
+      'highest-kurtosis-min-10k',
       'lowest-kurtosis-min-100k',
       'lowest-kurtosis-min-10k',
       'highest-review-ratio-min-1k',
+      'highest-review-ratio-min-100',
       'highest-avg-rating-min-100k',
       'highest-avg-rating-min-10k',
       'highest-avg-rating-min-1k',
+      'highest-avg-rating-min-100',
       'lowest-avg-rating-min-10k',
       'lowest-avg-rating-min-1k',
+      'lowest-avg-rating-min-100',
     ]);
     expect(DERIVED_REPORTS.map((report) => report.minRatings)).toEqual([
-      100000, 10000, 100000, 10000, 100000, 10000, 1000, 100000, 10000, 1000, 10000, 1000,
+      100000, 10000, 100000, 10000, 100000, 10000, 100000, 10000, 100000, 10000, 100000, 10000,
+      1000, 100, 100000, 10000, 1000, 100, 10000, 1000, 100,
     ]);
+    expect(DERIVED_REPORTS.find((report) => report.id === 'lowest-skewness-min-100k')?.direction).toBe('asc');
+    expect(DERIVED_REPORTS.find((report) => report.id === 'lowest-variance-min-10k')?.direction).toBe('asc');
+    expect(DERIVED_REPORTS.find((report) => report.id === 'highest-kurtosis-min-100k')?.direction).toBe('desc');
     expect(DERIVED_REPORTS.find((report) => report.id === 'lowest-kurtosis-min-100k')?.direction).toBe('asc');
     expect(DERIVED_REPORTS.find((report) => report.id === 'lowest-kurtosis-min-10k')?.direction).toBe('asc');
     expect(DERIVED_REPORTS.find((report) => report.id === 'highest-review-ratio-min-1k')?.kind).toBe('review-ratio');
+    expect(DERIVED_REPORTS.find((report) => report.id === 'highest-review-ratio-min-100')?.kind).toBe('review-ratio');
     expect(DERIVED_REPORTS.find((report) => report.id === 'lowest-avg-rating-min-10k')?.direction).toBe('asc');
     expect(DERIVED_REPORTS.find((report) => report.id === 'lowest-avg-rating-min-1k')?.direction).toBe('asc');
+    expect(DERIVED_REPORTS.find((report) => report.id === 'lowest-avg-rating-min-100')?.direction).toBe('asc');
     expect(DERIVED_REPORTS.find((report) => report.id === 'highest-avg-rating-min-100k')?.kind).toBe('avg-rating');
-    expect(DERIVED_REPORTS).toHaveLength(12);
+    expect(DERIVED_REPORTS.find((report) => report.id === 'highest-avg-rating-min-100')?.kind).toBe('avg-rating');
+    expect(DERIVED_REPORTS).toHaveLength(21);
   });
 
-  it('builds avg-rating histogram reports at three thresholds and bucket widths', () => {
+  it('builds avg-rating histogram reports at four thresholds and bucket widths', () => {
     expect(AVG_RATING_HISTOGRAM_REPORTS.map((report) => report.id)).toEqual([
       'avg-ratings-histogram-min-100k',
       'avg-ratings-histogram-min-10k',
       'avg-ratings-histogram-min-1k',
+      'avg-ratings-histogram-min-100',
     ]);
-    expect(AVG_RATING_HISTOGRAM_REPORTS.map((report) => report.minRatings)).toEqual([100000, 10000, 1000]);
+    expect(AVG_RATING_HISTOGRAM_REPORTS.map((report) => report.minRatings)).toEqual([100000, 10000, 1000, 100]);
     expect(AVG_RATING_HISTOGRAM_STEPS).toEqual([0.5, 0.2, 0.1]);
     const nav = renderNav(buildNav(), 'book-id/avg-ratings-histogram-min-100k', '../');
     for (const report of AVG_RATING_HISTOGRAM_REPORTS) {
@@ -221,6 +265,68 @@ describe('static publish', () => {
       expect(nav).toContain(`href="../works/${report.id}.html"`);
       expect(nav).toContain(`href="../works-en/${report.id}.html"`);
     }
+  });
+
+  it('defines top-tags and eighteen tag book reports in alphabetical tag order', () => {
+    expect(TAG_DIRECTORY_REPORT_LIMIT).toBe(1000);
+    expect(TAG_DIRECTORY_REPORT.id).toBe('tags/top-tags');
+    expect(TAG_BOOK_REPORT_LIMIT).toBe(1000);
+    expect(TAG_BOOK_TAGS).toEqual([
+      '2026',
+      'fantasy',
+      'graphic-novels',
+      'manga',
+      'mystery',
+      'non-fiction',
+      'romance',
+      'science-fiction',
+      'young-adult',
+    ]);
+    expect(TAG_BOOK_REPORTS).toHaveLength(18);
+
+    const ratings = tagBookReportsByRanking('ratings');
+    const byTagCount = tagBookReportsByRanking('tagCount');
+    expect(ratings.map((report) => report.tag)).toEqual([...TAG_BOOK_TAGS]);
+    expect(byTagCount.map((report) => report.tag)).toEqual([...TAG_BOOK_TAGS]);
+    expect(ratings.map((report) => report.id)).toEqual([
+      'tags/2026',
+      'tags/fantasy',
+      'tags/graphic-novels',
+      'tags/manga',
+      'tags/mystery',
+      'tags/non-fiction',
+      'tags/romance',
+      'tags/science-fiction',
+      'tags/young-adult',
+    ]);
+    expect(byTagCount.map((report) => report.id)).toEqual([
+      'tags/2026-by-tag-count',
+      'tags/fantasy-by-tag-count',
+      'tags/graphic-novels-by-tag-count',
+      'tags/manga-by-tag-count',
+      'tags/mystery-by-tag-count',
+      'tags/non-fiction-by-tag-count',
+      'tags/romance-by-tag-count',
+      'tags/science-fiction-by-tag-count',
+      'tags/young-adult-by-tag-count',
+    ]);
+    expect(ratings[0].title).toBe('Top Books Tagged 2026');
+    expect(byTagCount[0].title).toBe('Top Books Tagged 2026 by Shelf Count');
+
+    const nav = renderNav(buildNav(), 'tags/romance-by-tag-count', '../');
+    expect(nav).toContain('<summary class="nav-heading">Tag Books — by Ratings</summary>');
+    expect(nav).toContain('<summary class="nav-heading">Tag Books — by Shelf Count</summary>');
+    for (const reports of [ratings, byTagCount]) {
+      const positions = reports.map((report) => nav.indexOf(`href="../${report.id}.html"`));
+      expect(positions.every((position) => position >= 0)).toBe(true);
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+      for (const report of reports) expect(nav).toContain(`>${report.navLabel}</a>`);
+    }
+
+    const directoryPosition = nav.indexOf(`href="../${TAG_DIRECTORY_REPORT.id}.html"`);
+    expect(directoryPosition).toBeGreaterThanOrEqual(0);
+    expect(directoryPosition).toBeLessThan(nav.indexOf(`href="../${ratings[0].id}.html"`));
+    expect(nav).toContain('>Top Tags</a>');
   });
 
   it('builds the expected list reports', () => {
@@ -278,6 +384,8 @@ describe('static publish', () => {
     expect(html).toContain('data-sort="numVoters"');
     expect(html).toContain('data-sort="numLikes"');
     expect(html).toContain('data-sort="createdAt"');
+    expect(html).toContain('<th class="date"><button type="button" class="sort-btn" data-sort="createdAt">');
+    expect(html).toContain('<td class="date">2010-01-01</td>');
     expect(html).toContain('data-list-id="100" data-books="500" data-voters="100" data-likes="20" data-created="2010-01-01"');
   });
 
@@ -391,7 +499,7 @@ describe('static publish', () => {
       listRow({ listId: '3', creatorId: null, creatorName: 'deleted', numBooks: 999, numVoters: 99, numLikes: 9 }),
     ];
     const creators = aggregateListCreators(rows);
-    expect(creators).toHaveLength(1);
+    expect(creators).toHaveLength(2);
     expect(creators[0]).toMatchObject({
       creatorId: '1',
       creatorName: 'Alice',
@@ -399,6 +507,15 @@ describe('static publish', () => {
       numBooks: 150,
       numVoters: 15,
       numLikes: 5,
+      hasLikes: true,
+    });
+    expect(creators[1]).toMatchObject({
+      creatorId: null,
+      creatorName: 'deleted',
+      numLists: 1,
+      numBooks: 999,
+      numVoters: 99,
+      numLikes: 9,
       hasLikes: true,
     });
     const html = renderListCreatorTable(creators);
@@ -409,6 +526,32 @@ describe('static publish', () => {
     expect(html).toContain('data-sort="lists"');
     expect(html).toContain('data-sort="likes"');
     expect(html).toContain('data-creator-id="1" data-lists="2" data-books="150" data-voters="15" data-likes="5"');
+    expect(html).toContain('<td>deleted</td>');
+    expect(html).not.toContain('list/created/deleted');
+    expect(html).toContain('data-creator-id="" data-lists="1"');
+  });
+
+  it('folds creator-less lists with no captured name into deleted user', () => {
+    const creators = aggregateListCreators([
+      listRow({ listId: '1', creatorId: null, creatorName: 'deleted user', numBooks: 10, numVoters: 2, numLikes: null }),
+      listRow({ listId: '2', creatorId: null, creatorName: 'deleted user', numBooks: 20, numVoters: 3, numLikes: 4 }),
+      listRow({ listId: '3', creatorId: null, creatorName: null, numBooks: 5, numVoters: 1, numLikes: null }),
+      listRow({ listId: '4', creatorId: null, creatorName: '', numBooks: 7, numVoters: 1, numLikes: null }),
+    ]);
+    expect(creators).toHaveLength(1);
+    expect(creators[0]).toMatchObject({
+      creatorId: null,
+      creatorName: 'deleted user',
+      numLists: 4,
+      numBooks: 42,
+      numVoters: 7,
+      numLikes: 4,
+      hasLikes: true,
+    });
+    const html = renderListCreatorTable(creators);
+    expect(html).toContain('<td>deleted user</td>');
+    expect(html).not.toContain('list/created/');
+    expect(html).toContain('data-creator-id="" data-lists="4"');
   });
 
   it('marks creators without likes data with an empty sort value', () => {
@@ -419,18 +562,53 @@ describe('static publish', () => {
     expect(html).toContain('data-creator-id="2" data-lists="1" data-books="1" data-voters="1" data-likes=""');
   });
 
-  it('builds 27 year reports from 2026 back to 2000', () => {
-    expect(YEAR_REPORTS).toHaveLength(27);
-    expect(YEAR_REPORTS[0]).toMatchObject({ year: 2026, id: 'year/2026' });
-    expect(YEAR_REPORTS[26]).toMatchObject({ year: 2000, id: 'year/2000' });
+  it('renders the genre report with sortable columns and both genre links', () => {
+    const html = renderGenreStatsTable(
+      [
+        { name: 'Young Adult', slug: 'young-adult', books: 3, points: 25, ratings: 1000, weightedRatings: 8000 },
+        { name: 'Fiction', slug: 'fiction', books: 3, points: 24, ratings: 900, weightedRatings: 7000 },
+      ],
+      'points',
+    );
+    expect(html).toContain('<table id="genre-stats" data-default-sort="points">');
+    for (const field of ['books', 'points', 'ratings', 'weightedRatings']) {
+      expect(html).toContain(`data-sort="${field}"`);
+      expect(GENRE_SORT_SCRIPT).toContain(`dataAttrs[field]`);
+    }
+    expect(html).toContain(
+      '<th class="num"><button type="button" class="sort-btn" data-sort="weightedRatings">Weighted ratings <span class="sort-arrow" aria-hidden="true"></span></button></th>',
+    );
+    expect(html).toContain('data-genre="Young Adult" data-books="3" data-points="25" data-ratings="1000" data-weighted-ratings="8000"');
+    expect(html).toContain('<td class="num">1,000</td>');
+    expect(html).toContain('https://www.goodreads.com/shelf/show/young-adult');
+    expect(html).toContain('https://www.goodreads.com/genres/young-adult');
+    expect(GENRE_SORT_SCRIPT).toContain("querySelector('#genre-stats')");
+    expect(GENRE_SORT_SCRIPT).toContain(JSON.stringify(GENRE_SORT_ATTRIBUTES));
+    expect(renderGenreStatsTable([], 'points')).toContain('No genres matched');
+  });
+
+  it('builds 38 year reports from 2027 back to 1990', () => {
+    expect(YEAR_REPORTS).toHaveLength(38);
+    expect(YEAR_REPORTS[0]).toMatchObject({ year: 2027, id: 'year/2027' });
+    expect(YEAR_REPORTS[37]).toMatchObject({ year: 1990, id: 'year/1990' });
+  });
+
+  it('builds the matching 38 Top Rated by Year reports', () => {
+    expect(TOP_RATED_YEAR_REPORTS).toHaveLength(38);
+    expect(TOP_RATED_YEAR_REPORTS[0]).toMatchObject({ year: 2027, id: 'top-rated-year/2027', title: 'Top Rated by Year — 2027' });
+    expect(TOP_RATED_YEAR_REPORTS[37]).toMatchObject({ year: 1990, id: 'top-rated-year/1990' });
+    expect(TOP_RATED_YEAR_REPORTS.map((report) => report.year)).toEqual(YEAR_REPORTS.map((report) => report.year));
   });
 
   it('parses published years and ignores out-of-range values', () => {
     expect(parsePublishedYear('2013')).toBe(2013);
     expect(parsePublishedYear('2013.05.01')).toBe(2013);
     expect(parsePublishedYear('Unknown')).toBeNull();
-    expect(parsePublishedYear('1999')).toBeNull();
-    expect(parsePublishedYear('2027')).toBeNull();
+    expect(parsePublishedYear('1990')).toBe(1990);
+    expect(parsePublishedYear('1999')).toBe(1999);
+    expect(parsePublishedYear('2027')).toBe(2027);
+    expect(parsePublishedYear('1989')).toBeNull();
+    expect(parsePublishedYear('2028')).toBeNull();
     expect(parsePublishedYear(null)).toBeNull();
   });
 
@@ -451,10 +629,45 @@ describe('static publish', () => {
     expect(html).toContain('4.80');
     expect(html).toContain('5,000');
     expect(html).toContain('at least 1,000 ratings');
+    expect(html).not.toContain('Published');
+    expect(html).toContain('<a href="https://www.goodreads.com/list/tag/2024" target="_blank" rel="noopener noreferrer">list tag for 2024</a>');
+    expect(html).toContain('<a href="https://www.goodreads.com/shelf/show/2024" target="_blank" rel="noopener noreferrer">shelf tag for 2024</a>');
+    expect(html).toContain('<a href="https://www.goodreads.com/book/popular_by_date/2024" target="_blank" rel="noopener noreferrer">most popular books for 2024</a>');
+    expect(html.indexOf('list/tag/2024')).toBeLessThan(html.indexOf('<table>'));
+    expect(html.indexOf('popular_by_date/2024')).toBeLessThan(html.indexOf('<table>'));
   });
 
-  it('reports an empty year', () => {
-    expect(renderYearTable([], 2026)).toContain('No books matched');
+  it('reports an empty year and still links its list and shelf tags', () => {
+    const html = renderYearTable([], 2026);
+    expect(html).toContain('No books matched');
+    expect(html).toContain('href="https://www.goodreads.com/list/tag/2026"');
+    expect(html).toContain('href="https://www.goodreads.com/shelf/show/2026"');
+    expect(html).toContain('href="https://www.goodreads.com/book/popular_by_date/2026"');
+    expect(renderYearTable([], 1990)).toContain('href="https://www.goodreads.com/book/popular_by_date/1990"');
+    expect(renderYearTable([], 2027)).toContain('href="https://www.goodreads.com/shelf/show/2027"');
+  });
+
+  it('renders Top Rated by Year rows by most ratings, with no minimum floor', () => {
+    const books: YearBook[] = [
+      { id: '1', title: 'Most Ratings', author: 'A', authorId: '101', avgRating: 3.7, ratings: 5000, year: 2024 },
+      { id: '2', title: 'Higher Avg', author: 'B', authorId: '102', avgRating: 4.9, ratings: 700, year: 2024 },
+      { id: '3', title: 'Tie More Ratings', author: 'C', authorId: '103', avgRating: 4.1, ratings: 5000, year: 2024 },
+    ];
+    const html = renderTopRatedYearTable(books, 2024);
+    expect(html.indexOf('Tie More Ratings')).toBeLessThan(html.indexOf('Most Ratings'));
+    expect(html.indexOf('Most Ratings')).toBeLessThan(html.indexOf('Higher Avg'));
+    expect(html).toContain('English-language works published in 2024');
+    expect(html).toContain('No minimum ratings requirement');
+    expect(html).toContain('top 1,000');
+    expect(html).not.toContain('at least 1,000 ratings');
+    expect(html).toContain('href="https://www.goodreads.com/list/tag/2024"');
+    expect(html).toContain('href="https://www.goodreads.com/shelf/show/2024"');
+    expect(html).toContain('href="https://www.goodreads.com/book/popular_by_date/2024"');
+    expect(html).toContain('<th class="num"># ratings</th>');
+
+    const empty = renderTopRatedYearTable([], 2027);
+    expect(empty).toContain('No books matched this report');
+    expect(empty).toContain('popular_by_date/2027');
   });
 
   it('defines three title reports and one list-tag report', () => {
@@ -532,19 +745,231 @@ describe('static publish', () => {
     expect(renderListTagTable([])).toContain('No list tags matched');
   });
 
+  it('renders the /shelf top-tags table with rank, count, scrape date and conditional links', () => {
+    const rows = [
+      {
+        tagName: 'romance',
+        bookCount: 19_598_860,
+        rank: 2,
+        scrapedAt: '2026-11-20T12:34:56.789Z',
+        hasListTag: true,
+        genreName: 'romance',
+      },
+      {
+        tagName: 'to-read',
+        bookCount: 3_186_489_228,
+        rank: 1,
+        scrapedAt: '2026-11-20T12:34:56.789Z',
+        hasListTag: false,
+        genreName: null,
+      },
+    ];
+
+    const intro = renderTopTagIntro(rows);
+    expect(intro).toContain('Top 1,000 tags');
+    expect(intro).toContain('2026-11-20 12:34:56 UTC');
+    expect(renderTopTagIntro([])).not.toContain('Snapshot taken');
+
+    const html = renderTopTagTable(rows);
+    expect(html).toContain('id="top-tags-table"');
+    expect(html).toContain('data-default-sort="rank"');
+    expect(html.indexOf('to-read')).toBeLessThan(html.indexOf('romance'));
+    expect(html).toContain('data-rank="1" data-tag-name="to-read" data-book-count="3186489228"');
+    expect(html).toContain('3,186,489,228');
+    expect(html).toContain('2026-11-20 12:34:56 UTC');
+    expect(html).toContain('https://www.goodreads.com/shelf/show/to-read');
+    expect(html).toContain('https://www.goodreads.com/list/tag/romance');
+    expect(html).toContain('https://www.goodreads.com/genres/romance');
+    expect(html).not.toContain('https://www.goodreads.com/list/tag/to-read');
+    expect(html).not.toContain('https://www.goodreads.com/genres/to-read');
+    for (const field of ['rank', 'tagName', 'bookCount', 'scrapedAt']) {
+      expect(html).toContain(`data-sort="${field}"`);
+    }
+    expect(TOP_TAG_SORT_ATTRIBUTES).toEqual({
+      rank: 'rank',
+      tagName: 'tag-name',
+      bookCount: 'book-count',
+      scrapedAt: 'scraped-at',
+    });
+    expect(TOP_TAG_SORT_SCRIPT).toContain("querySelector('#top-tags-table')");
+    expect(renderTopTagTable([])).toContain('npm run shelf-tag-directory');
+  });
+
+  it('loads top tags with local list-tag and genre links', () => {
+    const db = getDb();
+    const stamp = '2026-11-20T00:00:00.000Z';
+    const insertShelf = db.prepare(
+      'INSERT INTO shelf_tag_directory (tag_name, book_count, rank, scraped_at) VALUES (?, ?, ?, ?)',
+    );
+    insertShelf.run('horror', 5000, 5, stamp);
+    insertShelf.run('sf', 4000, 6, stamp);
+    insertShelf.run('no-links', 3000, 7, stamp);
+    db.prepare(
+      'INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen, from_sidebar, from_directory) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run('900', 'horror', stamp, stamp, 1, 0);
+    db.prepare('INSERT INTO genres (name, member_count, first_seen, last_updated) VALUES (?, ?, ?, ?)').run(
+      'horror',
+      123,
+      stamp,
+      stamp,
+    );
+    db.prepare(
+      'INSERT INTO genre_tag_xref (genre_name, tag_name, kind) VALUES (?, ?, ?)',
+    ).run('science-fiction', 'sf', 'cognate');
+
+    try {
+      const rows = loadTopTagRows(10);
+      const horror = rows.find((row) => row.tagName === 'horror');
+      const sf = rows.find((row) => row.tagName === 'sf');
+      const noLinks = rows.find((row) => row.tagName === 'no-links');
+      expect(horror).toMatchObject({ rank: 5, bookCount: 5000, hasListTag: true, genreName: 'horror' });
+      expect(sf).toMatchObject({ rank: 6, hasListTag: false, genreName: 'science-fiction' });
+      expect(noLinks).toMatchObject({ rank: 7, hasListTag: false, genreName: null });
+    } finally {
+      db.prepare("DELETE FROM shelf_tag_directory WHERE tag_name IN ('horror', 'sf', 'no-links')").run();
+      db.prepare("DELETE FROM list_tags WHERE list_id = '900'").run();
+      db.prepare("DELETE FROM genres WHERE name = 'horror'").run();
+      db.prepare("DELETE FROM genre_tag_xref WHERE tag_name = 'sf'").run();
+    }
+  });
+
+  it('renders a sortable tag-book table with ratings, avg rating and #tags', () => {
+    const report = tagBookReportsByRanking('ratings').find((entry) => entry.tag === 'romance')!;
+    const intro = renderTagBookIntro(report);
+    expect(intro).toContain('https://www.goodreads.com/list/tag/romance');
+    expect(intro).toContain('https://www.goodreads.com/shelf/show/romance');
+    expect(intro).toContain('target="_blank" rel="noopener noreferrer"');
+    expect(intro).toContain('Top 1,000 books');
+    expect(intro).toContain('by number of ratings');
+
+    const tagCountReport = tagBookReportsByRanking('tagCount').find((entry) => entry.tag === 'romance')!;
+    expect(renderTagBookIntro(tagCountReport)).toContain('by shelf count for the tag');
+    expect(renderTagBookIntro(tagCountReport)).not.toContain('total number of tags');
+
+    const rows = [
+      { id: '2', title: 'Few Ratings', author: 'B', authorId: '', ratings: 500, avgRating: 4.9, shelved: 1 },
+      { id: '1', title: 'Most Ratings', author: 'A', authorId: '7', ratings: 9000, avgRating: 3.8, shelved: 25 },
+      { id: '3', title: 'No Avg', author: 'C', authorId: '', ratings: 1000, avgRating: null, shelved: 10 },
+    ];
+    const html = renderTagBookTable(rows);
+    expect(html.indexOf('Most Ratings')).toBeLessThan(html.indexOf('No Avg'));
+    expect(html.indexOf('No Avg')).toBeLessThan(html.indexOf('Few Ratings'));
+    expect(html).toContain('id="tag-books-table"');
+    expect(html).toContain('data-default-sort="ratings"');
+    for (const field of ['ratings', 'avgRating', 'shelved']) {
+      expect(html).toContain(`data-sort="${field}"`);
+    }
+    expect(TAG_BOOK_SORT_ATTRIBUTES).toEqual({ ratings: 'ratings', avgRating: 'avg-rating', shelved: 'shelved' });
+    expect(TAG_BOOK_SORT_SCRIPT).toContain("querySelector('#tag-books-table')");
+    expect(html).toContain('data-ratings="9000" data-avg-rating="3.80" data-shelved="25"');
+    expect(html).toContain('3.80');
+    expect(html).toContain('>Avg rating <span class="sort-arrow"');
+    expect(html).toContain('>Shelved <span class="sort-arrow"');
+    expect(html).not.toContain('# tags');
+    expect(html).toContain('https://www.goodreads.com/author/show/7');
+
+    const tagCountHtml = renderTagBookTable(rows, 'tagCount');
+    expect(tagCountHtml).toContain('data-default-sort="shelved"');
+    expect(tagCountHtml.indexOf('Most Ratings')).toBeLessThan(tagCountHtml.indexOf('No Avg'));
+    expect(tagCountHtml.indexOf('No Avg')).toBeLessThan(tagCountHtml.indexOf('Few Ratings'));
+    expect(renderTagBookTable([])).toContain('No books matched');
+  });
+
+  it('loads top books per tag from the xref with each tag’s shelf count', () => {
+    const db = getDb();
+    const insertBook = db.prepare(
+      'INSERT INTO books (id, title, author, author_id, ratings, avg_rating, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    const insertTag = db.prepare(
+      'INSERT INTO tag_books (tag_name, book_id, position, shelved, harvested_at) VALUES (?, ?, ?, ?, ?)',
+    );
+    const stamp = '2026-11-20T00:00:00.000Z';
+    const ids = ['7001', '7002', '7003'];
+    const tags = ['romance', 'fantasy', 'science-fiction', 'graphic-novels'];
+    try {
+      insertBook.run('7001', 'Tagged A', 'Author A', '1', 5000, 4.5, stamp);
+      insertBook.run('7002', 'Tagged B', 'Author B', '2', 9000, 3.2, stamp);
+      insertBook.run('7003', 'Tagged C', 'Author C', '3', 1000, 4.0, stamp);
+      insertTag.run('romance', '7001', 1, 50, stamp);
+      insertTag.run('romance', '7002', 2, 900, stamp);
+      insertTag.run('romance', '7003', 3, 300, stamp);
+      insertTag.run('fantasy', '7001', 1, 50, stamp);
+      insertTag.run('fantasy', '7002', 2, 900, stamp);
+      insertTag.run('science-fiction', '7002', 1, 10, stamp);
+      insertTag.run('graphic-novels', '7003', 1, 20, stamp);
+
+      const byTag = loadTagBookReports(['romance', 'fantasy'], 2);
+      const romance = byTag.get('romance')!;
+      expect(romance.map((book) => book.id)).toEqual(['7002', '7001']);
+      expect(romance.map((book) => book.ratings)).toEqual([9000, 5000]);
+      expect(romance.map((book) => book.shelved)).toEqual([900, 50]);
+      expect(romance[0]).toMatchObject({ title: 'Tagged B', author: 'Author B', authorId: '2', avgRating: 3.2 });
+      expect(byTag.get('fantasy')?.map((book) => book.id)).toEqual(['7002', '7001']);
+      expect(byTag.get('fantasy')?.map((book) => book.shelved)).toEqual([900, 50]);
+      expect(loadTagBookReports(['missing-tag']).get('missing-tag')).toEqual([]);
+    } finally {
+      const idHoles = ids.map(() => '?').join(', ');
+      const tagHoles = tags.map(() => '?').join(', ');
+      db.prepare(`DELETE FROM tag_books WHERE tag_name IN (${tagHoles})`).run(...tags);
+      db.prepare(`DELETE FROM books WHERE id IN (${idHoles})`).run(...ids);
+    }
+  });
+
+  it('loads true top books by tag shelf count, not the ratings top-N re-sorted', () => {
+    const db = getDb();
+    const insertBook = db.prepare(
+      'INSERT INTO books (id, title, author, author_id, ratings, avg_rating, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    const insertTag = db.prepare(
+      'INSERT INTO tag_books (tag_name, book_id, position, shelved, harvested_at) VALUES (?, ?, ?, ?, ?)',
+    );
+    const stamp = '2026-11-20T00:00:00.000Z';
+    const ids = ['7101', '7102', '7103'];
+    try {
+      insertBook.run('7101', 'High Ratings', 'Author A', '1', 9000, 4.5, stamp);
+      insertBook.run('7102', 'Most Shelved', 'Author B', '2', 100, 3.2, stamp);
+      insertBook.run('7103', 'Middle', 'Author C', '3', 500, 4.0, stamp);
+      insertTag.run('romance', '7101', 1, 10, stamp);
+      insertTag.run('romance', '7102', 1, 900, stamp);
+      insertTag.run('fantasy', '7102', 2, 800, stamp);
+      insertTag.run('science-fiction', '7102', 3, 700, stamp);
+      insertTag.run('graphic-novels', '7102', 4, 600, stamp);
+      insertTag.run('manga', '7102', 5, 500, stamp);
+      insertTag.run('romance', '7103', 1, 200, stamp);
+      insertTag.run('fantasy', '7103', 2, 150, stamp);
+
+      expect(loadTagBookReports(['romance'], 2).get('romance')?.map((book) => book.id)).toEqual([
+        '7101',
+        '7103',
+      ]);
+      const byTagCount = loadTagBookReportsByTagCount(['romance'], 2).get('romance')!;
+      expect(byTagCount.map((book) => book.id)).toEqual(['7102', '7103']);
+      expect(byTagCount.map((book) => book.shelved)).toEqual([900, 200]);
+      expect(byTagCount[0]).toMatchObject({ title: 'Most Shelved', ratings: 100, avgRating: 3.2 });
+      expect(loadTagBookReportsByTagCount(['missing-tag']).get('missing-tag')).toEqual([]);
+    } finally {
+      const holes = ids.map(() => '?').join(', ');
+      db.prepare(`DELETE FROM tag_books WHERE book_id IN (${holes})`).run(...ids);
+      db.prepare(`DELETE FROM books WHERE id IN (${holes})`).run(...ids);
+    }
+  });
+
   it('escapes html', () => {
     expect(escapeHtml(`<a & "b" 'c'>`)).toBe('&lt;a &amp; &quot;b&quot; &#39;c&#39;&gt;');
   });
 
-  it('renders nav sections, the active link, and soon badges', () => {
+  it('renders nav sections and the active link', () => {
     const html = renderNav(buildNav(), 'author/top-authors-by-ratings', '../');
+    expect(html).toContain('Genres');
+    expect(html).toContain('href="../genres/books-and-ratings.html"');
+    expect(html).toContain('Books and Ratings');
     expect(html).toContain('Overall');
     expect(html).toContain('Author');
     expect(html).toContain('Book ID');
     expect(html).toContain('Book Detail');
     expect(html).toContain('Titles');
     expect(html).toContain('Highest Rated by Year');
-    expect(html).toContain('soon');
+    expect(html).toContain('Top Rated by Year');
     expect(html).toContain('href="../author/top-authors-by-ratings.html"');
     expect(html).toContain('class="active"');
     expect(html).toContain('href="../book-id/ratings.html"');
@@ -552,20 +977,35 @@ describe('static publish', () => {
     expect(html).toContain('href="../lists/static-lists.html"');
     expect(html).toContain('Static Lists');
     expect(html).toContain('Creators with Most Lists');
+    expect(html).toContain('href="../year/2027.html"');
     expect(html).toContain('href="../year/2026.html"');
     expect(html).toContain('href="../year/2000.html"');
+    expect(html).toContain('href="../year/1990.html"');
+    expect(html).toContain('href="../top-rated-year/2027.html"');
+    expect(html).toContain('href="../top-rated-year/2026.html"');
+    expect(html).toContain('href="../top-rated-year/2000.html"');
+    expect(html).toContain('href="../top-rated-year/1990.html"');
     expect(html).toContain('href="../titles/first-char.html"');
     expect(html).toContain('href="../titles/first-word.html"');
     expect(html).toContain('href="../lists/top-list-tags.html"');
     expect(html).toContain('href="../book-id/highest-skewness-min-100k.html"');
     expect(html).toContain('href="../book-id/highest-skewness-min-10k.html"');
+    expect(html).toContain('href="../book-id/lowest-skewness-min-100k.html"');
+    expect(html).toContain('href="../works-en/lowest-skewness-min-10k.html"');
     expect(html).toContain('href="../work-id/highest-variance-min-100k.html"');
     expect(html).toContain('href="../work-id/highest-variance-min-10k.html"');
+    expect(html).toContain('href="../book-id/lowest-variance-min-100k.html"');
+    expect(html).toContain('href="../works-en/lowest-variance-min-10k.html"');
+    expect(html).toContain('href="../works/highest-kurtosis-min-100k.html"');
+    expect(html).toContain('href="../book-id/highest-kurtosis-min-10k.html"');
     expect(html).toContain('href="../works/lowest-kurtosis-min-100k.html"');
     expect(html).toContain('href="../works/lowest-kurtosis-min-10k.html"');
     expect(html).toContain('href="../works-en/highest-avg-rating-min-1k.html"');
+    expect(html).toContain('href="../book-id/highest-avg-rating-min-100.html"');
     expect(html).toContain('href="../book-id/lowest-avg-rating-min-1k.html"');
+    expect(html).toContain('href="../work-id/lowest-avg-rating-min-100.html"');
     expect(html).toContain('href="../works/highest-review-ratio-min-1k.html"');
+    expect(html).toContain('href="../works-en/highest-review-ratio-min-100.html"');
     expect(html).toContain('href="../per-field.html"');
     expect(html).toContain('href="../ratings-histogram.html"');
     expect(html).toContain('href="../publication-years.html"');
@@ -579,7 +1019,8 @@ describe('static publish', () => {
     expect(html).toContain('<details class="nav-section" open>\n<summary class="nav-heading">Author</summary>');
     expect(html).toContain('<details class="nav-section">\n<summary class="nav-heading">Overall</summary>');
     // Empty sections keep the muted badge and no details element.
-    expect(html).toContain('<div class="nav-heading">Genres <span class="soon">soon</span></div>');
+    expect(html).toContain('<summary class="nav-heading">Genres</summary>');
+    expect(html).toContain('href="../tags/top-tags.html"');
     expect(html).toContain('href="../tags/first-page-books.html"');
     expect(html).toContain('<details class="nav-section">\n<summary class="nav-heading">Tags</summary>');
   });
@@ -641,12 +1082,37 @@ describe('static publish', () => {
     expect(html).toContain('66.7%');
   });
 
-  it('renders top books best-first with work links', () => {
+  it('renders top books best-first with work links and all five sortable metric columns', () => {
     const metric = BOOK_METRICS.find((candidate) => candidate.id === 'ratings')!;
     const html = renderTopBooks(
       [
-        { id: '1', title: 'Low', author: 'A', authorId: '', workId: '', value: 10 },
-        { id: '2', title: 'High', author: 'B', authorId: 'A2', workId: 'W2', value: 99 },
+        {
+          id: '1',
+          title: 'Low',
+          author: 'A',
+          authorId: '',
+          workId: '',
+          value: 10,
+          ratings: 10,
+          avgRating: 3.5,
+          metrics: {
+            ratings: 10,
+            reviews: 5,
+            'currently-reading': 1,
+            'to-read': 2,
+            'edition-count': 3,
+          },
+        },
+        {
+          id: '2',
+          title: 'High',
+          author: 'B',
+          authorId: 'A2',
+          workId: 'W2',
+          value: 99,
+          ratings: 99,
+          avgRating: null,
+        },
       ],
       metric,
       true,
@@ -656,40 +1122,219 @@ describe('static publish', () => {
     expect(html).toContain('https://www.goodreads.com/work/editions/W2');
     expect(html).toContain('https://www.goodreads.com/book/show/2');
     expect(html).toContain('https://www.goodreads.com/author/show/A2');
+    expect(html).toContain('<table id="top-books-table" data-default-sort="ratings">');
+    expect(html.match(/data-sort="ratings"/g)).toHaveLength(1);
+    for (const field of [...BOOK_METRICS.map((candidate) => candidate.id), 'avgRating']) {
+      expect(html).toContain(`data-sort="${field}"`);
+      expect(Object.values(BOOK_METRIC_SORT_ATTRIBUTES)).toContain(
+        field === 'avgRating' ? 'avg-rating' : field,
+      );
+    }
+    expect(html).toContain('data-reviews="5"');
+    expect(html).toContain('<td class="num rank-metric">99</td>');
+    expect(html).toContain('<td class="num">3.50</td>');
+    expect(html).toContain('<td class="num">—</td>');
+  });
+
+  it('shows the same five metric columns and avg rating on every top-N metric table', () => {
+    const metrics = {
+      ratings: 123456,
+      reviews: 900,
+      'currently-reading': 80,
+      'to-read': 7000,
+      'edition-count': 42,
+    };
+    for (const id of BOOK_METRICS.map((candidate) => candidate.id)) {
+      const metric = BOOK_METRICS.find((candidate) => candidate.id === id)!;
+      const html = renderTopBooks(
+        [
+          {
+            id: '1',
+            title: 'Book',
+            author: 'A',
+            authorId: '',
+            workId: '',
+            value: metrics[id],
+            ratings: 123456,
+            avgRating: 4.25,
+            metrics,
+          },
+        ],
+        metric,
+        false,
+      );
+      expect(html).toContain(`data-default-sort="${id}"`);
+      for (const field of [...BOOK_METRICS.map((candidate) => candidate.id), 'avgRating']) {
+        expect(html).toContain(`data-sort="${field}"`);
+      }
+      expect(html).toContain('data-ratings="123456"');
+      expect(html).toContain('>123,456</td>');
+      expect(html).toContain('<td class="num">4.25</td>');
+      expect(html).toContain(
+        `<th class="num rank-metric"><button type="button" class="sort-btn" data-sort="${id}">`,
+      );
+    }
+  });
+
+  it('sorts every metric column via BOOK_METRIC_SORT_SCRIPT, with missing values last', () => {
+    const metric = BOOK_METRICS.find((candidate) => candidate.id === 'ratings')!;
+    const html = renderTopBooks(
+      [
+        {
+          id: '1',
+          title: 'A',
+          author: 'A',
+          authorId: '',
+          workId: '',
+          value: 300,
+          ratings: 300,
+          avgRating: 4.1,
+          metrics: { ratings: 300, reviews: 100, 'currently-reading': 10, 'to-read': 500, 'edition-count': 5 },
+        },
+        {
+          id: '2',
+          title: 'B',
+          author: 'B',
+          authorId: '',
+          workId: '',
+          value: 200,
+          ratings: 200,
+          avgRating: 4.9,
+          metrics: { ratings: 200, reviews: 900, 'currently-reading': 50, 'to-read': 100, 'edition-count': 30 },
+        },
+        {
+          id: '3',
+          title: 'C',
+          author: 'C',
+          authorId: '',
+          workId: '',
+          value: 100,
+          ratings: 100,
+          avgRating: null,
+          metrics: { ratings: 100, reviews: null, 'currently-reading': null, 'to-read': 1000, 'edition-count': null },
+        },
+      ],
+      metric,
+      false,
+    );
+
+    interface FakeEl {
+      attrs: Record<string, string>;
+      getAttribute: (name: string) => string | null;
+      addEventListener: (type: string, fn: () => void) => void;
+      click: () => void;
+      querySelector: (selector: string) => FakeEl | null;
+      querySelectorAll: (selector: string) => FakeEl[];
+      appendChild: (child: FakeEl) => void;
+      rows: FakeEl[];
+      textContent: string;
+    }
+    const blank = (): FakeEl => ({
+      attrs: {},
+      getAttribute: () => null,
+      addEventListener: () => {},
+      click: () => {},
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      appendChild: () => {},
+      rows: [],
+      textContent: '',
+    });
+    const make = (attrs: Record<string, string> = {}, options: { buttons?: FakeEl[]; tbody?: FakeEl } = {}): FakeEl => {
+      const handlers: Array<() => void> = [];
+      const arrow = blank();
+      return {
+        attrs,
+        getAttribute: (name) => (name in attrs ? attrs[name] : null),
+        addEventListener: (_type, fn) => handlers.push(fn),
+        click: () => handlers.forEach((fn) => fn()),
+        querySelector: (selector) =>
+          selector === 'tbody' ? (options.tbody ?? null) : selector === '.sort-arrow' ? arrow : null,
+        querySelectorAll: (selector) => (selector === '[data-sort]' ? (options.buttons ?? []) : []),
+        appendChild: (child) => {
+          const index = tbody.rows.indexOf(child);
+          if (index !== -1) tbody.rows.splice(index, 1);
+          tbody.rows.push(child);
+        },
+        rows: [],
+        textContent: '',
+      };
+    };
+    const buttons = [...html.matchAll(/data-sort="([^"]+)"/g)].map((match) => make({ 'data-sort': match[1] }));
+    const bodyRows = [...html.matchAll(/<tr data-book-id="([^"]+)"([^>]*)>/g)].map((match) => {
+      const attrs: Record<string, string> = { 'data-book-id': match[1] };
+      for (const attr of match[2].matchAll(/data-([a-z-]+)="([^"]*)"/g)) {
+        attrs[`data-${attr[1]}`] = attr[2];
+      }
+      return make(attrs);
+    });
+    expect(bodyRows).toHaveLength(3);
+    const tbody = make();
+    tbody.rows = bodyRows;
+    const table = make({ 'data-default-sort': 'ratings' }, { buttons, tbody });
+    const originalDocument = (globalThis as { document?: unknown }).document;
+    (globalThis as { document?: unknown }).document = {
+      querySelector: (selector: string) => (selector === '#top-books-table' ? table : null),
+    };
+    try {
+      new Function(BOOK_METRIC_SORT_SCRIPT)();
+      const order = () => tbody.rows.map((row) => row.attrs['data-book-id']);
+      const click = (field: string) => buttons.find((button) => button.attrs['data-sort'] === field)!.click();
+
+      expect(order()).toEqual(['1', '2', '3']);
+      click('reviews');
+      expect(order()).toEqual(['2', '1', '3']);
+      click('reviews');
+      expect(order()).toEqual(['1', '2', '3']);
+      click('to-read');
+      expect(order()).toEqual(['3', '1', '2']);
+      click('avgRating');
+      expect(order()).toEqual(['2', '1', '3']);
+      click('edition-count');
+      expect(order()).toEqual(['2', '1', '3']);
+    } finally {
+      (globalThis as { document?: unknown }).document = originalDocument;
+    }
   });
 
   it('renders derived tables best-first with ratio columns', () => {
     const skewness = DERIVED_REPORTS.find((report) => report.id === 'highest-skewness-min-100k')!;
     const html = renderDerivedTable(
       [
-        { id: '1', title: 'Low', author: 'A', authorId: '', workId: '', value: 1, ratings: 200000, reviews: 0 },
-        { id: '2', title: 'High', author: 'B', authorId: 'A2', workId: 'W2', value: 5, ratings: 100000, reviews: 0 },
+        { id: '1', title: 'Low', author: 'A', authorId: '', workId: '', value: 1, ratings: 200000, reviews: 0, avgRating: 3.1 },
+        { id: '2', title: 'High', author: 'B', authorId: 'A2', workId: 'W2', value: 5, ratings: 100000, reviews: 0, avgRating: 4.55 },
       ],
       skewness,
       true,
     );
     expect(html.indexOf('High')).toBeLessThan(html.indexOf('Low'));
-    expect(html).toContain('<th>Work ID</th>');
+    expect(html).not.toContain('<th>Work ID</th>');
+    expect(html).not.toContain('/work/editions/W2');
+    expect(html).toContain('<th class="num">Avg rating</th>');
     expect(html).toContain('5.0000');
+    expect(html).toContain('4.55');
+    expect(html).toContain('3.10');
     expect(html).toContain('https://www.goodreads.com/book/show/2');
-    expect(html).toContain('https://www.goodreads.com/work/editions/W2');
     expect(html).toContain('https://www.goodreads.com/author/show/A2');
 
     const kurtosis = DERIVED_REPORTS.find((report) => report.id === 'lowest-kurtosis-min-100k')!;
     const asc = renderDerivedTable(
       [
-        { id: '1', title: 'Negative', author: 'A', authorId: '', workId: '', value: -2, ratings: 200000, reviews: 0 },
-        { id: '2', title: 'Positive', author: 'B', authorId: '', workId: '', value: 3, ratings: 200000, reviews: 0 },
+        { id: '1', title: 'Negative', author: 'A', authorId: '', workId: '', value: -2, ratings: 200000, reviews: 0, avgRating: null },
+        { id: '2', title: 'Positive', author: 'B', authorId: '', workId: '', value: 3, ratings: 200000, reviews: 0, avgRating: 4.0 },
       ],
       kurtosis,
       false,
     );
     expect(asc.indexOf('Negative')).toBeLessThan(asc.indexOf('Positive'));
     expect(asc).toContain('-2.0000');
+    expect(asc).toContain('<th class="num">Avg rating</th>');
+    expect(asc).toContain('—');
+    expect(asc).toContain('4.00');
 
     const ratio = DERIVED_REPORTS.find((report) => report.id === 'highest-review-ratio-min-1k')!;
     const ratioHtml = renderDerivedTable(
-      [{ id: '3', title: 'Ratio', author: 'C', authorId: '', workId: '', value: 1.6667, ratings: 150000, reviews: 250000 }],
+      [{ id: '3', title: 'Ratio', author: 'C', authorId: '', workId: '', value: 1.6667, ratings: 150000, reviews: 250000, avgRating: 4.2 }],
       ratio,
       false,
     );
@@ -728,18 +1373,36 @@ describe('static publish', () => {
         acc[scope].derived[report].heap.map((book) => book.id).sort();
 
       expect(heapIds('book-id', 'highest-skewness-min-100k')).toEqual(['40', '41', '42']);
-      expect(heapIds('work-id', 'highest-skewness-min-100k')).toEqual(['40', '41']);
-      expect(heapIds('works', 'highest-skewness-min-100k')).toEqual(['40']);
+      expect(heapIds('book-id', 'lowest-skewness-min-100k')).toEqual(['40', '41', '42']);
+      expect(heapIds('works', 'lowest-skewness-min-100k')).toEqual(['40']);
       expect(heapIds('book-id', 'highest-variance-min-100k')).toEqual(['40', '41', '42']);
       expect(heapIds('work-id', 'highest-variance-min-100k')).toEqual(['40', '41']);
       expect(heapIds('works', 'highest-variance-min-100k')).toEqual(['40']);
+      expect(heapIds('book-id', 'lowest-variance-min-100k')).toEqual(['40', '41', '42']);
+      expect(heapIds('work-id', 'lowest-variance-min-100k')).toEqual(['40', '41']);
+      expect(heapIds('book-id', 'highest-kurtosis-min-100k')).toEqual(['40', '41', '42']);
+      expect(heapIds('works', 'highest-kurtosis-min-100k')).toEqual(['40']);
       expect(heapIds('book-id', 'lowest-kurtosis-min-100k')).toEqual(['40', '41', '42']);
       expect(heapIds('works', 'lowest-kurtosis-min-100k')).toEqual(['40']);
+
+      const lowSkewReport = DERIVED_REPORTS.find((report) => report.id === 'lowest-skewness-min-100k')!;
+      const lowSkewHtml = renderDerivedTable(
+        acc['book-id'].derived[lowSkewReport.id].heap,
+        lowSkewReport,
+        false,
+      );
+      expect(lowSkewHtml.indexOf('High Ratio')).toBeLessThan(lowSkewHtml.indexOf('High Skew'));
+      expect(lowSkewHtml.indexOf('High Skew')).toBeLessThan(lowSkewHtml.indexOf('Loose'));
       // Review ratio needs only >= 1k ratings, so the null-stat book qualifies.
       expect(heapIds('book-id', 'highest-review-ratio-min-1k')).toEqual(['40', '41', '42', '44']);
       expect(heapIds('work-id', 'highest-review-ratio-min-1k')).toEqual(['40', '41', '44']);
       expect(heapIds('works', 'highest-review-ratio-min-1k')).toEqual(['40', '44']);
       expect(acc['book-id'].derived['highest-review-ratio-min-1k'].count).toBe(4);
+      // The min-100 variant also admits the 500-rating book in every scope.
+      expect(heapIds('book-id', 'highest-review-ratio-min-100')).toEqual(['40', '41', '42', '43', '44']);
+      expect(heapIds('work-id', 'highest-review-ratio-min-100')).toEqual(['40', '41', '43', '44']);
+      expect(heapIds('works', 'highest-review-ratio-min-100')).toEqual(['40', '43', '44']);
+      expect(acc['book-id'].derived['highest-review-ratio-min-100'].count).toBe(5);
 
       const byId = new Map(acc['book-id'].derived['highest-review-ratio-min-1k'].heap.map((book) => [book.id, book]));
       expect(byId.get('41')?.value).toBeCloseTo(2);
@@ -749,6 +1412,48 @@ describe('static publish', () => {
     } finally {
       db.prepare('DELETE FROM book_page WHERE book_id IN (?, ?, ?, ?, ?)').run('40', '41', '42', '43', '44');
       db.prepare('DELETE FROM books WHERE id IN (?, ?, ?, ?, ?)').run('40', '41', '42', '43', '44');
+    }
+  });
+
+  it('applies the 10k and 100k thresholds to the new derived reports', () => {
+    const db = getDb();
+    const insertBook = db.prepare(
+      'INSERT INTO books (id, title, author, ratings, work_id, is_work_rep, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    );
+    const insertPage = db.prepare(
+      'INSERT INTO book_page (book_id, reviews_count, ratings_skewness, ratings_variance, ratings_kurtosis, scraped_at) VALUES (?, ?, ?, ?, ?, ?)',
+    );
+    const stamp = '2026-11-19T00:00:00.000Z';
+    const rows: [string, number, number, number, number][] = [
+      ['89001', 150000, 1, 9, -3],
+      ['89002', 50000, -2, 2, 4],
+    ];
+    const ids = rows.map((row) => row[0]);
+    try {
+      for (const [id, ratings, skew, variance, kurtosis] of rows) {
+        insertBook.run(id, `Book ${id}`, `Author ${id}`, ratings, null, 0, stamp);
+        insertPage.run(id, '0', skew, variance, kurtosis, stamp);
+      }
+      const acc = createAccumulators();
+      scanBookPages(acc, 10);
+      const heapIds = (report: DerivedReportId): string[] => acc['book-id'].derived[report].heap.map((book) => book.id).sort();
+
+      for (const report of ['lowest-skewness', 'lowest-variance', 'highest-kurtosis']) {
+        expect(heapIds(`${report}-min-100k` as DerivedReportId)).toEqual(['89001']);
+        expect(heapIds(`${report}-min-10k` as DerivedReportId)).toEqual(['89001', '89002']);
+      }
+
+      const lowVariance = DERIVED_REPORTS.find((report) => report.id === 'lowest-variance-min-10k')!;
+      const lowVarianceHtml = renderDerivedTable(acc['book-id'].derived[lowVariance.id].heap, lowVariance, false);
+      expect(lowVarianceHtml.indexOf('Book 89002')).toBeLessThan(lowVarianceHtml.indexOf('Book 89001'));
+
+      const highKurtosis = DERIVED_REPORTS.find((report) => report.id === 'highest-kurtosis-min-10k')!;
+      const highKurtosisHtml = renderDerivedTable(acc['book-id'].derived[highKurtosis.id].heap, highKurtosis, false);
+      expect(highKurtosisHtml.indexOf('Book 89002')).toBeLessThan(highKurtosisHtml.indexOf('Book 89001'));
+    } finally {
+      const holes = ids.map(() => '?').join(', ');
+      db.prepare(`DELETE FROM book_page WHERE book_id IN (${holes})`).run(...ids);
+      db.prepare(`DELETE FROM books WHERE id IN (${holes})`).run(...ids);
     }
   });
 
@@ -815,6 +1520,11 @@ describe('static publish', () => {
       expect(ids('highest-avg-rating-min-10k')).toEqual(['50', '51']);
       expect(ids('lowest-avg-rating-min-10k')).toEqual(['50', '51']);
       expect(acc['book-id'].derived['highest-avg-rating-min-10k'].count).toBe(2);
+      // min 100 admits the 5k-rating book that the 10k threshold excludes.
+      expect(ids('highest-avg-rating-min-100')).toEqual(['50', '51', '52']);
+      expect(ids('lowest-avg-rating-min-100')).toEqual(['50', '51', '52']);
+      expect(acc['book-id'].derived['highest-avg-rating-min-100'].count).toBe(3);
+      expect(acc['book-id'].derived['lowest-avg-rating-min-100'].count).toBe(3);
 
       const highest = renderDerivedTable(
         acc['book-id'].derived['highest-avg-rating-min-10k'].heap,
@@ -870,8 +1580,10 @@ describe('static publish', () => {
       expect(histogram('book-id', reportId).count).toBe(2);
       expect(histogram('book-id', 'avg-ratings-histogram-min-10k').count).toBe(3);
       expect(histogram('book-id', 'avg-ratings-histogram-min-1k').count).toBe(4);
+      expect(histogram('book-id', 'avg-ratings-histogram-min-100').count).toBe(5);
       expect(histogram('works', reportId).count).toBe(2);
       expect(english['works-en'].avgRatingHistograms[reportId].count).toBe(2);
+      expect(english['works-en'].avgRatingHistograms['avg-ratings-histogram-min-100'].count).toBe(5);
 
       const buckets = histogram('book-id', reportId).buckets;
       expect(buckets[0.5][9]).toBe(2); // 4.50 to 4.99 holds both 4.6 and 4.9
@@ -925,6 +1637,19 @@ describe('static publish', () => {
     expect(renderFieldCoveragePage([])).toContain('No field coverage data');
   });
 
+  it('covers every reported schema table in the per-field page', () => {
+    const db = getDb();
+    const schemaTables = new Set(
+      (db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).all() as { name: string }[]).map(r => r.name),
+    );
+    // list_tag_walks is pending drop; list_walk is created lazily by the walker.
+    const expected = REPORTED_TABLES.filter(
+      (table) => schemaTables.has(table) && table !== 'list_tag_walks',
+    );
+    const actual = [...new Set(loadFieldCoverageRows().map((row) => row.table))];
+    expect(actual.sort()).toEqual([...expected].sort());
+  });
+
   it('renders the overall ratings histogram with compact grouped headers', () => {
     const buckets = [
       { label: 'A', min: 2, max: Infinity },
@@ -945,12 +1670,22 @@ describe('static publish', () => {
     }, buckets);
     expect(html).toContain('<th rowspan="2">Rating bracket</th>');
     expect(html).toContain('<th colspan="2" class="num" title="every cached book">ALL</th>');
-    expect(html).toContain('>WORK+FIELD</th>');
+    expect(html).toContain(
+      '<th colspan="2" class="num group-start" title="cached books with a non-empty work id">WORK-ID</th>',
+    );
+    expect(html).toContain(
+      '<th colspan="2" class="num group-start" title="a distinct work whose representative edition also has a book_page field-coverage row">WORK+FIELD</th>',
+    );
+    expect(html).toContain('<th class="num group-start">#</th>');
     expect(html).toContain('↑ = rollup (this bracket and above)');
-    expect(html).toContain('<tr><td>A</td><td class="num">2</td><td class="num">2</td><td class="num zero">0</td>');
+    expect(html).toContain(
+      '<tr><td>A</td><td class="num">2</td><td class="num">2</td><td class="num group-start zero">0</td>',
+    );
     expect(html).toContain('<tr><td>B</td><td class="num">3</td><td class="num">5</td>');
     expect(html).toContain('<tr><td>C</td><td class="num">5</td><td class="num">10</td>');
-    expect(html).toContain('<tr class="total"><td>Total</td><td class="num">10</td><td class="num">10</td>');
+    expect(html).toContain(
+      '<tr class="total"><td>Total</td><td class="num">10</td><td class="num">10</td><td class="num group-start">0</td><td class="num">0</td><td class="num group-start">0</td><td class="num">0</td><td class="num group-start">0</td><td class="num">0</td><td class="num group-start">0</td><td class="num">0</td></tr>',
+    );
   });
 
   it('builds the publication-year summary like summary-year', () => {
@@ -1152,11 +1887,11 @@ describe('static publish', () => {
     insertAuthor.run('3', 'Carol', '3.Carol', '2026-11-11T00:00:00.000Z', 3.0, 20000, 5, 15, 2);
 
     const insertBook = db.prepare(
-      'INSERT INTO books (id, title, author, author_id, ratings, avg_rating, work_id, is_work_rep, pages, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO books (id, title, author, author_id, ratings, avg_rating, genres, work_id, is_work_rep, pages, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
     );
-    insertBook.run('10', 'Alpha', 'Author A', '1', 150000, 4.5, 'W1', 1, 320, '2026-11-11T00:00:00.000Z');
-    insertBook.run('11', 'Beta', 'Author B', '2', 2000, 4.2, 'W1', 0, 100, '2026-11-11T00:00:00.000Z');
-    insertBook.run('12', 'Gamma', 'Author C', null, 100, 3.0, null, 0, 200, '2026-11-11T00:00:00.000Z');
+    insertBook.run('10', 'Alpha', 'Author A', '1', 150000, 4.5, '["Fiction","Romance"]', 'W1', 1, 320, '2026-11-11T00:00:00.000Z');
+    insertBook.run('11', 'Beta', 'Author B', '2', 2000, 4.2, '["Fantasy"]', 'W1', 0, 100, '2026-11-11T00:00:00.000Z');
+    insertBook.run('12', 'Gamma', 'Author C', null, 100, 3.0, '["Fiction"]', null, 0, 200, '2026-11-11T00:00:00.000Z');
 
     const insertYearBook = db.prepare(
       'INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, is_bad, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -1188,6 +1923,16 @@ describe('static publish', () => {
     insertListScrape.run('200', 'New List', '2026-11-11T00:00:00.000Z', '2026-11-11T00:00:00.000Z', 1, 10);
     insertListScrape.run('300', 'No Creator List', '2026-11-11T00:00:00.000Z', '2026-11-11T00:00:00.000Z', 1, 50);
 
+    const insertTagBook = db.prepare(
+      'INSERT INTO tag_books (tag_name, book_id, position, shelved, harvested_at) VALUES (?, ?, ?, ?, ?)',
+    );
+    const tagStamp = '2026-11-20T00:00:00.000Z';
+    insertTagBook.run('romance', '10', 1, 500, tagStamp);
+    insertTagBook.run('romance', '11', 2, 100, tagStamp);
+    insertTagBook.run('romance', '12', 3, 300, tagStamp);
+    insertTagBook.run('fantasy', '10', 1, 500, tagStamp);
+    insertTagBook.run('fantasy', '12', 2, 300, tagStamp);
+
     const insertListTag = db.prepare(
       'INSERT INTO list_tags (list_id, tag_name, first_seen, last_seen, from_sidebar, from_directory) VALUES (?, ?, ?, ?, ?, ?)',
     );
@@ -1196,6 +1941,19 @@ describe('static publish', () => {
     insertListTag.run('100', 'romance', '2026-11-11T00:00:00.000Z', '2026-11-11T00:00:00.000Z', 1, 0);
     insertListTag.run('100', 'alpha', '2026-11-11T00:00:00.000Z', '2026-11-11T00:00:00.000Z', 1, 0);
 
+    const insertShelfTag = db.prepare(
+      'INSERT INTO shelf_tag_directory (tag_name, book_count, rank, scraped_at) VALUES (?, ?, ?, ?)',
+    );
+    insertShelfTag.run('to-read', 3_186_489_228, 1, tagStamp);
+    insertShelfTag.run('romance', 19_598_860, 2, tagStamp);
+    insertShelfTag.run('fantasy', 20_293_142, 3, tagStamp);
+    db.prepare('INSERT INTO genres (name, member_count, first_seen, last_updated) VALUES (?, ?, ?, ?)').run(
+      'fantasy',
+      500,
+      tagStamp,
+      tagStamp,
+    );
+
     const out = fs.mkdtempSync(path.join(os.tmpdir(), 'publish-e2e-'));
     const read = (relative: string): string => fs.readFileSync(path.join(out, relative), 'utf8');
 
@@ -1203,11 +1961,15 @@ describe('static publish', () => {
       await runPublishSite({ out, limit: '10' });
 
       expect(fs.existsSync(path.join(out, 'index.html'))).toBe(true);
+      expect(read('index.html')).toContain('td.date, th.date { white-space:nowrap;');
 
       const avgHistogram = read('book-id/avg-ratings-histogram-min-100k.html');
       for (const step of AVG_RATING_HISTOGRAM_STEPS) {
         expect(avgHistogram).toContain(`${step.toFixed(1)} star buckets`);
       }
+      const avgHistogram100 = read('book-id/avg-ratings-histogram-min-100.html');
+      expect(avgHistogram100).toContain('at least 100 ratings');
+      expect(avgHistogram100).toContain('4.50 to 4.99');
 
       const ratings = read('author/top-authors-by-ratings.html');
       expect(ratings).toContain('https://www.goodreads.com/author/show/2');
@@ -1244,6 +2006,21 @@ describe('static publish', () => {
       expect(worksEnRatings).toContain('href="../works/ratings.html"');
       expect(worksEnRatings).toContain('<strong>English only</strong>');
 
+      for (const page of [bookRatings, workIdRatings, worksRatings, worksEnRatings]) {
+        for (const field of [...BOOK_METRICS.map((candidate) => candidate.id), 'avgRating']) {
+          expect(page).toContain(`data-sort="${field}"`);
+        }
+        expect(page).toContain('<table id="top-books-table" data-default-sort="ratings">');
+        expect(page).toContain('data-ratings="150000"');
+        expect(page).toContain('4.50');
+      }
+      const bookReviews = read('book-id/reviews.html');
+      expect(bookReviews).toContain('data-sort="reviews"');
+      expect(bookReviews).toContain('<table id="top-books-table" data-default-sort="reviews">');
+      expect(bookReviews).toContain('data-reviews="250000"');
+      expect(bookReviews).toContain('250,000');
+      expect(bookReviews).toContain('4.50');
+
       const bookAvg100k = read('book-id/highest-avg-rating-min-100k.html');
       expect(bookAvg100k).toContain('Alpha');
       expect(bookAvg100k).toContain('4.50');
@@ -1265,6 +2042,17 @@ describe('static publish', () => {
       expect(topAvg1k).toContain('Alpha');
       expect(topAvg1k).toContain('4.50');
       expect(topAvg1k).not.toContain('Beta');
+
+      const topAvg100 = read('book-id/highest-avg-rating-min-100.html');
+      expect(topAvg100).toContain('Alpha');
+      expect(topAvg100).toContain('4.50');
+      expect(topAvg100).toContain('at least 100 ratings');
+      // Gamma has exactly 100 ratings, so it is admitted by this threshold.
+      expect(topAvg100).toContain('Gamma');
+
+      const lowAvg100 = read('works-en/lowest-avg-rating-min-100.html');
+      expect(lowAvg100).toContain('Alpha');
+      expect(lowAvg100).toContain('4.50');
 
       const worksEnLowAvg1k = read('works-en/lowest-avg-rating-min-1k.html');
       expect(worksEnLowAvg1k).toContain('Alpha');
@@ -1295,6 +2083,8 @@ describe('static publish', () => {
       expect(skewness).toContain('Alpha');
       expect(skewness).toContain('3.5000');
       expect(skewness).toContain('150,000');
+      expect(skewness).toContain('<th class="num">Avg rating</th>');
+      expect(skewness).toContain('4.50');
       expect(skewness).not.toContain('Gamma');
 
       const variance = read('book-id/highest-variance-min-100k.html');
@@ -1311,21 +2101,52 @@ describe('static publish', () => {
 
       const variance10k = read('work-id/highest-variance-min-10k.html');
       expect(variance10k).toContain('Alpha');
-      expect(variance10k).toContain('https://www.goodreads.com/work/editions/W1');
+      expect(variance10k).not.toContain('https://www.goodreads.com/work/editions/W1');
+      expect(variance10k).toContain('<th class="num">Avg rating</th>');
+      expect(variance10k).toContain('4.50');
 
       const kurtosis10k = read('works/lowest-kurtosis-min-10k.html');
       expect(kurtosis10k).toContain('Alpha');
       expect(kurtosis10k).toContain('-0.5000');
 
+      const lowestSkewness = read('book-id/lowest-skewness-min-100k.html');
+      expect(lowestSkewness).toContain('Alpha');
+      expect(lowestSkewness).toContain('3.5000');
+      const lowestSkewness10k = read('book-id/lowest-skewness-min-10k.html');
+      expect(lowestSkewness10k).toContain('Alpha');
+      expect(lowestSkewness10k).toContain('3.5000');
+
+      const lowestVariance = read('book-id/lowest-variance-min-100k.html');
+      expect(lowestVariance).toContain('Alpha');
+      expect(lowestVariance).toContain('2.2500');
+      const lowestVariance10k = read('works-en/lowest-variance-min-10k.html');
+      expect(lowestVariance10k).toContain('Alpha');
+      expect(lowestVariance10k).toContain('2.2500');
+
+      const highestKurtosis = read('book-id/highest-kurtosis-min-100k.html');
+      expect(highestKurtosis).toContain('Alpha');
+      expect(highestKurtosis).toContain('-0.5000');
+      const highestKurtosis10k = read('work-id/highest-kurtosis-min-10k.html');
+      expect(highestKurtosis10k).toContain('Alpha');
+      expect(highestKurtosis10k).toContain('-0.5000');
+
       const reviewRatio = read('book-id/highest-review-ratio-min-1k.html');
       expect(reviewRatio).toContain('Alpha');
       expect(reviewRatio).toContain('1.667');
       expect(reviewRatio).toContain('<th class="num">Reviews</th>');
+      expect(reviewRatio).not.toContain('<th class="num">Avg rating</th>');
       expect(reviewRatio).not.toContain('Gamma');
+
+      const reviewRatio100 = read('work-id/highest-review-ratio-min-100.html');
+      expect(reviewRatio100).toContain('Alpha');
+      expect(reviewRatio100).toContain('<th class="num">Reviews</th>');
+      expect(reviewRatio100).toContain('at least 100 ratings');
 
       const workSkewness = read('work-id/highest-skewness-min-100k.html');
       expect(workSkewness).toContain('Alpha');
-      expect(workSkewness).toContain('https://www.goodreads.com/work/editions/W1');
+      expect(workSkewness).not.toContain('https://www.goodreads.com/work/editions/W1');
+      expect(workSkewness).toContain('<th class="num">Avg rating</th>');
+      expect(workSkewness).toContain('4.50');
       const worksSkewness = read('works/highest-skewness-min-100k.html');
       expect(worksSkewness).toContain('Alpha');
 
@@ -1370,12 +2191,25 @@ describe('static publish', () => {
       expect(creators).toContain('Alice');
       expect(creators).toContain('https://www.goodreads.com/list/created/1');
       expect(creators).toContain('<td class="num">2</td>');
-      expect(creators).not.toContain('deleted user');
+      expect(creators).toContain('Based on 2 list creators across 3 lists.');
+      expect(creators).toContain('<td>deleted user</td>');
+      expect(creators).toContain('data-creator-id="" data-lists="1"');
+      expect(creators).not.toContain('list/created/deleted');
       expect(creators).toContain('data-sort="lists"');
       expect(creators).toContain('data-sort="books"');
       expect(creators).toContain('data-sort="voters"');
       expect(creators).toContain('data-sort="likes"');
       expect(creators).toContain("querySelector('#list-creators')");
+
+      const genres = read('genres/books-and-ratings.html');
+      expect(genres).toContain(GENRE_STATS_REPORT.title);
+      expect(genres).toContain('Based on 2 genres across 1 works with at least 1,000 ratings.');
+      expect(genres).toContain('data-genre="Fiction" data-books="1" data-points="10" data-ratings="150000" data-weighted-ratings="1500000"');
+      expect(genres).toContain('data-genre="Romance" data-books="1" data-points="9" data-ratings="150000" data-weighted-ratings="1350000"');
+      expect(genres).toContain('https://www.goodreads.com/shelf/show/fiction');
+      expect(genres).toContain('https://www.goodreads.com/genres/romance');
+      expect(genres).toContain("querySelector('#genre-stats')");
+      expect(genres).not.toContain('https://www.goodreads.com/shelf/show/fantasy');
 
       const year2024 = read('year/2024.html');
       expect(year2024).toContain('https://www.goodreads.com/book/show/20');
@@ -1403,25 +2237,82 @@ describe('static publish', () => {
       expect(firstWord).toContain('<a href="https://www.goodreads.com/list/tag/alpha" target="_blank" rel="noopener noreferrer">alpha</a>');
       expect(firstWord).toContain('<td>year</td>');
 
+      const topTags = read('tags/top-tags.html');
+      expect(topTags).toContain('<title>Top 1000 Tags');
+      expect(topTags).toContain('id="top-tags-table"');
+      expect(topTags).toContain('data-default-sort="rank"');
+      expect(topTags.indexOf('to-read')).toBeLessThan(topTags.indexOf('romance'));
+      expect(topTags).toContain('3,186,489,228');
+      expect(topTags).toContain('https://www.goodreads.com/shelf/show/to-read');
+      expect(topTags).toContain('https://www.goodreads.com/list/tag/romance');
+      expect(topTags).toContain('https://www.goodreads.com/genres/fantasy');
+      expect(topTags).not.toContain('https://www.goodreads.com/list/tag/to-read');
+
+      const tagRomance = read('tags/romance.html');
+      expect(tagRomance).toContain('https://www.goodreads.com/list/tag/romance');
+      expect(tagRomance).toContain('https://www.goodreads.com/shelf/show/romance');
+      expect(tagRomance).toContain('id="tag-books-table"');
+      expect(tagRomance).toContain('data-default-sort="ratings"');
+      expect(tagRomance).toContain('data-sort="avgRating"');
+      expect(tagRomance).toContain('data-sort="shelved"');
+      expect(tagRomance).toContain("querySelector('#tag-books-table')");
+      expect(tagRomance.indexOf('Alpha')).toBeLessThan(tagRomance.indexOf('Beta'));
+      expect(tagRomance).toContain('150,000');
+      expect(tagRomance).toContain('4.50');
+      expect(tagRomance).toContain('data-shelved="500"');
+      expect(tagRomance).toContain('>Shelved <span class="sort-arrow"');
+      expect(tagRomance).not.toContain('# tags');
+
+      const tagRomanceByCount = read('tags/romance-by-tag-count.html');
+      expect(tagRomanceByCount).toContain('by shelf count for the tag');
+      expect(tagRomanceByCount).toContain('data-default-sort="shelved"');
+      expect(tagRomanceByCount.indexOf('Alpha')).toBeLessThan(tagRomanceByCount.indexOf('Gamma'));
+      expect(tagRomanceByCount.indexOf('Gamma')).toBeLessThan(tagRomanceByCount.indexOf('Beta'));
+
+      const tagFantasy = read('tags/fantasy.html');
+      expect(tagFantasy).toContain('Alpha');
+      expect(tagFantasy).toContain('shelf/show/fantasy');
+      expect(read('tags/graphic-novels.html')).toContain('No books matched');
+      expect(read('tags/science-fiction.html')).toContain('No books matched');
+
+      for (const report of TAG_BOOK_REPORTS) {
+        const html = read(`${report.id}.html`);
+        expect(html).toContain(`<title>${report.title}`);
+        expect(html).toContain(
+          report.ranking === 'tagCount' ? 'by shelf count for the tag' : 'by number of ratings',
+        );
+        expect(html).toContain(`https://www.goodreads.com/list/tag/${encodeURIComponent(report.tag)}`);
+        expect(html).toContain(`https://www.goodreads.com/shelf/show/${encodeURIComponent(report.tag)}`);
+        if (html.includes('id="tag-books-table"')) {
+          expect(html).toContain(`data-default-sort="${report.ranking === 'tagCount' ? 'shelved' : 'ratings'}"`);
+        }
+      }
+
       const listTags = read('lists/top-list-tags.html');
       expect(listTags).toContain('https://www.goodreads.com/list/tag/horror');
       expect(listTags).toContain('https://www.goodreads.com/list/tag/romance');
-      expect(listTags.indexOf('horror')).toBeLessThan(listTags.indexOf('romance'));
+      expect(listTags.indexOf('>horror</a></td>')).toBeLessThan(listTags.indexOf('>romance</a></td>'));
       expect(listTags).toContain('>horror</a></td><td class="num">2</td>');
 
       const perField = read('per-field.html');
       expect(perField).toContain('<h2>books</h2>');
       expect(perField).toContain('<h2>book_page</h2>');
+      expect(perField).toContain('<h2>shelf_tag_directory</h2>');
+      expect(perField).toContain('<h2>work_tag_books</h2>');
+      expect(perField).toContain('<h2>author_slugs</h2>');
       expect(perField).toContain('<td>author_id</td>');
       expect(perField).toContain('<td>publisher</td>');
+      expect(perField).toContain('<td>ratings_skewness</td>');
+      expect(perField).toContain('<td>is_work_rep</td>');
       expect(perField).toContain('100.0%');
 
       const ratingsHistogram = read('ratings-histogram.html');
       expect(ratingsHistogram).toContain('id="ratings-histogram"');
       expect(ratingsHistogram).toContain('<th rowspan="2">Rating bracket</th>');
       expect(ratingsHistogram).toContain('>WORK+FIELD</th>');
+      expect(ratingsHistogram).toContain('th.group-start, td.group-start { border-left:2px solid #cbd0d8; }');
       expect(ratingsHistogram).toContain(
-        '<tr class="total"><td>Total</td><td class="num">9</td><td class="num">9</td><td class="num">2</td><td class="num">2</td><td class="num">1</td><td class="num">1</td><td class="num">2</td><td class="num">2</td><td class="num">1</td><td class="num">1</td></tr>',
+        '<tr class="total"><td>Total</td><td class="num">9</td><td class="num">9</td><td class="num group-start">2</td><td class="num">2</td><td class="num group-start">1</td><td class="num">1</td><td class="num group-start">2</td><td class="num">2</td><td class="num group-start">1</td><td class="num">1</td></tr>',
       );
 
       const booksAdded = read('books-added.html');
@@ -1449,6 +2340,9 @@ describe('static publish', () => {
       db.prepare('DELETE FROM list_meta WHERE list_id IN (?, ?, ?)').run('100', '200', '300');
       db.prepare('DELETE FROM list_scrapes WHERE list_id IN (?, ?, ?)').run('100', '200', '300');
       db.prepare('DELETE FROM list_tags WHERE list_id IN (?, ?, ?)').run('100', '200', '300');
+      db.prepare("DELETE FROM tag_books WHERE tag_name IN ('romance', 'fantasy')").run();
+      db.prepare("DELETE FROM shelf_tag_directory WHERE tag_name IN ('to-read', 'romance', 'fantasy')").run();
+      db.prepare("DELETE FROM genres WHERE name = 'fantasy'").run();
     }
   });
 
@@ -1486,6 +2380,50 @@ describe('static publish', () => {
         '41',
         '42',
       );
+    }
+  });
+
+  it('builds Top Rated by Year heaps from English works by ratings, with no minimum', () => {
+    const db = getDb();
+    const insertBook = db.prepare(
+      'INSERT INTO books (id, title, author, author_id, ratings, avg_rating, published, work_id, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    const insertPage = db.prepare('INSERT INTO book_page (book_id, language, scraped_at) VALUES (?, ?, ?)');
+    const stamp = '2026-11-19T00:00:00.000Z';
+    // id, title, author, authorId, ratings, avg, year, workId, language
+    const rows: [string, string, string, string, number, number, string, string, string][] = [
+      ['88001', 'Shared Work', 'Author S', '1', 9000, 3.5, '2024', 'W880', 'English'],
+      ['88002', 'Shared Work', 'Author S', '1', 12000, 3.4, '2024', 'W880', 'English'],
+      ['88003', 'Low Ratings', 'Author L', '2', 250, 4.9, '2024', 'W881', 'English'],
+      ['88004', 'French Book', 'Author F', '3', 999999, 4.8, '2024', 'W882', 'French'],
+      ['88005', 'Nineties', 'Author N', '4', 4000, 4.2, '1990', 'W883', 'English'],
+      ['88006', 'Too Old', 'Author O', '5', 8000, 4.2, '1989', 'W884', 'English'],
+      ['88007', 'Too New', 'Author P', '6', 8000, 4.2, '2028', 'W885', 'English'],
+      ['88008', 'Future English', 'Author Q', '7', 300, 4.0, '2027', 'W886', 'English'],
+      ['88010', 'Duplicate Work', 'Author D', '8', 11000, 4.1, '2024', 'W887', 'English'],
+      ['88011', 'Duplicate Work', 'Author D', '8', 11000, 4.1, '2024', 'W888', 'English'],
+    ];
+    const ids = rows.map((row) => row[0]);
+    try {
+      for (const [id, title, author, authorId, ratings, avg, year, workId, language] of rows) {
+        insertBook.run(id, title, author, authorId, ratings, avg, year, workId, stamp);
+        insertPage.run(id, language, stamp);
+      }
+      const heaps = new Map<number, YearBook[]>();
+      scanEnglishWorks(createAccumulators(), 10, heaps);
+      const ranked2024 = [...(heaps.get(2024) ?? [])].sort(
+        (a, b) => b.ratings - a.ratings || Number(a.id) - Number(b.id),
+      );
+      expect(ranked2024.map((book) => book.id)).toEqual(['88002', '88010', '88003']);
+      expect((heaps.get(1990) ?? []).map((book) => book.id)).toEqual(['88005']);
+      expect((heaps.get(2027) ?? []).map((book) => book.id)).toEqual(['88008']);
+      expect(heaps.has(1989)).toBe(false);
+      expect(heaps.has(2028)).toBe(false);
+      expect(heaps.get(2024)?.find((book) => book.id === '88002')?.ratings).toBe(12000);
+    } finally {
+      const holes = ids.map(() => '?').join(', ');
+      db.prepare(`DELETE FROM book_page WHERE book_id IN (${holes})`).run(...ids);
+      db.prepare(`DELETE FROM books WHERE id IN (${holes})`).run(...ids);
     }
   });
 });

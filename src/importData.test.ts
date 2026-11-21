@@ -8,7 +8,7 @@ import {
   splitCsvLine, decodeBookRow, decodeAuthorRow, mergeBook, mergeAuthor, mergeTags,
   decodeTagBookRow, decodeGenreRow, decodeXrefRow, decodeBookPageRow, decodeTagStatsRow, decodeListRow, mergeSeenIds,
   parseCsvRecords, decodePopularByDateRow, decodeTagTailRow, decodeTagTailStateRow,
-  importBookPagesFile, ImportCounts,
+  decodeShelfTagDirectoryRow, importShelfTagDirectoryFile, importBookPagesFile, importPopularByDateFile, ImportCounts,
 } from './importData.ts';
 
 describe('parseCsvRecords', () => {
@@ -232,6 +232,61 @@ describe('decodeTagStatsRow', () => {
   });
 });
 
+const shelfTagDirectoryHeaders = ['tag_name', 'book_count', 'rank', 'scraped_at'];
+
+describe('decodeShelfTagDirectoryRow', () => {
+  it('decodes typed fields and normalizes the tag name', () => {
+    expect(
+      decodeShelfTagDirectoryRow(shelfTagDirectoryHeaders, ['Science-Fiction', '1234567', '42', '2026-11-20T00:00:00Z']),
+    ).toEqual({
+      tagName: 'science-fiction',
+      bookCount: 1234567,
+      rank: 42,
+      scrapedAt: '2026-11-20T00:00:00Z',
+    });
+  });
+  it('returns null when tag_name is missing', () => {
+    expect(decodeShelfTagDirectoryRow(shelfTagDirectoryHeaders, [null, '10', '1', '2026-11-20'])).toBeNull();
+  });
+});
+
+describe('importShelfTagDirectoryFile', () => {
+  it('keeps the newest snapshot per tag', async () => {
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE shelf_tag_directory (
+      tag_name TEXT PRIMARY KEY, book_count INTEGER NOT NULL, rank INTEGER NOT NULL, scraped_at TEXT NOT NULL
+    )`);
+    db.prepare('INSERT INTO shelf_tag_directory VALUES (?, ?, ?, ?)').run(
+      'fantasy',
+      100,
+      5,
+      '2026-11-20T00:00:00Z',
+    );
+    const dir = mkdtempSync(join(tmpdir(), 'import-shelf-dir-'));
+    const csv = [
+      shelfTagDirectoryHeaders.join(','),
+      'fantasy,200,6,2026-11-19T00:00:00Z',
+      'fantasy,300,7,2026-11-21T00:00:00Z',
+      'horror,50,8,2026-11-21T00:00:00Z',
+    ].join('\n') + '\n';
+    const file = join(dir, 'shelf_tag_directory.csv.gz');
+    writeFileSync(file, gzipSync(Buffer.from(csv, 'utf8')));
+    const counts = emptyCounts();
+
+    try {
+      await importShelfTagDirectoryFile(db, file, counts);
+      const fantasy = db.prepare('SELECT * FROM shelf_tag_directory WHERE tag_name = ?').get('fantasy') as any;
+      const horror = db.prepare('SELECT * FROM shelf_tag_directory WHERE tag_name = ?').get('horror') as any;
+      expect(fantasy).toMatchObject({ book_count: 300, rank: 7, scraped_at: '2026-11-21T00:00:00Z' });
+      expect(horror).toMatchObject({ book_count: 50, rank: 8 });
+      expect(counts.shelfTagDirectoryInserted).toBe(1);
+      expect(counts.shelfTagDirectoryUpdated).toBe(2);
+    } finally {
+      db.close();
+    }
+  });
+});
+
 const listHeaders = ['list_id', 'title', 'last_count', 'seen_book_ids', 'ingested', 'discovery_page', 'url'];
 
 describe('decodeListRow', () => {
@@ -255,6 +310,16 @@ describe('mergeSeenIds', () => {
   });
   it('tolerates malformed JSON', () => {
     expect(JSON.parse(mergeSeenIds('not-json', '["3"]'))).toEqual(['3']);
+  });
+  it('allows more than 20,000 ids by default', () => {
+    const ids = Array.from({ length: 20_001 }, (_, i) => String(i));
+    expect(JSON.parse(mergeSeenIds(undefined, JSON.stringify(ids)))).toHaveLength(20_001);
+  });
+  it('reports dropped ids when the cap is hit', () => {
+    let dropped = 0;
+    const merged = mergeSeenIds('["1","2"]', '["3"]', 2, (n) => { dropped = n; });
+    expect(JSON.parse(merged)).toEqual(['1', '2']);
+    expect(dropped).toBe(1);
   });
 });
 
@@ -288,6 +353,68 @@ describe('decodePopularByDateRow', () => {
   it('returns null when the primary key is incomplete', () => {
     expect(decodePopularByDateRow(popHeaders, [null, '170448'])).toBeNull();
     expect(decodePopularByDateRow(popHeaders, ['f:2026-08', null])).toBeNull();
+  });
+});
+
+function makePopularByDateDb(): InstanceType<typeof Database> {
+  const db = new Database(':memory:');
+  db.exec(`CREATE TABLE popular_by_date_book (
+    page_key TEXT NOT NULL, book_id TEXT NOT NULL, rank INTEGER, title TEXT, work_id TEXT,
+    stats_ratings INTEGER, stats_reviews INTEGER, stats_avg REAL, scraped_at TEXT,
+    PRIMARY KEY (page_key, book_id))`);
+  return db;
+}
+
+function writePopularByDateGz(values: Record<string, string>[]): string {
+  const csv = [popHeaders.join(','), ...values.map((v) => popHeaders.map((h) => csvField(v[h] ?? '')).join(','))].join('\n') + '\n';
+  const dir = mkdtempSync(join(tmpdir(), 'import-pop-'));
+  const file = join(dir, 'popular_by_date_book.csv.gz');
+  writeFileSync(file, gzipSync(Buffer.from(csv, 'utf8')));
+  return file;
+}
+
+const popCounts = (): ImportCounts => ({
+  popularByDateInserted: 0, popularByDateUpdated: 0, popularByDateSkipped: 0,
+} as unknown as ImportCounts);
+
+describe('importPopularByDateFile merge', () => {
+  it('preserves existing title/work_id while refreshing rank and stats', async () => {
+    const db = makePopularByDateDb();
+    db.prepare(`INSERT INTO popular_by_date_book (page_key, book_id, rank, title, work_id, stats_ratings, stats_reviews, stats_avg, scraped_at)
+      VALUES ('f:2026-09', 'b1', 3, 'Old Title', 'w1', 100, 10, 4.1, '2026-09-01T00:00:00Z')`).run();
+    const file = writePopularByDateGz([{
+      page_key: 'f:2026-09', book_id: 'b1', rank: '5', title: '', work_id: '',
+      stats_ratings: '200', stats_reviews: '20', stats_avg: '4.3', scraped_at: '2026-09-10T00:00:00Z',
+    }]);
+    const counts = popCounts();
+    await importPopularByDateFile(db, file, counts);
+
+    const row = db.prepare('SELECT * FROM popular_by_date_book WHERE page_key=? AND book_id=?').get('f:2026-09', 'b1') as any;
+    expect(row.title).toBe('Old Title');
+    expect(row.work_id).toBe('w1');
+    expect(row.rank).toBe(5);
+    expect(row.stats_ratings).toBe(200);
+    expect(row.stats_reviews).toBe(20);
+    expect(row.stats_avg).toBeCloseTo(4.3, 5);
+    expect(row.scraped_at).toBe('2026-09-10T00:00:00Z');
+    expect(counts.popularByDateUpdated).toBe(1);
+    db.close();
+  });
+
+  it('fills blank title/work_id, including the Unknown Title placeholder', async () => {
+    const db = makePopularByDateDb();
+    db.prepare(`INSERT INTO popular_by_date_book (page_key, book_id, rank, title, work_id, stats_ratings, stats_reviews, stats_avg, scraped_at)
+      VALUES ('f:2026-09', 'b2', 9, 'Unknown Title', '', 10, 1, 4.0, '2026-09-01T00:00:00Z')`).run();
+    const file = writePopularByDateGz([{
+      page_key: 'f:2026-09', book_id: 'b2', rank: '8', title: 'Real Title', work_id: 'w9',
+      stats_ratings: '11', stats_reviews: '2', stats_avg: '4.2', scraped_at: '2026-09-10T00:00:00Z',
+    }]);
+    await importPopularByDateFile(db, file, popCounts());
+
+    const row = db.prepare('SELECT title, work_id FROM popular_by_date_book WHERE page_key=? AND book_id=?').get('f:2026-09', 'b2') as any;
+    expect(row.title).toBe('Real Title');
+    expect(row.work_id).toBe('w9');
+    db.close();
   });
 });
 
@@ -415,6 +542,42 @@ describe('importBookPagesFile derived ratings stats', () => {
     const row = db.prepare('SELECT * FROM book_page WHERE book_id=?').get('4') as any;
     expect(row.ratings_total).toBeNull();
     expect(counts.bookPagesSkipped).toBe(1);
+    db.close();
+  });
+
+  it('preserves nonblank page facts while refreshing metrics on a newer scrape', async () => {
+    const db = makeBookPageDb();
+    db.prepare(`INSERT INTO book_page (book_id, publisher, isbn13, description, reviews_count, ratings_dist, ratings_total, scraped_at)
+      VALUES ('5', 'Old House', '111', 'Old desc', '7', '{"5":2,"4":1}', 3, '2026-09-01T00:00:00Z')`).run();
+    const file = writeBookPageGz([
+      { book_id: '5', publisher: '', isbn13: '222', description: '', reviews_count: '9', ratings_dist: '{"5":5}', scraped_at: '2026-09-10T00:00:00Z' },
+    ]);
+    await importBookPagesFile(db, file, emptyCounts());
+
+    const row = db.prepare('SELECT * FROM book_page WHERE book_id=?').get('5') as any;
+    expect(row.publisher).toBe('Old House');
+    expect(row.isbn13).toBe('111');
+    expect(row.description).toBe('Old desc');
+    expect(row.reviews_count).toBe('9');
+    expect(row.ratings_dist).toBe('{"5":5}');
+    expect(row.ratings_total).toBe(5);
+    expect(row.scraped_at).toBe('2026-09-10T00:00:00Z');
+    db.close();
+  });
+
+  it('fills blank local page facts from the incoming scrape', async () => {
+    const db = makeBookPageDb();
+    db.prepare(`INSERT INTO book_page (book_id, publisher, description, scraped_at)
+      VALUES ('6', '', NULL, '2026-09-01T00:00:00Z')`).run();
+    const file = writeBookPageGz([
+      { book_id: '6', publisher: 'New House', description: 'New desc', scraped_at: '2026-09-10T00:00:00Z' },
+    ]);
+    await importBookPagesFile(db, file, emptyCounts());
+
+    const row = db.prepare('SELECT publisher, description, scraped_at FROM book_page WHERE book_id=?').get('6') as any;
+    expect(row.publisher).toBe('New House');
+    expect(row.description).toBe('New desc');
+    expect(row.scraped_at).toBe('2026-09-10T00:00:00Z');
     db.close();
   });
 });

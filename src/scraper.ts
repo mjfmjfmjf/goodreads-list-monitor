@@ -6,7 +6,7 @@ import fs from 'fs-extra';
 import path from 'path';
 import { delay, fetchWithRetry, formatDate, httpCallInfo, isConnectivityError, isDbLockError, parseDelayRange } from './utils.ts';
 import { loadConfig, syncAuthorsToCache, getAuthor, getAuthorById, upsertAuthorById, upsertAuthorSlug, updateAuthorStats, mergeBooksFromAuthorPage, upsertTagBooks, recordAuthorScrapeFailure, clearAuthorScrapeFailure, loadAuthorScrapeFailure, AUTHOR_FAIL_LIMIT, persistShelfPageCount, upsertListTags, upsertListMeta } from './storage.ts';
-import type { AuthorStats, ListMeta } from './storage.ts';
+import type { AuthorStats, AuthorCredit, ListMeta } from './storage.ts';
 import type { AxiosResponse } from 'axios';
 
 let structuralWarningIssued = false;
@@ -1510,6 +1510,7 @@ export interface AuthorListBook {
   avgRating?: string;
   published: string;
   workId?: string;
+  credits?: AuthorCredit[];
 }
 
 export function parseAuthorStats($: cheerio.CheerioAPI): AuthorStats {
@@ -1579,6 +1580,22 @@ export function parseAuthorListBooks($: cheerio.CheerioAPI, authorSlug?: string)
     if (!entryId) return;
 
     const entryTitle = $title.find('span[itemprop="name"]').text().trim() || $title.text().trim();
+    // Every credited author, not just the first: a multi-author edition links
+    // each one, and the merge path mints them so `books.author_id` always
+    // resolves in `authors`. Kept separate from `author` (which stays the
+    // page's existing run-together display string) so names are clean.
+    const credits: AuthorCredit[] = [];
+    $el.find('a.authorName[href*="/author/show/"]').each((_, link) => {
+      const $link = $(link);
+      const name = $link.text().trim();
+      const authorHref = $link.attr('href') || '';
+      const authorMatch = authorHref.match(/\/author\/show\/([^?#\s/]+)/);
+      if (!authorMatch) return;
+      const slug = authorMatch[1];
+      const id = slug.split('.')[0];
+      if (!id || credits.some((credit) => credit.id === id)) return;
+      credits.push({ id, name: name || undefined, slug });
+    });
     const $authorLink = $el.find('a.authorName[href*="/author/show/"]');
     const entryAuthor = $authorLink.text().trim() || 'Unknown Author';
     const authorHref = $authorLink.attr('href') || '';
@@ -1596,7 +1613,7 @@ export function parseAuthorListBooks($: cheerio.CheerioAPI, authorSlug?: string)
     const editionsHref = $el.find('a[href*="/work/editions/"]').attr('href') || '';
     const workIdMatch = editionsHref.match(/\/work\/editions\/(\d+)/);
 
-    books.push({ id: entryId, title: entryTitle, author: entryAuthor, authorId: entryAuthorId, authorSlug, ratings, avgRating, published, workId: workIdMatch?.[1] });
+    books.push({ id: entryId, title: entryTitle, author: entryAuthor, authorId: entryAuthorId, authorSlug, ratings, avgRating, published, workId: workIdMatch?.[1], credits });
   });
   return books;
 }

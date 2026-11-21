@@ -3,11 +3,12 @@
 Status: in progress — page shell, collapsible left nav, per-field coverage,
 overall ratings histogram, author, book id, work id, works, works (English),
 book detail (including publisher tables), lists (including the metadata
-backfill), highest-rated-by-year, titles, top-list-tags, and derived-stat book
-reports (including avg-rating top/bottom and the lower-threshold variants)
-implemented; the remaining titles reports, extended book sort fields, tag
-first-page picks, and genres planned. Database growth/arrival histograms (publication years, books
-added, authors added) implemented.
+backfill), highest-rated-by-year, titles, top-list-tags, top shelf tags, tag
+first-page picks, tag book reports, and derived-stat book reports (including
+avg-rating top/bottom and the lower-threshold variants) implemented; the
+remaining titles reports, extended book sort fields, and genres planned.
+Database growth/arrival histograms (publication years, books added, authors
+added) implemented.
 Created: 2026-11-11
 
 ## Goal
@@ -54,9 +55,9 @@ publish/
   book-detail/     by-language, by-format, by-page-count,
                    publishers-most-books, publishers-most-ratings
   titles/          first-char, last-char, first-word (see below)
-  year/            27 reports (2026..2000, see below)
+  year/            38 reports (2027..1990, see below)
   lists/           7 reports (see below), incl. top-list-tags
-  tags/            books-on-tag-first-pages (see below)
+  tags/            top-tags, books-on-tag-first-pages, 18 tag book reports (see below)
 ```
 
 ## Page shell
@@ -88,12 +89,15 @@ publish/
 
 ## Overall: Per Field (implemented)
 
-`per-field.html` is a compact `fieldCoverage.sh`: one table per core table
-(`books`, `authors`, `book_page`, `tag_books`, `lists`, `list_meta`,
-`list_tags`) with one row per column: populated, total, coverage %, missing, and
-distinct (where a scalar distinct count is meaningful). Coverage predicates
-match `fieldCoverage.sh` (e.g. `published` excludes `Unknown`/empty, `genres`
-excludes `[]`, `tags` excludes `{}`).
+`per-field.html` is the HTML form of `field-coverage`: one table per
+report-backed schema table (every `REPORTED_TABLES` entry except the pending-drop
+`list_tag_walks`, plus `list_walk` when the lazy walker has created it), with
+one row per column: populated, total, coverage %, missing, and distinct (where
+a scalar distinct count is meaningful). Coverage predicates match
+`field-coverage` (e.g. `published` excludes `Unknown`/empty, `genres` excludes
+`[]`, `tags` excludes `{}`). It includes the derived `book_page` rating-stat
+columns and the `books` flags used by the static reports. Only cheap aggregate
+queries are used — the CLI's 20M-row genres/tags JSON scan is not repeated.
 
 ## Overall: Ratings Histogram (implemented)
 
@@ -338,16 +342,25 @@ Derived-stat top-N tables (no histogram), using the
 | --- | --- | --- |
 | `highest-skewness-min-100k` | `ratings_skewness` desc | `books.ratings >= 100000` |
 | `highest-skewness-min-10k` | `ratings_skewness` desc | `books.ratings >= 10000` |
+| `lowest-skewness-min-100k` | `ratings_skewness` asc | `books.ratings >= 100000` |
+| `lowest-skewness-min-10k` | `ratings_skewness` asc | `books.ratings >= 10000` |
 | `highest-variance-min-100k` | `ratings_variance` desc | `books.ratings >= 100000` |
 | `highest-variance-min-10k` | `ratings_variance` desc | `books.ratings >= 10000` |
+| `lowest-variance-min-100k` | `ratings_variance` asc | `books.ratings >= 100000` |
+| `lowest-variance-min-10k` | `ratings_variance` asc | `books.ratings >= 10000` |
+| `highest-kurtosis-min-100k` | `ratings_kurtosis` desc | `books.ratings >= 100000` |
+| `highest-kurtosis-min-10k` | `ratings_kurtosis` desc | `books.ratings >= 10000` |
 | `lowest-kurtosis-min-100k` | `ratings_kurtosis` asc | `books.ratings >= 100000` |
 | `lowest-kurtosis-min-10k` | `ratings_kurtosis` asc | `books.ratings >= 10000` |
 | `highest-review-ratio-min-1k` | `reviews_count / books.ratings` desc | `books.ratings >= 1000` |
+| `highest-review-ratio-min-100` | `reviews_count / books.ratings` desc | `books.ratings >= 100` |
 | `highest-avg-rating-min-100k` | `books.avg_rating` desc | `books.ratings >= 100000` |
 | `highest-avg-rating-min-10k` | `books.avg_rating` desc | `books.ratings >= 10000` |
 | `highest-avg-rating-min-1k` | `books.avg_rating` desc | `books.ratings >= 1000` |
+| `highest-avg-rating-min-100` | `books.avg_rating` desc | `books.ratings >= 100` |
 | `lowest-avg-rating-min-10k` | `books.avg_rating` asc | `books.ratings >= 10000` |
 | `lowest-avg-rating-min-1k` | `books.avg_rating` asc | `books.ratings >= 1000` |
+| `lowest-avg-rating-min-100` | `books.avg_rating` asc | `books.ratings >= 100` |
 
 - The minimum-ratings filter uses the **advertised** `books.ratings`, not the
   histogram `ratings_total`.
@@ -363,16 +376,30 @@ Derived-stat top-N tables (no histogram), using the
   rating 2 decimals) and counts use thousands separators. The review-ratio
   table adds a `Reviews` column: `#`, Title, Author, [Work ID], Reviews /
   Ratings (3 decimals), Reviews, # ratings.
+- The skewness/variance/kurtosis tables (all 12, both directions) drop the
+  Work ID column in every scope and add an `Avg rating` column (2 decimals,
+  `—` when missing) from the same source edition: `#`, Title, Author, stat
+  value, Avg rating, # ratings. Other derived reports keep the Work ID column
+  in non-Book-ID scopes and do not get an Avg rating column.
 - Nav labels: `Highest Skewness (min 100k)`, `Highest Skewness (min 10k)`,
-  `Highest Variance (min 100k)`, `Highest Variance (min 10k)`, `Lowest
+  `Lowest Skewness (min 100k)`, `Lowest Skewness (min 10k)`,
+  `Highest Variance (min 100k)`, `Highest Variance (min 10k)`,
+  `Lowest Variance (min 100k)`, `Lowest Variance (min 10k)`,
+  `Highest Kurtosis (min 100k)`, `Highest Kurtosis (min 10k)`, `Lowest
   Kurtosis (min 100k)`, `Lowest Kurtosis (min 10k)`, `Highest Review Ratio (min
-  1k)`, `Highest Avg Rating (min 100k)`, `Highest Avg Rating (min 10k)`,
-  `Highest Avg Rating (min 1k)`, `Lowest Avg Rating (min 10k)`, `Lowest Avg
-  Rating (min 1k)`.
+  1k)`, `Highest Review Ratio (min 100)`, `Highest Avg Rating (min 100k)`,
+  `Highest Avg Rating (min 10k)`, `Highest Avg Rating (min 1k)`, `Highest Avg
+  Rating (min 100)`, `Lowest Avg Rating (min 10k)`, `Lowest Avg Rating (min
+  1k)`, `Lowest Avg Rating (min 100)`.
 
-The lower-threshold variants (`min-10k`/`min-1k`) are additional rows rather
-than replacements: 12 reports × 4 scopes = 48 pages (20 added below the
-original seven).
+The lower-threshold variants (`min-10k`/`min-1k`/`min-100`) are additional rows
+rather than replacements: 21 reports × 4 scopes = 84 pages. Skewness, variance
+and kurtosis have no `min-100` variant.
+
+Avg-rating histogram pages (`avg-ratings-histogram-min-<threshold>`) exist at
+four thresholds — 100k, 10k, 1k and 100 — in all four scopes (16 pages). They
+use the same `book_page`-only eligibility as the CLI's
+`avgHistogram.sh --hasDetails`, at bucket widths 0.5 / 0.2 / 0.1.
 
 ### Book sort fields (parity with `books.sh --sort`)
 
@@ -532,7 +559,7 @@ Planned (needs decisions):
 
 ## Highest Rated by Year (implemented)
 
-- One report per publication year, **2026 back to 2000** (27 reports).
+- One report per publication year, **2027 back to 1990** (38 reports).
 - Each report ranks books by `books.avg_rating` (highest first), restricted to
   `books.ratings >= 1000`.
 - Ties on `avg_rating` break by **more ratings first** (then larger book id).
@@ -541,14 +568,18 @@ Planned (needs decisions):
   the global `--limit`.
 - Columns: rank, title (Goodreads link), author, avg rating, `#ratings`,
   published year.
+- Each page links at the top to the year's Goodreads list tag
+  (`https://www.goodreads.com/list/tag/<year>`), shelf tag
+  (`https://www.goodreads.com/shelf/show/<year>`), and most-popular books
+  (`https://www.goodreads.com/book/popular_by_date/<year>`).
 - Source: `books` (`published` for the year, `avg_rating`, `ratings`, `is_bad`).
   `published` is usually `Unknown` or a bare 4-digit year, sometimes
   `YYYY.MM.DD`; only the leading 4-digit year is used, and only years in
-  2000–2026 are kept.
-- The single book scan feeds both the ratings histograms and 27 per-year
+  1990–2027 are kept.
+- The single book scan feeds both the ratings histograms and 38 per-year
   min-heaps; titles/authors for the surviving rows are resolved in the same
   chunked metadata lookup as the ratings top-N.
-- This is the first section expected to hold many reports (27), so it is the
+- This is the first section expected to hold many reports (38), so it is the
   motivating case for the collapsible nav.
 
 ### Year-page de-duplication (implemented)
@@ -585,6 +616,25 @@ the only book table without the author link.
   otherwise plain text (and `—` when the name is empty). Same
   `target="_blank" rel="noopener noreferrer"` as the other tables.
 - No new column and no extra query.
+
+## Top Rated by Year (implemented)
+
+- One report per publication year, **2027 back to 1990** (38 reports), in a
+  left-nav section directly after "Highest Rated by Year". Paths are
+  `top-rated-year/<YYYY>.html`.
+- English-language works only: `book_page.language = 'English'`, one
+  highest-ratings edition per `work_id`, plus the same normalized title+author
+  dedupe as the `works-en` scope (`dedupeEnglishWorks`).
+- Ranked by **`books.ratings` descending** (most ratings first); ties break on
+  higher `avg_rating`, then lower book id. **No minimum-ratings floor** — the
+  1,000-rating gate belongs only to the highest-rated report. This matters in
+  sparse years: 2027 has 1,510 known English works but only 6 with ≥1,000
+  ratings.
+- Same table columns, top-1000 cap and Goodreads browse links as the
+  highest-rated year pages; `renderTopRatedYearTable` shares the table body.
+- Built inside the existing `scanEnglishWorks` pass (`published` was added to
+  the English-works SQL and `BookPageRow`), so there is no second scan of
+  `book_page`.
 
 ## Lists (implemented)
 
@@ -626,10 +676,14 @@ created` descending, tie-break `creator_id` ascending. All four numeric
 columns — **Lists created, Books, Voters, Likes** — are **client-side
 sortable** (implemented) on the single page (same no-build approach as the page-count table):
 a sort control per column toggles desc→asc→desc, the default is Lists created
-desc, ties keep `creator_id` ascending, and `Likes` is `—` for creators with no
-likes data and always sorts last. Only creators with a non-empty `creator_id`
-are ranked (~16k distinct; a small number of lists have no creator id and are
-excluded). The Creator cell uses the shared lists-created link described above.
+desc, ties keep `creator_id` ascending (creator-less rows last, then by name),
+and `Likes` is `—` for creators with no likes data and always sorts last.
+Creators with a non-empty `creator_id` are ranked (~16k distinct). Lists with
+no creator id (deleted users) are also ranked, grouped by their scraped
+plain-text name; rows where an older scrape left the name NULL are folded into
+the same "deleted user" group (~3,050 lists total). These rows have no
+lists-created link. The Creator cell uses the shared lists-created link
+described above for rows that have an id.
 
 Data: `list_meta` (`num_books`, `num_voters`, `num_likes`, `created_at`,
 `creator_id`, `creator_name`) joined to `list_scrapes.list_name`. All rows fit
@@ -741,7 +795,29 @@ NULL, or simply sorted out by the tie-break/limit before changing the report.
   e.g. `https://www.goodreads.com/list/tag/romance`).
 - Includes every tag (no `--exclude-walked` filter).
 
-## Tags (planned)
+## Tags
+
+### Top tags from the /shelf directory snapshot (implemented 2026/11/20)
+
+`tags/top-tags.html` — top 1,000 rows of `shelf_tag_directory`, loaded in
+directory order (book count desc, rank asc). The table shows `#` (Goodreads
+directory rank), Tag, `# books`, `Scraped` (UTC timestamp), and Links. Sort
+buttons support rank, tag name, # books and scrape date
+(`TOP_TAG_SORT_SCRIPT`); ties return to rank order.
+
+Every tag gets a `https://www.goodreads.com/shelf/show/<tag>` link. A `list tag`
+link is added only when `list_tags` has that tag; a `genre` link is added when
+`genres.name` matches exactly, falling back to a `genre_tag_xref` association
+(exact preferred over cognate). Links open in a new tab.
+
+The snapshot itself is captured by `npm run shelf-tag-directory -- --pages 1-100`
+(`./shelfTagDirectory.sh`), one polite authenticated GET per `/shelf?page=N`,
+parsing `div.shelfStat`. The directory fills three floated columns top-to-bottom
+and advertised counts descend in DOM order (col 1 ranks 1–34, col 2 35–67,
+col 3 68–100), so DOM order is the rank. Ranks are global:
+`(page - 1) * 100 + DOM index + 1`. No book-detail fetches. The table is
+exported/imported like other shareable data; imports keep the row with the
+newest `scraped_at`.
 
 ### Books on first page of tags (`tagFirstPagePicks.sh --limit 1000 --terse --includeReviewed`)
 
@@ -767,9 +843,54 @@ NULL, or simply sorted out by the tie-break/limit before changing the report.
   `findTagFirstPagePicks` for the CLI and its unit tests. Tag names are
   lowercased at the storage boundary.
 
-## Genres / Tags (later)
+### Top books per shelf tag — two forms (implemented 2026/11/20)
 
-- Genres: `genres`, `genre_tag_xref`, `tag_books`.
+Nine shelf tags — 2026, fantasy, graphic-novels, manga, mystery, non-fiction,
+romance, science-fiction, young-adult — each have two fixed **top 1,000**
+reports from the `tag_books` (tag → book) xref:
+
+- **By ratings** (original URLs, unchanged): `tags/<tag>.html`, nav section
+  "Tag Books — by Ratings". Rank: `books.ratings` desc, then lower numeric
+  book id, then book id.
+- **By shelf count**: `tags/<tag>-by-tag-count.html`, nav section
+  "Tag Books — by Shelf Count". Rank: `tag_books.shelved` desc (how many times
+  Goodreads showed the book as shelved under this tag), then `books.ratings`
+  desc, then lower numeric book id, then book id. This reproduces the order of
+  `https://www.goodreads.com/shelf/show/<tag>` for the scraped pages.
+
+Both sections list the nine tags alphabetically by nav label ("2026",
+"Fantasy", "Graphic Novels", "Manga", "Mystery", "Non-Fiction", "Romance",
+"Science Fiction", "Young Adult"). The overview **Tags** section keeps only
+Top Tags and Books on First Page of Tags.
+
+- Columns: `#`, Title (Goodreads book link), Author (author link), Ratings,
+  Avg rating (2 decimals, `—` when missing), Shelved (`tag_books.shelved` for
+  this tag only — not the book's total number of distinct tags). No `is_bad`
+  filter and no minimum-ratings floor.
+- Client-side sort buttons on Ratings, Avg rating and Shelved; rows carry
+  `data-ratings`, `data-avg-rating`, `data-shelved`, `data-book-id`, and the
+  table starts sorted by the report's ranking metric (`TAG_BOOK_SORT_SCRIPT`).
+- Intro links to `https://www.goodreads.com/list/tag/<tag>` and
+  `https://www.goodreads.com/shelf/show/<tag>` (new tab).
+- Ratings form: one `tag_books` scan per tag. Shelf-count form: one CTE with
+  `ROW_NUMBER()` per tag, so it is a true top-by-shelf-count rather than the
+  ratings top-N re-sorted. Neither form adds a schema/index change.
+
+## Genres / Tags
+
+- Genres: `genres`, `genre_tag_xref`, `tag_books`. The Genres nav section now
+  holds `genres/books-and-ratings` (implemented 2026/11/17): one row per genre
+  with both the `/shelf/show/<slug>` and `/genres/<slug>` links and four
+  client-side sortable columns — `Books` (1 per work), `Points` (genre position
+  1 = 10, 2 = 9, …), `Ratings` (summed rating counts), `Weighted ratings`
+  (ratings × position weight). Data is `books.genres` JSON (ordered), one row
+  per work (work rep preferred), works with at least 1,000 ratings, all genres
+  up to 2,000 (1,348 today). Ties break on genre name. See `PLAN-genres-tags.md`
+  for the prototype CLI and decisions.
+- MAYBE (not implemented): a `book_genre_xref(book_id, genre_name, position)`
+  table could replace the per-publish JSON scan/parse of ~233k `books.genres`
+  arrays and speed up generation. Recorded as a possible future model only,
+  not in scope for the shipped report.
 - Tags: `tag_stats`, `list_tag_walk_history`.
 
 `list_tags` also backs the top-list-tags report (now under Lists) and the
@@ -830,6 +951,15 @@ longer empty: it holds the books-on-tag-first-pages report above (planned).
   `highest-skewness-min-10k`, `highest-variance-min-10k`,
   `lowest-kurtosis-min-10k`, `highest-avg-rating-min-1k`, and
   `lowest-avg-rating-min-1k` (20 new pages).
+- Opposite-direction derived-stat additions (all four scopes): lowest skewness,
+  lowest variance, and highest kurtosis, at both min 100k and min 10k ratings
+  (24 new pages). Same NULL-exclusion and per-edition rules; the six reports
+  are interleaved beside their existing counterparts in the nav and in
+  `DERIVED_REPORTS`.
+- Min-100 derived additions (all four scopes): `highest-review-ratio-min-100`,
+  `highest-avg-rating-min-100`, `lowest-avg-rating-min-100` (12 new pages), plus
+  `avg-ratings-histogram-min-100` (4 new pages). No min-100 skewness/variance/
+  kurtosis reports.
 - Works (English): a sibling scope under Works, selecting the highest-ratings
   English edition per `work_id` and deduping by normalized title + author;
   works with no known English edition are excluded. Each Works and Works

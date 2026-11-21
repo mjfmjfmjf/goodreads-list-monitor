@@ -276,7 +276,7 @@ describe('export → import round-trip preserves new tables and columns', () => 
     }
   });
 
-  it('keeps the newest scraped_at for book_page and unions lists.seen_book_ids on re-import', async () => {
+  it('keeps newest book_page metrics without erasing facts, and unions lists.seen_book_ids on re-import', async () => {
     const db = getDb();
     const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'grdxrt2-'));
     try {
@@ -285,18 +285,21 @@ describe('export → import round-trip preserves new tables and columns', () => 
       db.prepare(`INSERT INTO lists (list_id, title, last_count, seen_book_ids, ingested, discovery_page, url)
         VALUES ('l9', 'Nine', 2, '["1","2"]', 1, 2, 'https://example.com/9')`).run();
 
-      // Newer scrape must replace; older scrape must be skipped.
+      // Newer scrape advances the timestamp but keeps the nonblank publisher;
+      // older scrape is skipped entirely.
       const newer = path.join(dir, 'bp_newer.csv.gz');
       writeGz(newer, 'book_id,publisher,isbn13,isbn10,asin,format,language,description,series,reviews_count,ratings_dist,currently_reading,to_read,editions_count,scraped_at\n7,New House,,,,,,,,,,,,,2026-09-10T00:00:00Z\n');
       const counts = await importData(db, { bookPageFile: newer });
       expect(counts.bookPagesUpdated).toBe(1);
-      expect((db.prepare('SELECT publisher FROM book_page WHERE book_id=?').get('7') as any).publisher).toBe('New House');
+      const kept = db.prepare('SELECT publisher, scraped_at FROM book_page WHERE book_id=?').get('7') as any;
+      expect(kept.publisher).toBe('Old House');
+      expect(kept.scraped_at).toBe('2026-09-10T00:00:00Z');
 
       const older = path.join(dir, 'bp_older.csv.gz');
       writeGz(older, 'book_id,publisher,isbn13,isbn10,asin,format,language,description,series,reviews_count,ratings_dist,currently_reading,to_read,editions_count,scraped_at\n7,Stale House,,,,,,,,,,,,,2026-08-01T00:00:00Z\n');
       const counts2 = await importData(db, { bookPageFile: older });
       expect(counts2.bookPagesSkipped).toBe(1);
-      expect((db.prepare('SELECT publisher FROM book_page WHERE book_id=?').get('7') as any).publisher).toBe('New House');
+      expect((db.prepare('SELECT publisher FROM book_page WHERE book_id=?').get('7') as any).publisher).toBe('Old House');
 
       // lists.seen_book_ids union: merged with existing set.
       const listsFile = path.join(dir, 'lists.csv.gz');

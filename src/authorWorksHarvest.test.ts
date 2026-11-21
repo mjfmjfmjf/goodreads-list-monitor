@@ -109,6 +109,28 @@ describe('parseAuthorListBooks', () => {
     expect(books[0].workId).toBe('15553789');
   });
 
+  it('collects every credited author so co-authors can be minted', () => {
+    const html = `
+      <table class="tableList">
+        <tr>
+          <td>
+            <a class="bookTitle" href="/book/show/777">Black House</a>
+            <a class="authorName" href="/author/show/3389.Stephen_King">Stephen King</a>
+            <a class="authorName" href="/author/show/4102.Peter_Straub">Peter Straub</a>
+            <span class="greyText smallText">3.90 avg rating — 500 ratings — published 2001</span>
+          </td>
+        </tr>
+      </table>`;
+    const $ = cheerio.load(html);
+    const books = parseAuthorListBooks($);
+    expect(books.length).toBe(1);
+    expect(books[0].authorId).toBe('3389');
+    expect(books[0].credits).toEqual([
+      { id: '3389', name: 'Stephen King', slug: '3389.Stephen_King' },
+      { id: '4102', name: 'Peter Straub', slug: '4102.Peter_Straub' },
+    ]);
+  });
+
   it('returns rows without workId when no editions link exists', () => {
     const html = `
       <table class="tableList">

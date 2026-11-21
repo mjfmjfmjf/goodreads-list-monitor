@@ -375,6 +375,14 @@ Integration (`src/integration/goodreads.integration.ts`, live + polite):
 - Re-run impact: two commands collapse. `author-orphans --scrape` no longer
   grinds ~243k ids; `author-rescan` (already `author_id`-aggregated via
   `loadAuthorBookStats`) sweeps every statless row, ordered by book popularity.
+- **2026/11/19 recurrence + durable fix:** the backlog regrew to 350,981 because
+  the author-page catalog merge (`parseAuthorListBooks` →
+  `mergeBooksFromAuthorPage`) kept every book's first author link id but minted
+  only the page owner. The parser now returns every `a.authorName` credit and
+  the merge runs `syncAuthorsToCache` on them (`source='author_page_merge'`), so
+  new co-author ids are hosted as they are discovered. The one-off mint was
+  re-applied (`350,981` rows, unhosted back to `0`); see
+  `PLAN-author-completion.md` §2.
 
 ### Phase 2 — collapse orphan/rescan onto id
 - `author-rescan` and `author-orphans` selection becomes: statless rows /

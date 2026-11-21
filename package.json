@@ -28,6 +28,7 @@
     "field-coverage": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts field-coverage",
     "book-page-gaps": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts book-page-gaps",
     "genre-list": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts genre-list",
+    "genre-stats": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts genre-stats",
     "monitor-yearly-highly-rated-lists": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts monitor-yearly-highly-rated-lists",
     "monitor-top-rated-list": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts monitor-top-rated-list",
     "monitor-top-standalones": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts monitor-top-standalones",
@@ -93,6 +94,7 @@
     "test:integration": "vitest run --config vitest.config.integration.mjs",
     "gap-genre-tag-discovery": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts gap-genre-tag-discovery",
     "browser-book-scrape": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts browser-book-scrape",
+    "rescrape-top-works": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts rescrape-top-works",
     "browser-login": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts browser-login",
     "list-walk": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-walk",
     "list-tag-walk": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts list-tag-walk",
@@ -114,6 +116,7 @@
     "tag-year-histogram": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-year-histogram",
     "walk-tag-books": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts walk-tag-books",
     "walk-new-tags": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts walk-new-tags",
+    "shelf-tag-directory": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts shelf-tag-directory",
     "genre-tag-pairings": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts genre-tag-pairings",
     "tag-pairings": "NODE_OPTIONS='--loader ts-node/esm --no-warnings' node src/index.ts tag-pairings"
   },

@@ -16,7 +16,8 @@
 # set, so simply re-running picks up where the last run stopped. Re-run until it
 # reports the queue is empty.
 #
-# A list that fails to read (dead id, 404) is counted and skipped — never fatal.
+# A list that fails to read with 404/410 is marked meta_missing so the next run
+# skips it; it is counted, never fatal. Every list is paced, including failures.
 # Only a connectivity outage or Goodreads throttling aborts the run.
 #
 # Usage:

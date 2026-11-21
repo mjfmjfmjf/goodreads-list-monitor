@@ -25,9 +25,11 @@ export const REPORTED_TABLES = [
   'author_slugs',
   'author_scrape_failures',
   'tag_books',
+  'work_tag_books',
   'genres',
   'genre_tag_xref',
   'tag_stats',
+  'shelf_tag_directory',
   'popular_by_date_book',
   'tag_tail_scrapes',
   'tag_tail_monitor_state',
@@ -42,12 +44,11 @@ export const REPORTED_TABLES = [
   'list_meta',
 ] as const;
 
-// Secrets (config holds live cookies) and one-off/legacy junk tables that are
-// never displayed on purpose.
+// Secrets (config holds live cookies), operational scrape ledgers, and
+// one-off/legacy junk tables that are never displayed on purpose.
 export const IGNORED_TABLES = [
   'config',
   'work_shelf_scrapes',
-  'work_tag_books',
   'authors_old_20261003',
   'emrys_books',
   'emrys_tags',
@@ -116,7 +117,17 @@ export async function runFieldCoverage(): Promise<void> {
       SUM(CASE WHEN series_pos IS NOT NULL THEN 1 ELSE 0 END) AS 'series_pos',
       SUM(CASE WHEN genres IS NOT NULL AND genres != '' AND genres != '[]' THEN 1 ELSE 0 END) AS 'genres',
       SUM(CASE WHEN tags IS NOT NULL AND tags != '' AND tags != '{}' THEN 1 ELSE 0 END) AS 'tags',
-      SUM(CASE WHEN work_id IS NOT NULL AND work_id != '' THEN 1 ELSE 0 END) AS 'work_id'
+      SUM(CASE WHEN work_id IS NOT NULL AND work_id != '' THEN 1 ELSE 0 END) AS 'work_id',
+      SUM(CASE WHEN is_bad IS NOT NULL THEN 1 ELSE 0 END) AS 'is_bad',
+      SUM(CASE WHEN requires_auth IS NOT NULL THEN 1 ELSE 0 END) AS 'requires_auth',
+      SUM(CASE WHEN fail_count IS NOT NULL THEN 1 ELSE 0 END) AS 'fail_count',
+      SUM(CASE WHEN is_work_rep IS NOT NULL THEN 1 ELSE 0 END) AS 'is_work_rep',
+      SUM(CASE WHEN first_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'first_seen',
+      MIN(first_seen) AS 'first_seen_min',
+      MAX(first_seen) AS 'first_seen_max',
+      SUM(CASE WHEN last_updated IS NOT NULL THEN 1 ELSE 0 END) AS 'last_updated',
+      MIN(last_updated) AS 'last_updated_min',
+      MAX(last_updated) AS 'last_updated_max'
     FROM books
   `).get() as any;
 
@@ -125,6 +136,15 @@ export async function runFieldCoverage(): Promise<void> {
   // part of the "missing" bucket.
   const bookRatingsZero = Number(bookTotals.ratings_zero) || 0;
   delete bookTotals.ratings_zero;
+
+  // Timestamp ranges are annotations, not separate columns.
+  const bookRanges: Record<string, { min?: string; max?: string }> = {
+    first_seen: { min: bookTotals.first_seen_min ?? undefined, max: bookTotals.first_seen_max ?? undefined },
+    last_updated: { min: bookTotals.last_updated_min ?? undefined, max: bookTotals.last_updated_max ?? undefined },
+  };
+  for (const key of ['first_seen_min', 'first_seen_max', 'last_updated_min', 'last_updated_max']) {
+    delete bookTotals[key];
+  }
 
   // Distinct values per scalar column. These expose how much a column repeats
   // across the cache: e.g. a work_id may map to several book editions, and an
@@ -136,11 +156,19 @@ export async function runFieldCoverage(): Promise<void> {
       COUNT(DISTINCT avg_rating) AS 'avg_rating',
       COUNT(DISTINCT pages) AS 'pages',
       COUNT(DISTINCT series_pos) AS 'series_pos',
-      COUNT(DISTINCT work_id) AS 'work_id'
+      COUNT(DISTINCT work_id) AS 'work_id',
+      COUNT(DISTINCT is_bad) AS 'is_bad',
+      COUNT(DISTINCT requires_auth) AS 'requires_auth',
+      COUNT(DISTINCT fail_count) AS 'fail_count',
+      COUNT(DISTINCT is_work_rep) AS 'is_work_rep'
     FROM books
   `).get() as Record<string, number>;
 
   for (const stat of computeFieldStats(bookTotals, Number(bookTotals.total), bookDistinct)) {
+    if (bookRanges[stat.field]) {
+      stat.min = bookRanges[stat.field].min;
+      stat.max = bookRanges[stat.field].max;
+    }
     console.log('  ' + formatCoverageLine(stat));
   }
   console.log(`  ${'ratings_zero'.padEnd(14)} : ${chalk.yellow(bookRatingsZero.toLocaleString().padStart(7))} ${chalk.gray('· books with exactly 0 ratings')}`);
@@ -175,9 +203,24 @@ export async function runFieldCoverage(): Promise<void> {
       SUM(CASE WHEN num_shelves IS NOT NULL AND num_shelves > 0 THEN 1 ELSE 0 END) AS 'num_shelves',
       SUM(CASE WHEN slug IS NOT NULL AND slug != '' THEN 1 ELSE 0 END) AS 'slug',
       SUM(CASE WHEN catalog_pages IS NOT NULL AND catalog_pages > 0 THEN 1 ELSE 0 END) AS 'catalog_pages',
-      SUM(CASE WHEN source IS NOT NULL AND source != '' THEN 1 ELSE 0 END) AS 'source'
+      SUM(CASE WHEN source IS NOT NULL AND source != '' THEN 1 ELSE 0 END) AS 'source',
+      SUM(CASE WHEN ratings_rate IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_rate',
+      SUM(CASE WHEN first_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'first_seen',
+      MIN(first_seen) AS 'first_seen_min',
+      MAX(first_seen) AS 'first_seen_max',
+      SUM(CASE WHEN last_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'last_seen',
+      MIN(last_seen) AS 'last_seen_min',
+      MAX(last_seen) AS 'last_seen_max'
     FROM authors
   `).get() as any;
+
+  const authorRanges: Record<string, { min?: string; max?: string }> = {
+    first_seen: { min: authorTotals.first_seen_min ?? undefined, max: authorTotals.first_seen_max ?? undefined },
+    last_seen: { min: authorTotals.last_seen_min ?? undefined, max: authorTotals.last_seen_max ?? undefined },
+  };
+  for (const key of ['first_seen_min', 'first_seen_max', 'last_seen_min', 'last_seen_max']) {
+    delete authorTotals[key];
+  }
 
   const authorDistinct = db.prepare(`
     SELECT
@@ -195,23 +238,53 @@ export async function runFieldCoverage(): Promise<void> {
     ORDER BY n DESC, source ASC
   `).all() as { source: string; n: number }[];
 
+  // Author slug dictionary (alternate slugs discovered for author ids).
+  progress('author_slugs…');
+  const authorSlugTotals = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      COUNT(DISTINCT author_id) AS authors,
+      COUNT(DISTINCT slug) AS slugs,
+      SUM(CASE WHEN name IS NOT NULL AND name != '' THEN 1 ELSE 0 END) AS name,
+      SUM(CASE WHEN first_seen IS NOT NULL THEN 1 ELSE 0 END) AS first_seen,
+      MIN(first_seen) AS first_min,
+      MAX(first_seen) AS first_max,
+      SUM(CASE WHEN last_seen IS NOT NULL THEN 1 ELSE 0 END) AS last_seen,
+      MIN(last_seen) AS last_min,
+      MAX(last_seen) AS last_max
+    FROM author_slugs
+  `).get() as any;
+
   // Bad author-id tracking for the author-orphans scrape pipeline: ids that
   // have repeatedly failed to scrape (404s) and are skipped on later runs.
-  // There is ONE strike ledger and ONE threshold (storage.ts). These used to be
-  // two columns on `authors` (limit 5) plus this table (limit 3), read as
-  // hardcoded literals here.
+  // There is ONE strike ledger and ONE threshold (storage.ts).
   const strikeStats = db.prepare(`
     SELECT
       COUNT(*) AS total,
+      COUNT(DISTINCT author_id) AS authors,
+      COUNT(fail_count) AS fail_count,
       SUM(CASE WHEN fail_count >= @limit THEN 1 ELSE 0 END) AS chronic,
-      SUM(fail_count) AS summed
+      SUM(fail_count) AS summed,
+      MIN(fail_count) AS fail_min,
+      MAX(fail_count) AS fail_max,
+      AVG(fail_count) AS fail_avg,
+      COUNT(DISTINCT fail_count) AS fail_distinct,
+      SUM(CASE WHEN last_error IS NOT NULL AND last_error != '' THEN 1 ELSE 0 END) AS last_error,
+      MIN(first_seen) AS first_min,
+      MAX(first_seen) AS first_max,
+      MIN(last_seen) AS last_min,
+      MAX(last_seen) AS last_max
     FROM author_scrape_failures
   `).get({ limit: AUTHOR_FAIL_LIMIT }) as any;
-  const scrapeFailTotal = (strikeStats?.total ?? 0) as number;
-  const scrapeFailChronic = (strikeStats?.chronic ?? 0) as number;
+  const scrapeFailTotal = Number(strikeStats?.total) || 0;
+  const scrapeFailChronic = Number(strikeStats?.chronic) || 0;
 
   // Give the slug line a distinct value (should equal the author count; slugs are unique).
   for (const stat of computeFieldStats(authorTotals, Number(authorTotals.total), authorDistinct)) {
+    if (authorRanges[stat.field]) {
+      stat.min = authorRanges[stat.field].min;
+      stat.max = authorRanges[stat.field].max;
+    }
     console.log('  ' + formatCoverageLine(stat));
   }
   if (authorSourceBreakdown.length > 0) {
@@ -220,10 +293,39 @@ export async function runFieldCoverage(): Promise<void> {
       console.log(`    ${row.source.padEnd(28)} ${chalk.yellow(row.n.toLocaleString().padStart(9))}`);
     }
   }
+
+  if (Number(authorSlugTotals.total) > 0) {
+    const slugTotal = Number(authorSlugTotals.total);
+    console.log(chalk.cyan.bold(`\n🔤 Author slug dictionary (author_slugs):`));
+    console.log(chalk.gray('----------------------------------------------------------------------'));
+    console.log(chalk.gray(`  slug rows          : ${chalk.yellow(slugTotal.toLocaleString().padStart(7))}`));
+    console.log(chalk.gray(`  authors / slugs    : ${chalk.yellow(Number(authorSlugTotals.authors).toLocaleString())} / ${chalk.yellow(Number(authorSlugTotals.slugs).toLocaleString())}`));
+    console.log('  ' + formatCoverageLine({ field: 'name', populated: Number(authorSlugTotals.name) || 0, total: slugTotal }));
+    console.log('  ' + formatCoverageLine({ field: 'first_seen', populated: Number(authorSlugTotals.first_seen) || 0, total: slugTotal, min: authorSlugTotals.first_min ?? undefined, max: authorSlugTotals.first_max ?? undefined }));
+    console.log('  ' + formatCoverageLine({ field: 'last_seen', populated: Number(authorSlugTotals.last_seen) || 0, total: slugTotal, min: authorSlugTotals.last_min ?? undefined, max: authorSlugTotals.last_max ?? undefined }));
+  }
+
+  console.log(chalk.cyan.bold(`\n💥 Author scrape failures (author_scrape_failures):`));
+  console.log(chalk.gray('----------------------------------------------------------------------'));
   console.log(
     `  ${'scrape_failed'.padEnd(14)} : ${chalk.yellow(scrapeFailTotal.toLocaleString().padStart(7))}` +
-    ` ${chalk.gray(`· ${scrapeFailChronic.toLocaleString()} skipped at threshold (${AUTHOR_FAIL_LIMIT}+)`)}`
+    ` ${chalk.gray(`· ${scrapeFailChronic.toLocaleString()} skipped at threshold (${AUTHOR_FAIL_LIMIT}+)`)}` +
+    ` ${chalk.gray(`· ${Number(strikeStats?.authors || 0).toLocaleString()} authors · ${Number(strikeStats?.summed || 0).toLocaleString()} total strikes`)}`
   );
+  if (scrapeFailTotal > 0) {
+    console.log('  ' + formatCoverageLine({
+      field: 'fail_count',
+      populated: Number(strikeStats.fail_count) || 0,
+      total: scrapeFailTotal,
+      min: strikeStats.fail_min ?? undefined,
+      max: strikeStats.fail_max ?? undefined,
+      avg: strikeStats.fail_avg != null ? Number(strikeStats.fail_avg) : undefined,
+      distinct: strikeStats.fail_distinct != null ? Number(strikeStats.fail_distinct) : undefined,
+    }));
+    console.log('  ' + formatCoverageLine({ field: 'last_error', populated: Number(strikeStats.last_error) || 0, total: scrapeFailTotal }));
+    console.log('  ' + formatCoverageLine({ field: 'first_seen', populated: scrapeFailTotal, total: scrapeFailTotal, min: strikeStats.first_min ?? undefined, max: strikeStats.first_max ?? undefined }));
+    console.log('  ' + formatCoverageLine({ field: 'last_seen', populated: scrapeFailTotal, total: scrapeFailTotal, min: strikeStats.last_min ?? undefined, max: strikeStats.last_max ?? undefined }));
+  }
 
   console.log(chalk.cyan.bold(`\n📊 Tag-book field coverage:`));
   console.log(chalk.gray('----------------------------------------------------------------------'));
@@ -238,6 +340,7 @@ export async function runFieldCoverage(): Promise<void> {
       MIN(shelved) AS 'shelved_min',
       MAX(shelved) AS 'shelved_max',
       AVG(shelved) AS 'shelved_avg',
+      SUM(CASE WHEN harvested_at IS NOT NULL THEN 1 ELSE 0 END) AS 'harvested_at',
       COUNT(DISTINCT harvested_at) AS 'distinct_harvest_times'
     FROM tag_books
   `).get() as any;
@@ -249,8 +352,62 @@ export async function runFieldCoverage(): Promise<void> {
   console.log('  ' + formatCoverageLine({ field: 'position', populated: Number(tagTotals.position), total: tagTotal }));
   const shelvedPop = Number(tagTotals.shelved) || 0;
   console.log('  ' + formatCoverageLine({ field: 'shelved', populated: shelvedPop, total: tagTotal }));
+  console.log('  ' + formatCoverageLine({ field: 'harvested_at', populated: Number(tagTotals.harvested_at) || 0, total: tagTotal, distinct: Number(tagTotals.distinct_harvest_times) }));
   const shelvedAvg = tagTotals.shelved_avg != null ? Number(tagTotals.shelved_avg).toFixed(1) : '—';
   console.log(`  ${'shelved min'.padEnd(14)} : ${chalk.yellow((tagTotals.shelved_min ?? '—').toLocaleString?.() ?? '—')}  max ${chalk.yellow((tagTotals.shelved_max ?? '—').toLocaleString?.() ?? '—')}  avg ${chalk.yellow(shelvedAvg)}`);
+
+  // /shelf directory snapshot: one row per tag with its displayed #books,
+  // rank and scrape stamp. This backs the published Top Tags report.
+  progress('shelf_tag_directory / work_tag_books…');
+  const shelfDirectoryTotals = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      COUNT(DISTINCT tag_name) AS tags,
+      SUM(CASE WHEN book_count IS NOT NULL THEN 1 ELSE 0 END) AS book_count,
+      MIN(book_count) AS book_count_min,
+      MAX(book_count) AS book_count_max,
+      AVG(book_count) AS book_count_avg,
+      SUM(CASE WHEN "rank" IS NOT NULL THEN 1 ELSE 0 END) AS rank,
+      MIN("rank") AS rank_min,
+      MAX("rank") AS rank_max,
+      SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS scraped_at,
+      MIN(scraped_at) AS scraped_min,
+      MAX(scraped_at) AS scraped_max
+    FROM shelf_tag_directory
+  `).get() as any;
+  if (Number(shelfDirectoryTotals.total) > 0) {
+    const shelfTotal = Number(shelfDirectoryTotals.total);
+    console.log(chalk.cyan.bold(`\n🧾 Shelf tag directory snapshot (shelf_tag_directory):`));
+    console.log(chalk.gray('----------------------------------------------------------------------'));
+    console.log(chalk.gray(`  snapshot tags      : ${chalk.yellow(shelfTotal.toLocaleString().padStart(7))}`));
+    console.log('  ' + formatCoverageLine({ field: 'book_count', populated: Number(shelfDirectoryTotals.book_count) || 0, total: shelfTotal, min: shelfDirectoryTotals.book_count_min ?? undefined, max: shelfDirectoryTotals.book_count_max ?? undefined, avg: shelfDirectoryTotals.book_count_avg != null ? Number(shelfDirectoryTotals.book_count_avg) : undefined }));
+    console.log('  ' + formatCoverageLine({ field: 'rank', populated: Number(shelfDirectoryTotals.rank) || 0, total: shelfTotal, min: shelfDirectoryTotals.rank_min ?? undefined, max: shelfDirectoryTotals.rank_max ?? undefined }));
+    console.log('  ' + formatCoverageLine({ field: 'scraped_at', populated: Number(shelfDirectoryTotals.scraped_at) || 0, total: shelfTotal, min: shelfDirectoryTotals.scraped_min ?? undefined, max: shelfDirectoryTotals.scraped_max ?? undefined }));
+  }
+
+  const workTagTotals = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      COUNT(DISTINCT work_id) AS works,
+      COUNT(DISTINCT tag_name) AS tags,
+      SUM(CASE WHEN position IS NOT NULL THEN 1 ELSE 0 END) AS position,
+      SUM(CASE WHEN shelved IS NOT NULL THEN 1 ELSE 0 END) AS shelved,
+      SUM(CASE WHEN harvested_at IS NOT NULL THEN 1 ELSE 0 END) AS harvested_at,
+      COUNT(DISTINCT harvested_at) AS harvests,
+      MIN(harvested_at) AS harvest_min,
+      MAX(harvested_at) AS harvest_max
+    FROM work_tag_books
+  `).get() as any;
+  if (Number(workTagTotals.total) > 0) {
+    const workTagTotal = Number(workTagTotals.total);
+    console.log(chalk.cyan.bold(`\n🧩 Work-level shelves (work_tag_books):`));
+    console.log(chalk.gray('----------------------------------------------------------------------'));
+    console.log(chalk.gray(`  xref rows          : ${chalk.yellow(workTagTotal.toLocaleString().padStart(7))} ${chalk.gray(`· ${Number(workTagTotals.works).toLocaleString()} works · ${Number(workTagTotals.tags).toLocaleString()} tags`)}`));
+    for (const field of ['position', 'shelved', 'harvested_at'] as const) {
+      console.log('  ' + formatCoverageLine({ field, populated: Number(workTagTotals[field]) || 0, total: workTagTotal, distinct: field === 'harvested_at' ? Number(workTagTotals.harvests) : undefined }));
+    }
+    console.log(chalk.gray(`  harvest range      : ${chalk.yellow(String(workTagTotals.harvest_min ?? '—').slice(0, 10))} → ${chalk.yellow(String(workTagTotals.harvest_max ?? '—').slice(0, 10))}`));
+  }
 
   // Genre dictionary + genre↔tag xref (the normalized genre tables behind
   // books' denormalized genres JSON column).
@@ -325,10 +482,14 @@ export async function runFieldCoverage(): Promise<void> {
       COUNT(*) AS total,
       COUNT(DISTINCT page_key) AS 'pages',
       COUNT(DISTINCT book_id) AS 'books',
+      SUM(CASE WHEN page_key IS NOT NULL AND page_key != '' THEN 1 ELSE 0 END) AS 'page_key',
+      SUM(CASE WHEN "rank" IS NOT NULL THEN 1 ELSE 0 END) AS 'rank',
+      SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) AS 'title',
       SUM(CASE WHEN work_id IS NOT NULL AND work_id != '' THEN 1 ELSE 0 END) AS 'work_id',
       SUM(CASE WHEN stats_ratings IS NOT NULL THEN 1 ELSE 0 END) AS 'stats_ratings',
       SUM(CASE WHEN stats_reviews IS NOT NULL THEN 1 ELSE 0 END) AS 'stats_reviews',
       SUM(CASE WHEN stats_avg IS NOT NULL THEN 1 ELSE 0 END) AS 'stats_avg',
+      SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS 'scraped_at',
       COUNT(DISTINCT scraped_at) AS 'distinct_scrapes',
       MAX(scraped_at) AS 'scraped_max'
     FROM popular_by_date_book
@@ -341,7 +502,7 @@ export async function runFieldCoverage(): Promise<void> {
     console.log(chalk.gray(`  snapshot rows      : ${chalk.yellow(popTotal.toLocaleString().padStart(7))}`));
     console.log(chalk.gray(`  distinct pages     : ${chalk.yellow(Number(popularTotals.pages).toLocaleString().padStart(7))}`));
     console.log(chalk.gray(`  distinct books     : ${chalk.yellow(Number(popularTotals.books).toLocaleString().padStart(7))}`));
-    for (const f of ['work_id', 'stats_ratings', 'stats_reviews', 'stats_avg'] as const) {
+    for (const f of ['page_key', 'rank', 'title', 'work_id', 'stats_ratings', 'stats_reviews', 'stats_avg', 'scraped_at'] as const) {
       console.log('  ' + formatCoverageLine({ field: f, populated: Number(popularTotals[f]) || 0, total: popTotal }));
     }
     console.log(chalk.gray(`  harvests           : ${chalk.yellow(Number(popularTotals.distinct_scrapes).toLocaleString().padStart(7))} · latest ${chalk.yellow(String(popularTotals.scraped_max ?? '—'))}`));
@@ -351,10 +512,14 @@ export async function runFieldCoverage(): Promise<void> {
   const tailTotals = db.prepare(`
     SELECT
       COUNT(*) AS total,
-      SUM(CASE WHEN books_added > 0 THEN 1 ELSE 0 END) AS 'books_added',
-      SUM(CASE WHEN authors_added > 0 THEN 1 ELSE 0 END) AS 'authors_added',
+      SUM(CASE WHEN books_added IS NOT NULL THEN 1 ELSE 0 END) AS 'books_added',
+      SUM(CASE WHEN authors_added IS NOT NULL THEN 1 ELSE 0 END) AS 'authors_added',
+      SUM(CASE WHEN books_added = 0 THEN 1 ELSE 0 END) AS 'books_added_zero',
+      SUM(CASE WHEN authors_added = 0 THEN 1 ELSE 0 END) AS 'authors_added_zero',
       SUM(COALESCE(books_added, 0)) AS 'books_sum',
       SUM(COALESCE(authors_added, 0)) AS 'authors_sum',
+      SUM(CASE WHEN last_scraped IS NOT NULL THEN 1 ELSE 0 END) AS 'last_scraped',
+      SUM(CASE WHEN last_page_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'last_page_seen',
       MIN(last_scraped) AS 'first_min',
       MAX(last_scraped) AS 'last_max'
     FROM tag_tail_scrapes
@@ -373,7 +538,11 @@ export async function runFieldCoverage(): Promise<void> {
     const tailTotal = Number(tailTotals.total);
     console.log(chalk.gray(`  scraped tags       : ${chalk.yellow(tailTotal.toLocaleString().padStart(7))}`));
     console.log('  ' + formatCoverageLine({ field: 'books_added', populated: Number(tailTotals.books_added) || 0, total: tailTotal }));
+    console.log(chalk.gray(`  ${'books_added_zero'.padEnd(14)} : ${chalk.yellow((Number(tailTotals.books_added_zero) || 0).toLocaleString().padStart(7))} ${chalk.gray('· scraped tags with 0 books added')}`));
     console.log('  ' + formatCoverageLine({ field: 'authors_added', populated: Number(tailTotals.authors_added) || 0, total: tailTotal }));
+    console.log(chalk.gray(`  ${'authors_added_zero'.padEnd(14)} : ${chalk.yellow((Number(tailTotals.authors_added_zero) || 0).toLocaleString().padStart(7))} ${chalk.gray('· scraped tags with 0 authors added')}`));
+    console.log('  ' + formatCoverageLine({ field: 'last_scraped', populated: Number(tailTotals.last_scraped) || 0, total: tailTotal }));
+    console.log('  ' + formatCoverageLine({ field: 'last_page_seen', populated: Number(tailTotals.last_page_seen) || 0, total: tailTotal }));
     console.log(chalk.gray(`  yield              : ${chalk.yellow((Number(tailTotals.books_sum) || 0).toLocaleString())} books · ${chalk.yellow((Number(tailTotals.authors_sum) || 0).toLocaleString())} authors`));
     const tFirst = (tailTotals.first_min ?? '').slice(0, 10);
     const tLast = (tailTotals.last_max ?? '').slice(0, 10);
@@ -404,9 +573,18 @@ export async function runFieldCoverage(): Promise<void> {
       SUM(CASE WHEN series IS NOT NULL THEN 1 ELSE 0 END) AS 'series',
       SUM(CASE WHEN reviews_count IS NOT NULL THEN 1 ELSE 0 END) AS 'reviews_count',
       SUM(CASE WHEN ratings_dist IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_dist',
+      SUM(CASE WHEN ratings_mean IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_mean',
+      SUM(CASE WHEN ratings_median IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_median',
+      SUM(CASE WHEN ratings_mode IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_mode',
+      SUM(CASE WHEN ratings_variance IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_variance',
+      SUM(CASE WHEN ratings_stddev IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_stddev',
+      SUM(CASE WHEN ratings_skewness IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_skewness',
+      SUM(CASE WHEN ratings_kurtosis IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_kurtosis',
+      SUM(CASE WHEN ratings_total IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_total',
       SUM(CASE WHEN currently_reading IS NOT NULL THEN 1 ELSE 0 END) AS 'currently_reading',
       SUM(CASE WHEN to_read IS NOT NULL THEN 1 ELSE 0 END) AS 'to_read',
-      SUM(CASE WHEN editions_count IS NOT NULL THEN 1 ELSE 0 END) AS 'editions_count'
+      SUM(CASE WHEN editions_count IS NOT NULL THEN 1 ELSE 0 END) AS 'editions_count',
+      SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS 'scraped_at'
     FROM book_page
   `).get() as any)
     : null;
@@ -435,7 +613,12 @@ export async function runFieldCoverage(): Promise<void> {
       SUM(CASE WHEN status='ok' THEN 1 ELSE 0 END) AS 'ok',
       SUM(CASE WHEN status='throttled' THEN 1 ELSE 0 END) AS 'throttled',
       SUM(CASE WHEN status='missing' THEN 1 ELSE 0 END) AS 'missing',
-      SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS 'error'
+      SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS 'error',
+      SUM(CASE WHEN http IS NOT NULL THEN 1 ELSE 0 END) AS 'http',
+      SUM(CASE WHEN bytes IS NOT NULL THEN 1 ELSE 0 END) AS 'bytes',
+      SUM(CASE WHEN elapsed_ms IS NOT NULL THEN 1 ELSE 0 END) AS 'elapsed_ms',
+      SUM(CASE WHEN error IS NOT NULL AND error != '' THEN 1 ELSE 0 END) AS 'error_text',
+      SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS 'scraped_at'
     FROM browser_scrape
   `).get() as any)
     : null;
@@ -448,6 +631,9 @@ export async function runFieldCoverage(): Promise<void> {
       const pop = Number(browserScrapeTotals[status]) || 0;
       console.log('  ' + formatCoverageLine({ field: status, populated: pop, total: Number(browserScrapeTotals.total) }));
     }
+    for (const field of ['http', 'bytes', 'elapsed_ms', 'error_text', 'scraped_at'] as const) {
+      console.log('  ' + formatCoverageLine({ field, populated: Number(browserScrapeTotals[field]) || 0, total: Number(browserScrapeTotals.total) }));
+    }
   }
 
   const listWalkTotals = hasTable('list_walk')
@@ -457,8 +643,13 @@ export async function runFieldCoverage(): Promise<void> {
       SUM(CASE WHEN status='done' THEN 1 ELSE 0 END) AS 'done',
       SUM(CASE WHEN status='started' THEN 1 ELSE 0 END) AS 'started',
       SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS 'error',
+      SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) AS 'title',
+      SUM(CASE WHEN current_page IS NOT NULL THEN 1 ELSE 0 END) AS 'current_page',
+      SUM(CASE WHEN total_pages IS NOT NULL THEN 1 ELSE 0 END) AS 'total_pages',
       SUM(CASE WHEN total_books IS NOT NULL THEN 1 ELSE 0 END) AS 'total_books',
-      SUM(CASE WHEN walkable_books IS NOT NULL THEN 1 ELSE 0 END) AS 'walkable_books'
+      SUM(CASE WHEN walkable_books IS NOT NULL THEN 1 ELSE 0 END) AS 'walkable_books',
+      SUM(CASE WHEN resume_pos IS NOT NULL THEN 1 ELSE 0 END) AS 'resume_pos',
+      SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS 'scraped_at'
     FROM list_walk
   `).get() as any)
     : null;
@@ -475,12 +666,16 @@ export async function runFieldCoverage(): Promise<void> {
       `  ${'total_books'.padEnd(14)} : ${chalk.yellow(((Number(listWalkTotals.total_books) || 0)).toLocaleString().padStart(7))}` +
       ` ${chalk.gray(`· ${((Number(listWalkTotals.walkable_books) || 0)).toLocaleString()} walkable`)}`
     );
+    for (const field of ['title', 'current_page', 'total_pages', 'resume_pos', 'scraped_at'] as const) {
+      console.log('  ' + formatCoverageLine({ field, populated: Number(listWalkTotals[field]) || 0, total: Number(listWalkTotals.total) }));
+    }
   }
 
   const listScrapeTotals = hasTable('list_scrapes')
     ? (db.prepare(`
     SELECT
       COUNT(*) AS total,
+      SUM(CASE WHEN list_name IS NOT NULL AND list_name != '' THEN 1 ELSE 0 END) AS 'list_name',
       SUM(CASE WHEN first_scraped != last_scraped THEN 1 ELSE 0 END) AS 'rescraped',
       MIN(first_scraped) AS 'first_min',
       MAX(first_scraped) AS 'first_max',
@@ -504,6 +699,7 @@ export async function runFieldCoverage(): Promise<void> {
     console.log(chalk.cyan.bold(`\n📊 List-tag walk ledger coverage (list_scrapes):`));
     console.log(chalk.gray('----------------------------------------------------------------------'));
     console.log(chalk.gray(`  total lists          : ${chalk.yellow(Number(listScrapeTotals.total).toLocaleString().padStart(7))}`));
+    console.log('  ' + formatCoverageLine({ field: 'list_name', populated: Number(listScrapeTotals.list_name) || 0, total: Number(listScrapeTotals.total) }));
     console.log(chalk.gray(`  re-scraped           : ${chalk.yellow(Number(listScrapeTotals.rescraped || 0).toLocaleString().padStart(7))}`));
     const first = (listScrapeTotals.first_min ?? '').slice(0, 10);
     const firstEnd = (listScrapeTotals.first_max ?? '').slice(0, 10);
@@ -592,7 +788,15 @@ export async function runFieldCoverage(): Promise<void> {
         COUNT(creator_name) AS creator_name, COUNT(DISTINCT creator_name) AS creator_name_distinct,
         COUNT(num_likes) AS num_likes,
         MIN(num_likes) AS num_likes_min, MAX(num_likes) AS num_likes_max,
-        AVG(num_likes) AS num_likes_avg, COUNT(DISTINCT num_likes) AS num_likes_distinct
+        AVG(num_likes) AS num_likes_avg, COUNT(DISTINCT num_likes) AS num_likes_distinct,
+        COUNT(meta_missing) AS meta_missing, COUNT(DISTINCT meta_missing) AS meta_missing_distinct,
+        COUNT(is_static) AS is_static, COUNT(DISTINCT is_static) AS is_static_distinct,
+        COUNT(first_seen) AS first_seen,
+        MIN(first_seen) AS first_seen_min, MAX(first_seen) AS first_seen_max,
+        COUNT(DISTINCT first_seen) AS first_seen_distinct,
+        COUNT(last_seen) AS last_seen,
+        MIN(last_seen) AS last_seen_min, MAX(last_seen) AS last_seen_max,
+        COUNT(DISTINCT last_seen) AS last_seen_distinct
       FROM list_meta
     `).get() as any;
     const metaTotal = Number(meta.total) || 0;
@@ -616,6 +820,10 @@ export async function runFieldCoverage(): Promise<void> {
       console.log('  ' + formatCoverageLine(metaStat('creator_id')));
       console.log('  ' + formatCoverageLine(metaStat('creator_name')));
       console.log('  ' + formatCoverageLine(metaStat('num_likes', { range: true, avg: true })));
+      console.log('  ' + formatCoverageLine(metaStat('meta_missing')));
+      console.log('  ' + formatCoverageLine(metaStat('is_static')));
+      console.log('  ' + formatCoverageLine(metaStat('first_seen', { range: true })));
+      console.log('  ' + formatCoverageLine(metaStat('last_seen', { range: true })));
     }
   }
 

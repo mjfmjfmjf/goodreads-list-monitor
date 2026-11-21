@@ -1,2 +1,2 @@
-npm run tag-discovery fantasy -- --minTags 50
+npm run tag-discovery fantasy -- --minTags 1
 

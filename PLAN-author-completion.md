@@ -209,6 +209,33 @@ are Goodreads multi-author run-together strings (`"Terrie SmithMichele Light"`),
 `"Unknown"`, or nothing. Those mint with `name = NULL` rather than storing a
 fabricated display name — the first author-page scrape writes the canonical one.
 
+### 2026/11/19 — the gap regrew; the merge path was the hole
+
+By mid-November the invariant was broken again: **1,672,430** distinct non-empty
+`books.author_id` vs **1,350,284** `authors` rows, i.e. **350,884 unhosted** and
+growing ~10–16k books/day. The October mint had worked (its 138,958 residual
+slug-NULL rows are still present); the leak was a *different* write path.
+
+`scrapeAuthorStats` → `parseAuthorListBooks` picks a book's `authorId` from its
+**first** author link, but the merge only ever hosted the **page owner**. Every
+co-author on a multi-author edition therefore became a `books.author_id` with no
+`authors` row. `syncAuthorsToCache` already enforced the invariant on shelf, list,
+monitor, and browser paths — the author-page merge was the one order-of-magnitude
+path that never called it. Active `author-rescan` and `author-sitemap-monitor`
+crawls were feeding it continuously.
+
+Fix (applied): `parseAuthorListBooks` now returns a `credits[]` array of every
+`a.authorName[href*="/author/show/"]`, and `mergeBooksFromAuthorPage` runs
+`syncAuthorsToCache` on the deduped credits with `source='author_page_merge'`.
+Existing rows keep their names/stats (the upsert is fill-only for `name`), so a
+re-mint can no longer zero or rename a scraped author. Regression tests cover the
+multi-author parser and non-destructive merge.
+
+Backfill: `npm run author-mint -- --apply` minted **350,981** rows in 6m 7s
+(14,838 usable names, 336,143 deliberately NULL). Verified afterwards:
+`authors` **1,701,437**, distinct book author ids **1,672,701**, unhosted **0**
+(the crawlers can still add new ones, but the merge now mints them inline).
+
 ### Dead author pages: a permanent failure that still burns a strike (REVERTED the `page_gone` retirement)
 
 A 404/410/400 author page counts as a **permanent failure** and burns a strike like

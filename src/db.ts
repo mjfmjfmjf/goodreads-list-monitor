@@ -417,6 +417,7 @@ export const TAG_PAGE_ESTIMATE_BACKFILL_SQL = `
 const SCHEMA_INDEXES: Array<{ name: string; table: string; sql: string }> = [
   { name: 'idx_genre_tag_xref_tag', table: 'genre_tag_xref', sql: 'CREATE INDEX IF NOT EXISTS idx_genre_tag_xref_tag ON genre_tag_xref(tag_name)' },
   { name: 'idx_tag_books_position', table: 'tag_books', sql: 'CREATE INDEX IF NOT EXISTS idx_tag_books_position ON tag_books(tag_name, position)' },
+  { name: 'idx_shelf_tag_directory_book_count', table: 'shelf_tag_directory', sql: 'CREATE INDEX IF NOT EXISTS idx_shelf_tag_directory_book_count ON shelf_tag_directory(book_count DESC, rank ASC)' },
   { name: 'idx_books_ratings', table: 'books', sql: 'CREATE INDEX IF NOT EXISTS idx_books_ratings ON books(ratings DESC)' },
   { name: 'idx_books_author', table: 'books', sql: 'CREATE INDEX IF NOT EXISTS idx_books_author ON books(author)' },
   { name: 'idx_books_first_seen', table: 'books', sql: 'CREATE INDEX IF NOT EXISTS idx_books_first_seen ON books(first_seen)' },
@@ -630,6 +631,17 @@ function initSchema(db: Database.Database) {
       estimate_page INTEGER,
       estimate_source TEXT,
       updated TEXT NOT NULL
+    );
+
+    -- Snapshot of the Goodreads /shelf directory: one row per tag, with the
+    -- "# books" count and popularity rank the directory advertised at scrape
+    -- time. Distinct from tag_stats (crawl pagination state) and genres
+    -- (/genres/list member counts, a different counting scope).
+    CREATE TABLE IF NOT EXISTS shelf_tag_directory (
+      tag_name TEXT PRIMARY KEY,
+      book_count INTEGER NOT NULL,
+      rank INTEGER NOT NULL,
+      scraped_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS list_scrapes (

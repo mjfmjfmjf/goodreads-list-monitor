@@ -6,6 +6,7 @@ import { generateTagConfig } from './tagConfig.ts';
 import { runTagDiscovery, runBulkTagDiscovery } from './discovery.ts';
 import { runGapGenreTagDiscovery } from './gapGenreDiscovery.ts';
 import { runNewTagWalker } from './newTagWalker.ts';
+import { runShelfTagDirectory } from './shelfTagDirectory.ts';
 import { computeGenrePairings } from './genrePairings.ts';
 import { computeTagPairings } from './tagPairings.ts';
 import { runQueueDiscovery } from './queueDiscovery.ts';
@@ -27,6 +28,8 @@ import { runGenBestOfYearConfig } from './bestOfYearConfig.ts';
 import { runFieldCoverage } from './fieldCoverage.ts';
 import { runBookPageGaps } from './bookPageGaps.ts';
 import { runGenreList } from './genreList.ts';
+import { runGenreStats } from './genreStats.ts';
+import { runRescrapeTopWorks } from './rescrapeTopWorks.ts';
 import { runMonitorYearlyHighlyRatedLists } from './monitorYearlyHighlyRatedLists.ts';
 import { runMonitorTopRatedList } from './monitorTopRatedList.ts';
 import { runMonitorTopStandalones } from './monitorTopStandalones.ts';
@@ -367,6 +370,29 @@ Examples:
       await runGenreList(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run genre-list:'), (error as any).message);
+    }
+  });
+
+program
+  .command('genre-stats')
+  .description('Prototype: aggregate per-genre book counts, position-weighted points, summed ratings, and position-weighted ratings for works above a ratings threshold (default 1,000,000). One row per work, genres ranked by their order in books.genres. Offline; prints each genre\'s /shelf/show and /genres links.')
+  .addHelpText('after', `
+Examples:
+  $ npm run genre-stats --                            # top 20 genres, works >1M ratings
+  $ npm run genre-stats -- --minRatings 1000 --limit 2000 --sortBy ratings
+  $ npm run genre-stats -- --sortBy weightedRatings`)
+  .option('--minRatings <number>', 'Only works with more than this many ratings (default 1000000)')
+  .option('--limit <number>', 'Number of genre rows to print (default 20)')
+  .option('--sortBy <field>', 'Rank by books, points, ratings, or weightedRatings (default points)')
+  .action(async (options) => {
+    try {
+      runGenreStats({
+        minRatings: options.minRatings,
+        limit: options.limit,
+        sortBy: options.sortBy,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run genre-stats:'), (error as any).message);
     }
   });
 
@@ -1009,6 +1035,37 @@ Throttling: 202/403 → 60s cooldown + 1 retry; abort after 2 consecutive thrott
   });
 
 program
+  .command('rescrape-top-works')
+  .description('Playwright rescrape of the union of the top N English works by ratings, reviews, currently reading, to read, and edition count (default N=2000 per metric). Skips editions with a successful scrape in the last 3 days (--minAge). Uses the headed, logged-in browser session and the same 2-4s pacing/checkpoint/book_page writer as browser-book-scrape.')
+  .addHelpText('after', `
+Examples:
+  $ npm run rescrape-top-works -- --dryRun                 (show union counts, no network)
+  $ npm run rescrape-top-works --                          (N=2000 per metric, minAge=3d)
+  $ npm run rescrape-top-works -- -n 500 --minAge 7
+  $ bash rescrapeTopWorks.sh --dryRun        (wrapper is mode 644; use bash)
+Pacing: one headed Chromium window, 2-4s between works; do not run alongside
+other /book/show crawlers. Throttling: 60s cooldown + 1 retry, stop after 2
+consecutive throttles (GOODREADS_STRICT_THROTTLE=1 aborts immediately).`)
+  .option('-n, --limit <number>', 'Top N works per metric (default 2000)', '2000')
+  .option('--minAge <days>', 'Skip editions successfully scraped within this many days (default 3)', '3')
+  .option('--dryRun', 'Show per-metric counts and the union without fetching or writing')
+  .option('--cooldown-ms <number>', 'Cooldown after a throttled response before the single retry (default 60000)')
+  .option('--maxConsecutiveThrottles <number>', 'Stop after this many consecutive throttles (default 2; 0 = keep going)', '2')
+  .action(async (options) => {
+    try {
+      await runRescrapeTopWorks({
+        limit: options.limit,
+        minAge: options.minAge,
+        dryRun: !!options.dryRun,
+        cooldownMs: options.cooldownMs,
+        maxConsecutiveThrottles: options.maxConsecutiveThrottles,
+      });
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to run rescrape-top-works:'), (error as any).message);
+    }
+  });
+
+program
   .command('browser-login')
   .description('One-time interactive login for the headed browser session. Opens a persistent Chromium profile window; sign in with email + password, and the session is saved for every future --engine browser run. (Injecting config.json cookies into Playwright does NOT authenticate — Amazon/Goodreads cookies carry Secure/HttpOnly flags the browser enforces.)')
   .addHelpText('after', `
@@ -1183,9 +1240,9 @@ Candidate lists are every id in list_scrapes/lists/list_tags that has no list_me
 row or is missing num_books/num_voters/num_likes/created_at/creator, ordered by
 earliest first_scraped. One request per list captures the whole header + tag
 sidebar (both repeat on every page), and list_scrapes is deliberately left
-untouched so this is not mistaken for a book crawl. A dead list is counted and
-skipped, never fatal; only a connectivity outage or Goodreads throttling stops
-the run.`)
+untouched so this is not mistaken for a book crawl. A 404/410 list is marked
+meta_missing and skipped (not retried next run); every list is paced, including
+failures. Only a connectivity outage or Goodreads throttling stops the run.`)
   .option('--limit <number>', 'Stop after this many lists (default: the whole queue)')
   .option('--dryRun', 'Show the queue but fetch nothing')
   .action(async (options) => {
@@ -1905,20 +1962,21 @@ Examples:
 
 program
   .command('import-data')
-  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, author_slugs, tag_books, genres, genre_tag_xref, list_tags, list_tag_walk_history, list_meta, book_page, tag_stats, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad (book_page and popular_by_date_book keep the newest scrape per row; lists seen_book_ids are union-merged; list_tags keep from_sidebar/from_directory provenance; author_slugs never move first_seen/last_seen backwards; list_tag_walk_history keeps the earliest first_walked and latest last_walked). Config, browser_scrape, author_scrape_failures, list_scrapes, list_walk, and the legacy list_tag_walks are not exported and not imported. Updates the schema automatically (current spec).')
+  .description('Import library-data from the sanitized CSV+gzip files produced by export-data (books, authors, author_slugs, tag_books, genres, genre_tag_xref, list_tags, list_tag_walk_history, list_meta, book_page, tag_stats, shelf_tag_directory, lists, popular_by_date_book, tag_tail_scrapes, tag_tail_monitor_state). Merges fill-blank-only per field with genre/tag union and never replaces good data with bad (book_page keeps newest scrape metrics but never erases nonblank page facts, popular_by_date_book keeps newest rank/stats but preserves existing title/work_id, shelf_tag_directory keeps the newest scrape per row; lists seen_book_ids are union-merged up to 200,000 ids with drops reported; list_tags keep from_sidebar/from_directory provenance; author_slugs never move first_seen/last_seen backwards; list_tag_walk_history keeps the earliest first_walked and latest last_walked). Config, browser_scrape, author_scrape_failures, list_scrapes, list_walk, and the legacy list_tag_walks are not exported and not imported. Updates the schema automatically (current spec).')
   .option('--books <file>', 'Path to the books .csv.gz file')
   .option('--authors <file>', 'Path to the authors .csv.gz file')
   .option('--authorSlugs <file>', 'Path to the author_slugs .csv.gz file (slug-history ledger; first_seen keeps earliest, last_seen keeps latest)')
   .option('--tagBooks <file>', 'Path to the tag_books .csv.gz file')
   .option('--genres <file>', 'Path to the genres .csv.gz file')
   .option('--xref <file>', 'Path to the genre_tag_xref .csv.gz file')
-  .option('--bookPage <file>', 'Path to the book_page .csv.gz file (browser-scraped page details; newest scraped_at wins)')
+  .option('--bookPage <file>', 'Path to the book_page .csv.gz file (newest scraped_at wins for metrics; stable page facts fill blank only)')
   .option('--tagStats <file>', 'Path to the tag_stats .csv.gz file (shelf crawl state)')
-  .option('--lists <file>', 'Path to the lists .csv.gz file (list discovery/ingest state; seen_book_ids unioned)')
+  .option('--shelfTagDirectory <file>', 'Path to the shelf_tag_directory .csv.gz file (/shelf #books + rank snapshot; newest scraped_at wins)')
+  .option('--lists <file>', 'Path to the lists .csv.gz file (list discovery/ingest state; seen_book_ids unioned up to 200,000 ids)')
   .option('--listTags <file>', 'Path to the list_tags .csv.gz file (unified list-tag xref; from_sidebar/from_directory provenance preserved)')
   .option('--listTagWalkHistory <file>', 'Path to the list_tag_walk_history .csv.gz file (walk-history ledger; earliest first_walked, latest last_walked, larger num_walks/num_lists)')
   .option('--listMeta <file>', 'Path to the list_meta .csv.gz file (per-list header metadata; counts fill blank, created/creator fill blank, earliest first_seen / latest last_seen)')
-  .option('--popularByDate <file>', 'Path to the popular_by_date_book .csv.gz file (rank snapshots; newest scraped_at wins)')
+  .option('--popularByDate <file>', 'Path to the popular_by_date_book .csv.gz file (rank snapshots; newest scraped_at wins for rank/stats, title/work_id fill blank only)')
   .option('--tagTails <file>', 'Path to the tag_tail_scrapes .csv.gz file (tag-recent-monitor progress; newest last_scraped wins)')
   .option('--tagTailState <file>', 'Path to the tag_tail_monitor_state .csv.gz file (in-flight monitor run state)')
   .option('--ratingPolicy <policy>', 'How to handle avg_rating on existing books: "keep" (fill-blank-only, default) or "update" (overwrite with imported value)', 'keep')
@@ -1932,7 +1990,7 @@ Examples:
   .action(async (options) => {
     try {
       const policy = options.ratingPolicy === 'update' ? 'update' : 'keep';
-      const files = [options.books, options.authors, options.authorSlugs, options.tagBooks, options.genres, options.xref, options.bookPage, options.tagStats, options.lists, options.listTags, options.listTagWalkHistory, options.listMeta, options.popularByDate, options.tagTails, options.tagTailState].filter(Boolean);
+      const files = [options.books, options.authors, options.authorSlugs, options.tagBooks, options.genres, options.xref, options.bookPage, options.tagStats, options.shelfTagDirectory, options.lists, options.listTags, options.listTagWalkHistory, options.listMeta, options.popularByDate, options.tagTails, options.tagTailState].filter(Boolean);
       for (const f of files) {
         printAnalysis(await analyzeCsv(f));
       }
@@ -1945,6 +2003,7 @@ Examples:
         xrefFile: options.xref,
         bookPageFile: options.bookPage,
         tagStatsFile: options.tagStats,
+        shelfTagDirectoryFile: options.shelfTagDirectory,
         listsFile: options.lists,
         listTagsFile: options.listTags,
         listTagWalkHistoryFile: options.listTagWalkHistory,
@@ -2203,6 +2262,20 @@ program
       await runNewTagWalker(options);
     } catch (error) {
       console.error(chalk.red.bold('Failed to run new-tag walker:'), (error as any).message);
+    }
+  });
+
+program
+  .command('shelf-tag-directory')
+  .description('Snapshot https://www.goodreads.com/shelf?page=N into shelf_tag_directory: tag, # books, popularity rank and scrape date (one polite GET per page, no book detail fetches)')
+  .option('--pages <range>', 'Pages of the shelf directory to fetch (default 1-100; e.g. "1-100", "7")', '1-100')
+  .option('--dryRun', 'Parse and print the snapshot without writing to the DB')
+  .action(async (options) => {
+    try {
+      await runShelfTagDirectory(options);
+    } catch (error) {
+      console.error(chalk.red.bold('Failed to snapshot shelf directory:'), (error as any).message);
+      process.exitCode = 1;
     }
   });
 

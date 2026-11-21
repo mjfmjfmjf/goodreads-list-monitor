@@ -17,7 +17,7 @@ envfile="$HOME/.hostpapa-ftp.env"
 
 echo starting publishAndUpload.sh
 date
-./publishSite.sh --out "$out"
-bash ./uploadHostpapa.sh "$envfile" "$out"
+time ./publishSite.sh --out "$out"
+time bash ./uploadHostpapa.sh "$envfile" "$out"
 echo ended publishAndUpload.sh
 date

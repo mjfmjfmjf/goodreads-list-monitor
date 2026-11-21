@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect, vi, afterAll } from 'vitest';
 import { computeFieldStats, formatCoverageLine, runFieldCoverage, REPORTED_TABLES, IGNORED_TABLES } from './fieldCoverage.ts';
 import chalk from 'chalk';
@@ -261,6 +262,67 @@ describe('runFieldCoverage', () => {
     expect(numLikes).toContain('avg 2.5');
     expect(numLikes).toContain('2 distinct');
   });
+
+  it('reports author slugs, the shelf directory snapshot and work-level shelves', async () => {
+    const db = getDb();
+    const now = '2026-11-20T00:00:00.000Z';
+    const slugId = 'coverage-slug-1';
+    const shelfTag = 'coverage-test-tag';
+    const workId = 'coverage-work-1';
+    try {
+      db.prepare(
+        'INSERT INTO author_slugs (author_id, slug, name, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)'
+      ).run(slugId, 'coverage-author', 'Coverage Author', now, now);
+      db.prepare(
+        'INSERT INTO shelf_tag_directory (tag_name, book_count, "rank", scraped_at) VALUES (?, ?, ?, ?)'
+      ).run(shelfTag, 42, 7, now);
+      db.prepare(
+        'INSERT INTO work_tag_books (work_id, tag_name, position, shelved, harvested_at) VALUES (?, ?, ?, ?, ?)'
+      ).run(workId, shelfTag, 1, 3, now);
+
+      chalk.level = 0;
+      const out = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await runFieldCoverage();
+      const lines = out.mock.calls.map((c) => c.join(' '));
+      out.mockRestore();
+
+      expect(lines.some((l) => l.includes('Author slug dictionary'))).toBe(true);
+      expect(lines.find((l) => l.includes('slug rows'))).toContain('1');
+      expect(lines.some((l) => l.includes('Shelf tag directory snapshot'))).toBe(true);
+      expect(lines.find((l) => l.includes('snapshot tags'))).toContain('1');
+      expect(lines.some((l) => l.includes('Work-level shelves'))).toBe(true);
+      expect(lines.find((l) => l.includes('xref rows'))).toContain('1');
+      expect(lines.some((l) => l.includes('Author scrape failures'))).toBe(true);
+    } finally {
+      db.prepare('DELETE FROM author_slugs WHERE author_id = ?').run(slugId);
+      db.prepare('DELETE FROM shelf_tag_directory WHERE tag_name = ?').run(shelfTag);
+      db.prepare('DELETE FROM work_tag_books WHERE work_id = ?').run(workId);
+    }
+  });
+
+  it('reports zero-yield tag-tail scrapes as zeros, not missing values', async () => {
+    const db = getDb();
+    const tag = 'coverage-zero-yield';
+    const now = '2026-11-20T00:00:00.000Z';
+    try {
+      db.prepare(
+        'INSERT INTO tag_tail_scrapes (tag_name, last_scraped, last_page_seen, books_added, authors_added) VALUES (?, ?, ?, ?, ?)'
+      ).run(tag, now, 1, 0, 0);
+
+      chalk.level = 0;
+      const out = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await runFieldCoverage();
+      const lines = out.mock.calls.map((c) => c.join(' '));
+      out.mockRestore();
+
+      expect(lines.find((l) => l.includes('books_added_zero'))).toContain('1');
+      expect(lines.find((l) => l.includes('authors_added_zero'))).toContain('1');
+      const booksAdded = lines.find((l) => l.trimStart().startsWith('books_added'))!;
+      expect(booksAdded).toContain('100.0%');
+    } finally {
+      db.prepare('DELETE FROM tag_tail_scrapes WHERE tag_name = ?').run(tag);
+    }
+  });
 });
 
 describe('table accounting', () => {
@@ -270,5 +332,14 @@ describe('table accounting', () => {
     const covered = new Set<string>([...REPORTED_TABLES, ...IGNORED_TABLES]);
     expect(schemaTables.filter(t => !covered.has(t))).toEqual([]);
     for (const t of REPORTED_TABLES) expect([...IGNORED_TABLES]).not.toContain(t);
+  });
+
+  it('actually queries every table it claims to report', () => {
+    const source = readFileSync(new URL('./fieldCoverage.ts', import.meta.url), 'utf8');
+    for (const table of REPORTED_TABLES) {
+      const query = new RegExp(`\\b(?:FROM|JOIN)\\s+${table}\\b`);
+      expect(source, `${table} is listed in REPORTED_TABLES but never queried`).toMatch(query);
+    }
+    expect(IGNORED_TABLES).not.toContain('work_tag_books');
   });
 });

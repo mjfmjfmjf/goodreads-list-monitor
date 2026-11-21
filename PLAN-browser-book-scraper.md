@@ -143,6 +143,30 @@ gets only the fields it already has columns for (genres, work_id, ratings…).
 - **2. Extend sources + fields**: open — work-page pass; `/work/shelves` tag pass (with slug fix); editions-count real capture requires a **logged-in** browser window (keep `--engine browser` manual validation; un-logged-in probe window shows "Book details & editions" button but no count).
 - **3. Optional pacing**: 2-tab parallelism only if 202-rate stays flat.
 
+## `rescrape-top-works` (2026/11/18)
+
+New command + `rescrapeTopWorks.sh` wrapper (`src/rescrapeTopWorks.ts`), reusing
+this module's Playwright transport, parser, checkpoint, and `book_page` writer
+via `runBrowserBookScrape({ candidateBookIds, force: true, engine: 'browser' })`.
+It does not add a second scraper: it only decides which editions to refresh.
+
+- Candidate universe = publishSite's `works-en` scope: one row per work_id,
+  highest-ratings edition with `book_page.language = 'English'`, duplicate
+  work_ids collapsed by normalized title + author (`dedupeEnglishWorks`).
+- Selection = **five independent top-N sets unioned** (USER DECISION
+  2026/11/18): ratings (`books.ratings`), reviews (`book_page.reviews_count`,
+  comma-formatted TEXT), currently reading, to read, and edition count.
+  `-n/--limit` defaults to 2000 *per metric*; the union is ~4,989 works at that
+  setting on today's DB (10,000 pre-dedupe). `--dryRun` prints the first 100
+  with counts so N can be tuned before any network calls.
+- Recency: `--minAge` defaults to **3 days**. Only a `browser_scrape.status=ok`
+  checkpoint inside the window suppresses a work; failed/throttled/missing
+  checkpoints are always retried. The cutoff is applied AFTER the five top-N
+  lists are built, so the rankings still describe current stored data.
+- Throughput caveat: ~4,989 editions × 2–4s pacing ≈ 4+ hours. Must be the
+  only `/book/show` crawler running (do not stack with browser-book-scrape or
+  bookSweep). The list sitemap monitor hits a different endpoint and is fine.
+
 ## Risk status updates
 
 - Headless Chromium detectability → CONFIRMED BLOCKED (403/202) → headed is the browser transport. ✅ resolved by design.

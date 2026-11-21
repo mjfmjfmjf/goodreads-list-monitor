@@ -8,4 +8,5 @@
 #   ./fieldCoverage.sh
 set -euo pipefail
 cd "$(dirname "$0")"
-npm run field-coverage -- "$@"
+time npm run field-coverage -- "$@"
+date

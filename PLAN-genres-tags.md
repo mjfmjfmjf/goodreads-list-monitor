@@ -2,9 +2,10 @@
 
 Status: goal 1 (genre scrape), goal 2 (exact tag compare), the goal-3
 genre_tag_xref table (hit exact + cognate seed), and the gap-genre drill
-(gapGenreTagDiscovery.sh) are built. USER DECIDED 2026/09/02: scrape ALL gap
-genres (no cognate-skip), THEN map tags->genres by book overlap. 2.1 (near-match)
-is now a POST-HOC tag<->genre book-overlap step.
+(gapGenreTagDiscovery.sh) are built. A separate `/shelf` directory snapshot
+(shelf_tag_directory + top-tags report) was added 2026/11/20. USER DECIDED
+2026/09/02: scrape ALL gap genres (no cognate-skip), THEN map tags->genres by
+book overlap. 2.1 (near-match) is now a POST-HOC tag<->genre book-overlap step.
 Created 2026/09/02. Feature request from the user: the Genre list
 (`https://www.goodreads.com/genres/list?page=N`, ~17 pages) should be scraped
 and stored, then compared against the tags already captured, and used to
@@ -294,3 +295,76 @@ per-book; his was keyed wrong somewhere in his join/caching.
  7. Scrape ALL gap genres (USER DECISION): `./gapGenreTagDiscovery.sh` run to
     completion over the 1,445 gaps → every genre shelf into tag_books. THEN map
     tags→genres via xref using real book overlap (goal 2.1 result).
+
+## Prototype: per-genre book/rating reports (2026/11/17)
+
+New user request, separate from the tag-coverage goals above. Wanted shape per
+genre: both `https://www.goodreads.com/shelf/show/<slug>` and
+`https://www.goodreads.com/genres/<slug>` links, books per genre and summed
+rating counts per genre (books with ≥1,000 ratings, top 2,000 genres), in two
+scoring forms — flat (1 point per book) and position-weighted (first genre on
+a book = 10, second = 9, …, floored at 0). USER DECISIONS: sum of rating counts
+(not average), ONE table with both flat and weighted columns (not four
+reports), and CLI preview first for output validation.
+
+- Data source is `books.genres` (ordered JSON array) — there is still no
+  genre↔book xref equivalent to `tag_books`; the `genres` table is only a
+  catalog. Position therefore comes from the array index.
+- `genreStats.ts` + `genre-stats` CLI (`npm run genre-stats --`, non-executable
+  `genreStats.sh` wrapper) implement a prototype: `--minRatings` (default
+  1,000,000), `--limit` (default 20), `--sortBy books|points|ratings|
+  weightedRatings`. One row per work (prefer `is_work_rep`, then highest-rated
+  edition) so editions don't multiply totals. Slug = lowercase + hyphens.
+- Prototype run (works >1M ratings): 266 works, 179 genres; top by points
+  Fiction (247 books / 2,088 pts), Audiobook, Romance, Young Adult, Classics.
+  CLI output includes both links and all four numeric columns.
+- SHIPPED 2026/11/17: the full report `genres/books-and-ratings` uses ≥1,000
+  ratings / top 2,000 (1,348 genres today) and is wired into publishSite with
+  client-side sorting. Bridging genres to `tag_books` via `genre_tag_xref`
+  for wider coverage is still open.
+
+### MAYBE (not implemented): `book_genre_xref`
+
+The full report scans the ratings index for ~233k works and JSON-parses each
+`books.genres` array on every publish; that is a noticeable chunk of the slow
+generation observed 2026/11/17. A possible future model is a normalized table:
+
+    book_genre_xref(book_id, genre_name, position)
+
+one row per (book, genre), with `position` 1-based (1 → 10 points, 2 → 9, …,
+floored at 0) matching today's scoring. This would give genres a real book-set
+xref like `tag_books`, let aggregation run off an index instead of a scan +
+JSON parse, and make per-genre book sets queryable without touching book rows.
+
+NOT IMPLEMENTED — recorded only as a maybe. If taken up later: keep
+`books.genres` as the source of truth and backfill idempotently; read
+`SQLITE_NOTES.md` before touching schema/writers; add the table to
+`EXPORT_TABLES` or `EXCLUDED_TABLES` in `exportData.ts` (unit-enforced); and
+keep the static report's flat/weighted scoring unchanged.
+
+## Shelf directory snapshot + top tags (added 2026/11/20)
+
+User wanted the Goodreads `/shelf` popularity directory captured as a snapshot:
+tag, advertised `# books`, rank and scrape date. This is deliberately distinct
+from `tag_stats` (our crawl pagination state) and `genres.member_count`
+(the `/genres/list` scope).
+
+- `shelf_tag_directory(tag_name PK, book_count, rank, scraped_at)`, plus a
+  `(book_count DESC, rank ASC)` index. Included in `EXPORT_TABLES`; imports keep
+  the row with the newest `scraped_at` so an older export cannot roll the
+  snapshot backwards.
+- `npm run shelf-tag-directory -- --pages 1-100` / `./shelfTagDirectory.sh`
+  makes one authenticated GET per `/shelf?page=N` (100 shelves/page, 100 pages),
+  parses `div.shelfStat` + `div.smallText.greyText`, and honors HTTP 202/403/429
+  by stopping rather than retrying. Delay is configurable with
+  `GR_SHELF_DIRECTORY_DELAY_MS` (default 1–2.5s); `--dryRun` parses without
+  writing. Writes are single-statement autocommit upserts.
+- The directory renders 100 tags in three floated columns filled
+  top-to-bottom; advertised counts descend in that DOM order (col 1 ranks
+  1–34, col 2 ranks 35–67, col 3 ranks 68–100). The parser uses DOM order as
+  the rank, then adds `(page - 1) * 100` for the global rank.
+- Static report `tags/top-tags.html` shows the top 1,000 snapshot rows with
+  rank, tag, `# books`, scrape date and links. Shelf link is always present;
+  `list tag` only when `list_tags` has the tag, and `genre` when `genres.name`
+  matches exactly or `genre_tag_xref` provides an association (exact preferred).
+  See `PLAN-static-publish.md` for rendering details.

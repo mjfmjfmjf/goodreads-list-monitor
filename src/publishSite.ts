@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import chalk from 'chalk';
-import { iterateAuthors, streamRows } from './storage.ts';
+import { iterateAuthors, loadShelfTagDirectory, streamRows, type ShelfTagDirectoryRow } from './storage.ts';
 import { getDb } from './db.ts';
 import { selectAuthors, type SelectedAuthor } from './authorTopStats.ts';
 import { computePublisherCatalog, loadPublisherRows, type RankedPublisher } from './publisherCatalog.ts';
@@ -12,6 +12,13 @@ import { loadBooksAddedBuckets, type BooksAddedSummary } from './booksAddedHisto
 import { loadAuthorArrivalBuckets, type AuthorArrivalSummary } from './authorArrivalHistogram.ts';
 import { loadAuthorTopBookHistogram, type AuthorTopBookHistogramData } from './authorTopBookHistogram.ts';
 import { loadTagFirstPagePicks, TAG_FIRST_PAGE_LIMIT, type TagFirstPagePickRow } from './tagFirstPagePicks.ts';
+import {
+  aggregateGenreStats,
+  loadWorksWithGenres,
+  sortGenreStats,
+  type GenreSortField,
+  type GenreStatRow,
+} from './genreStats.ts';
 
 // Static HTML publishing: render DB reports to a local directory of plain
 // files. See PLAN-static-publish.md for the full spec. Pages are built in
@@ -158,16 +165,25 @@ export const BOOK_METRICS: BookMetric[] = [
 export type DerivedReportId =
   | 'highest-skewness-min-100k'
   | 'highest-skewness-min-10k'
+  | 'lowest-skewness-min-100k'
+  | 'lowest-skewness-min-10k'
   | 'highest-variance-min-100k'
   | 'highest-variance-min-10k'
+  | 'lowest-variance-min-100k'
+  | 'lowest-variance-min-10k'
+  | 'highest-kurtosis-min-100k'
+  | 'highest-kurtosis-min-10k'
   | 'lowest-kurtosis-min-100k'
   | 'lowest-kurtosis-min-10k'
   | 'highest-review-ratio-min-1k'
+  | 'highest-review-ratio-min-100'
   | 'highest-avg-rating-min-100k'
   | 'highest-avg-rating-min-10k'
   | 'highest-avg-rating-min-1k'
+  | 'highest-avg-rating-min-100'
   | 'lowest-avg-rating-min-10k'
-  | 'lowest-avg-rating-min-1k';
+  | 'lowest-avg-rating-min-1k'
+  | 'lowest-avg-rating-min-100';
 
 export type DerivedReportKind = 'skewness' | 'variance' | 'kurtosis' | 'review-ratio' | 'avg-rating';
 
@@ -207,6 +223,26 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     direction: 'desc',
   },
   {
+    id: 'lowest-skewness-min-100k',
+    title: 'Lowest Skewness (min 100k ratings)',
+    navLabel: 'Lowest Skewness (min 100k)',
+    kind: 'skewness',
+    dataLabel: 'skewness',
+    valueLabel: 'Skewness',
+    minRatings: 100000,
+    direction: 'asc',
+  },
+  {
+    id: 'lowest-skewness-min-10k',
+    title: 'Lowest Skewness (min 10k ratings)',
+    navLabel: 'Lowest Skewness (min 10k)',
+    kind: 'skewness',
+    dataLabel: 'skewness',
+    valueLabel: 'Skewness',
+    minRatings: 10000,
+    direction: 'asc',
+  },
+  {
     id: 'highest-variance-min-100k',
     title: 'Highest Variance (min 100k ratings)',
     navLabel: 'Highest Variance (min 100k)',
@@ -223,6 +259,46 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     kind: 'variance',
     dataLabel: 'variance',
     valueLabel: 'Variance',
+    minRatings: 10000,
+    direction: 'desc',
+  },
+  {
+    id: 'lowest-variance-min-100k',
+    title: 'Lowest Variance (min 100k ratings)',
+    navLabel: 'Lowest Variance (min 100k)',
+    kind: 'variance',
+    dataLabel: 'variance',
+    valueLabel: 'Variance',
+    minRatings: 100000,
+    direction: 'asc',
+  },
+  {
+    id: 'lowest-variance-min-10k',
+    title: 'Lowest Variance (min 10k ratings)',
+    navLabel: 'Lowest Variance (min 10k)',
+    kind: 'variance',
+    dataLabel: 'variance',
+    valueLabel: 'Variance',
+    minRatings: 10000,
+    direction: 'asc',
+  },
+  {
+    id: 'highest-kurtosis-min-100k',
+    title: 'Highest Kurtosis (min 100k ratings)',
+    navLabel: 'Highest Kurtosis (min 100k)',
+    kind: 'kurtosis',
+    dataLabel: 'kurtosis',
+    valueLabel: 'Kurtosis',
+    minRatings: 100000,
+    direction: 'desc',
+  },
+  {
+    id: 'highest-kurtosis-min-10k',
+    title: 'Highest Kurtosis (min 10k ratings)',
+    navLabel: 'Highest Kurtosis (min 10k)',
+    kind: 'kurtosis',
+    dataLabel: 'kurtosis',
+    valueLabel: 'Kurtosis',
     minRatings: 10000,
     direction: 'desc',
   },
@@ -257,6 +333,16 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     direction: 'desc',
   },
   {
+    id: 'highest-review-ratio-min-100',
+    title: 'Highest Review Ratio (min 100 ratings)',
+    navLabel: 'Highest Review Ratio (min 100)',
+    kind: 'review-ratio',
+    dataLabel: 'review ratio',
+    valueLabel: 'Reviews / Ratings',
+    minRatings: 100,
+    direction: 'desc',
+  },
+  {
     id: 'highest-avg-rating-min-100k',
     title: 'Highest Avg Rating (min 100k ratings)',
     navLabel: 'Highest Avg Rating (min 100k)',
@@ -287,6 +373,16 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     direction: 'desc',
   },
   {
+    id: 'highest-avg-rating-min-100',
+    title: 'Highest Avg Rating (min 100 ratings)',
+    navLabel: 'Highest Avg Rating (min 100)',
+    kind: 'avg-rating',
+    dataLabel: 'average rating',
+    valueLabel: 'Avg rating',
+    minRatings: 100,
+    direction: 'desc',
+  },
+  {
     id: 'lowest-avg-rating-min-10k',
     title: 'Lowest Avg Rating (min 10k ratings)',
     navLabel: 'Lowest Avg Rating (min 10k)',
@@ -304,6 +400,16 @@ export const DERIVED_REPORTS: DerivedReport[] = [
     dataLabel: 'average rating',
     valueLabel: 'Avg rating',
     minRatings: 1000,
+    direction: 'asc',
+  },
+  {
+    id: 'lowest-avg-rating-min-100',
+    title: 'Lowest Avg Rating (min 100 ratings)',
+    navLabel: 'Lowest Avg Rating (min 100)',
+    kind: 'avg-rating',
+    dataLabel: 'average rating',
+    valueLabel: 'Avg rating',
+    minRatings: 100,
     direction: 'asc',
   },
 ];
@@ -339,6 +445,12 @@ export const AVG_RATING_HISTOGRAM_REPORTS: AvgRatingHistogramReport[] = [
     title: 'Avg Rating Histogram (min 1k ratings)',
     navLabel: 'Avg Rating Histogram (min 1k)',
     minRatings: 1000,
+  },
+  {
+    id: 'avg-ratings-histogram-min-100',
+    title: 'Avg Rating Histogram (min 100 ratings)',
+    navLabel: 'Avg Rating Histogram (min 100)',
+    minRatings: 100,
   },
 ];
 
@@ -426,6 +538,31 @@ export const LIST_CREATOR_REPORT: ListCreatorReport = {
   navLabel: 'Creators with Most Lists',
 };
 
+export const GENRE_STATS_REPORT = {
+  id: 'genres/books-and-ratings',
+  title: 'Genres — Books and Ratings',
+  navLabel: 'Books and Ratings',
+} as const;
+
+export const GENRE_MIN_RATINGS = 1_000;
+export const GENRE_REPORT_LIMIT = 2_000;
+
+export const GENRE_SORT_FIELDS: { field: GenreSortField; label: string }[] = [
+  { field: 'books', label: 'Books' },
+  { field: 'points', label: 'Points' },
+  { field: 'ratings', label: 'Ratings' },
+  { field: 'weightedRatings', label: 'Weighted ratings' },
+];
+
+// data-sort values are the sort field names; data-* attributes are lowercase
+// and hyphenated, so the client script maps between them explicitly.
+export const GENRE_SORT_ATTRIBUTES: Record<GenreSortField, string> = {
+  books: 'books',
+  points: 'points',
+  ratings: 'ratings',
+  weightedRatings: 'weighted-ratings',
+};
+
 export const STATIC_LISTS_REPORT = {
   id: 'lists/static-lists',
   title: 'Lists — Static Lists',
@@ -445,7 +582,8 @@ export interface ListRow {
 }
 
 export interface ListCreatorRow {
-  creatorId: string;
+  // Null for creator-less lists (deleted users): no lists-created URL exists.
+  creatorId: string | null;
   creatorName: string;
   numLists: number;
   numBooks: number;
@@ -466,8 +604,8 @@ export interface YearReport {
   navLabel: string;
 }
 
-export const YEAR_REPORT_START = 2000;
-export const YEAR_REPORT_END = 2026;
+export const YEAR_REPORT_START = 1990;
+export const YEAR_REPORT_END = 2027;
 export const YEAR_REPORT_LIMIT = 1000;
 export const YEAR_MIN_RATINGS = 1000;
 
@@ -483,6 +621,15 @@ export const YEAR_REPORTS: YearReport[] = Array.from(
     };
   },
 );
+
+// Top Rated by Year: same year window and top-N, but English works ranked by
+// rating count (most ratings first) with no minimum-ratings floor.
+export const TOP_RATED_YEAR_REPORTS: YearReport[] = YEAR_REPORTS.map((report) => ({
+  year: report.year,
+  id: `top-rated-year/${report.year}`,
+  title: `Top Rated by Year — ${report.year}`,
+  navLabel: String(report.year),
+}));
 
 export interface YearBook {
   id: string;
@@ -553,6 +700,75 @@ export const TAG_FIRST_PAGE_REPORT = {
   title: 'Books on First Page of Tags',
   navLabel: 'Books on First Page of Tags',
 } as const;
+
+// Overview of the /shelf directory snapshot (tag, #books, rank, scrape date).
+export const TAG_DIRECTORY_REPORT = {
+  id: 'tags/top-tags',
+  title: 'Top 1000 Tags',
+  navLabel: 'Top Tags',
+} as const;
+
+export const TAG_DIRECTORY_REPORT_LIMIT = 1000;
+
+// Two fixed top-1000 forms per shelf tag: by ratings (the original
+// tags/<tag>.html pages) and by the tag's shelf count
+// (tags/<tag>-by-tag-count.html).
+export const TAG_BOOK_REPORT_LIMIT = 1000;
+
+export type TagBookRanking = 'ratings' | 'tagCount';
+
+export interface TagBookReport {
+  tag: string;
+  ranking: TagBookRanking;
+  id: string;
+  title: string;
+  navLabel: string;
+}
+
+// Canonical alphabetical tag list; shared by both ranking forms.
+export const TAG_BOOK_TAGS = [
+  '2026',
+  'fantasy',
+  'graphic-novels',
+  'manga',
+  'mystery',
+  'non-fiction',
+  'romance',
+  'science-fiction',
+  'young-adult',
+] as const;
+
+const TAG_BOOK_RANKINGS: { ranking: TagBookRanking; pathSuffix: string; titleSuffix: string }[] = [
+  { ranking: 'ratings', pathSuffix: '', titleSuffix: '' },
+  { ranking: 'tagCount', pathSuffix: '-by-tag-count', titleSuffix: ' by Shelf Count' },
+];
+
+// Friendly nav labels; also used in report titles.
+const TAG_BOOK_NAV_LABELS: Record<(typeof TAG_BOOK_TAGS)[number], string> = {
+  '2026': '2026',
+  fantasy: 'Fantasy',
+  'graphic-novels': 'Graphic Novels',
+  manga: 'Manga',
+  mystery: 'Mystery',
+  'non-fiction': 'Non-Fiction',
+  romance: 'Romance',
+  'science-fiction': 'Science Fiction',
+  'young-adult': 'Young Adult',
+};
+
+export const TAG_BOOK_REPORTS: TagBookReport[] = TAG_BOOK_TAGS.flatMap((tag) =>
+  TAG_BOOK_RANKINGS.map(({ ranking, pathSuffix, titleSuffix }) => ({
+    tag,
+    ranking,
+    id: `tags/${tag}${pathSuffix}`,
+    title: `Top Books Tagged ${TAG_BOOK_NAV_LABELS[tag]}${titleSuffix}`,
+    navLabel: TAG_BOOK_NAV_LABELS[tag],
+  })),
+);
+
+export function tagBookReportsByRanking(ranking: TagBookRanking): TagBookReport[] {
+  return TAG_BOOK_REPORTS.filter((report) => report.ranking === ranking);
+}
 
 // Sections with no items render a muted "soon" badge instead of dead links.
 export function buildNav(): NavSection[] {
@@ -637,6 +853,14 @@ export function buildNav(): NavSection[] {
       })),
     },
     {
+      label: 'Top Rated by Year',
+      items: TOP_RATED_YEAR_REPORTS.map((report) => ({
+        id: report.id,
+        label: report.navLabel,
+        href: `${report.id}.html`,
+      })),
+    },
+    {
       label: 'Lists',
       items: [
         ...LIST_REPORTS.map((report) => ({
@@ -661,16 +885,46 @@ export function buildNav(): NavSection[] {
         },
       ],
     },
-    { label: 'Genres', items: [] },
+    {
+      label: 'Genres',
+      items: [
+        {
+          id: GENRE_STATS_REPORT.id,
+          label: GENRE_STATS_REPORT.navLabel,
+          href: `${GENRE_STATS_REPORT.id}.html`,
+        },
+      ],
+    },
     {
       label: 'Tags',
       items: [
+        {
+          id: TAG_DIRECTORY_REPORT.id,
+          label: TAG_DIRECTORY_REPORT.navLabel,
+          href: `${TAG_DIRECTORY_REPORT.id}.html`,
+        },
         {
           id: TAG_FIRST_PAGE_REPORT.id,
           label: TAG_FIRST_PAGE_REPORT.navLabel,
           href: `${TAG_FIRST_PAGE_REPORT.id}.html`,
         },
       ],
+    },
+    {
+      label: 'Tag Books — by Ratings',
+      items: tagBookReportsByRanking('ratings').map((report) => ({
+        id: report.id,
+        label: report.navLabel,
+        href: `${report.id}.html`,
+      })),
+    },
+    {
+      label: 'Tag Books — by Shelf Count',
+      items: tagBookReportsByRanking('tagCount').map((report) => ({
+        id: report.id,
+        label: report.navLabel,
+        href: `${report.id}.html`,
+      })),
     },
   ];
 }
@@ -810,7 +1064,15 @@ export interface TopBook {
   author: string;
   authorId: string;
   workId: string;
+  // Rank metric (e.g. reviews, to-read count) plus context columns shown on
+  // every top-N table, regardless of which metric was ranked.
   value: number;
+  ratings: number;
+  avgRating: number | null;
+  // All five metric values for this edition, so every top-N table can show the
+  // same sortable columns regardless of which metric produced the ranking.
+  // Optional because some callers construct lightweight fixtures inline.
+  metrics?: Partial<Record<BookMetricId, number | null>>;
 }
 
 export interface MetricAccumulator {
@@ -830,6 +1092,9 @@ export interface DerivedBook {
   value: number;
   ratings: number;
   reviews: number;
+  // Average rating from the same edition, for the skewness/variance/kurtosis
+  // tables. Null when the source avg rating is missing or unparseable.
+  avgRating: number | null;
 }
 
 export interface DerivedAccumulator {
@@ -875,6 +1140,7 @@ interface BookPageRow {
   author: string | null;
   author_id: string | null;
   work_id: string | null;
+  published: string | null;
   is_work_rep: number | null;
   reviews_count: string | null;
   currently_reading: number | null;
@@ -891,6 +1157,33 @@ function toInt(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const parsed = typeof value === 'number' ? value : parseInt(String(value).replace(/,/g, ''), 10);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+type BookMetricValues = Partial<Record<BookMetricId, number | null>>;
+
+function bookMetricValues(row: {
+  ratings: unknown;
+  reviews_count: unknown;
+  currently_reading: unknown;
+  to_read: unknown;
+  editions_count: unknown;
+}): BookMetricValues {
+  return {
+    ratings: toInt(row.ratings),
+    reviews: toInt(row.reviews_count),
+    'currently-reading': toInt(row.currently_reading),
+    'to-read': toInt(row.to_read),
+    'edition-count': toInt(row.editions_count),
+  };
+}
+
+// Fall back to the ranked metric's `value` for inline fixtures that predate
+// `metrics`, so the table always shows a value in its own ranked column.
+function bookMetricValue(book: TopBook, id: BookMetricId, rankedId: BookMetricId): number | null {
+  if (id === 'ratings') return book.ratings;
+  const stored = book.metrics?.[id];
+  if (stored !== undefined) return stored;
+  return id === rankedId ? book.value : null;
 }
 
 function bucketIndex(value: number, buckets: Bucket[]): number {
@@ -913,6 +1206,15 @@ function compareWorstFirst(a: TopBook, b: TopBook): number {
 function compareYearWorstFirst(a: YearBook, b: YearBook): number {
   if (a.avgRating !== b.avgRating) return a.avgRating - b.avgRating;
   if (a.ratings !== b.ratings) return a.ratings - b.ratings;
+  if (a.id === b.id) return 0;
+  return a.id > b.id ? -1 : 1;
+}
+
+// Top Rated by Year ranks by number of ratings (most first), then average
+// rating as a tie-break, then id.
+function compareTopRatedYearWorstFirst(a: YearBook, b: YearBook): number {
+  if (a.ratings !== b.ratings) return a.ratings - b.ratings;
+  if (a.avgRating !== b.avgRating) return a.avgRating - b.avgRating;
   if (a.id === b.id) return 0;
   return a.id > b.id ? -1 : 1;
 }
@@ -997,13 +1299,18 @@ function derivedValue(row: BookPageRow, report: DerivedReport, ratings: number):
   }
 }
 
-// Average ratings are hundredths of a star; values outside 0.01–5.00 (and
-// non-numeric sentinels such as "Unknown") are excluded just as in the CLI.
-function avgRatingHundredths(value: unknown): number | null {
+// Missing/non-numeric avg ratings (e.g. "Unknown") are shown as "—" and never
+// counted in the histogram, matching the CLI's avg-histogram filter.
+function parseAvgRating(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const parsed = typeof value === 'number' ? value : Number(String(value).replace(/,/g, ''));
-  if (!Number.isFinite(parsed) || parsed <= 0) return null;
-  const hundredths = Math.round(parsed * 100);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function avgRatingHundredths(value: unknown): number | null {
+  const avg = parseAvgRating(value);
+  if (avg === null) return null;
+  const hundredths = Math.round(avg * 100);
   return hundredths <= 500 ? hundredths : null;
 }
 
@@ -1041,6 +1348,7 @@ function addDerivedReports(acc: ScopeAccumulator, row: BookPageRow, limit: numbe
         value,
         ratings,
         reviews: toInt(row.reviews_count) ?? 0,
+        avgRating: parseAvgRating(row.avg_rating),
       },
       limit,
       (a, b) => compareDerivedWorstFirst(a, b, report.direction),
@@ -1134,6 +1442,9 @@ function addBookPageMetrics(acc: ScopeAccumulator, row: BookPageRow, metrics: Bo
         authorId: row.author_id ?? '',
         workId: row.work_id ?? '',
         value,
+        ratings: toInt(row.ratings) ?? 0,
+        avgRating: parseAvgRating(row.avg_rating),
+        metrics: bookMetricValues(row),
       },
       limit,
     );
@@ -1161,6 +1472,10 @@ export function scanBooks(
       authorId: '',
       workId: row.work_id ?? '',
       value,
+      ratings: value,
+      avgRating: parseAvgRating(row.avg_rating),
+      // `books` has no book_page fields; resolveBookMetricColumns fills the rest.
+      metrics: { ratings: value },
     };
 
     accumulators['book-id'].total++;
@@ -1273,6 +1588,45 @@ export function resolveBookTitles(
   }
 }
 
+// Ratings heaps come from `books`, which has no book_page metrics. After both
+// scans finish, fill every surviving top book from book_page with bounded
+// id-chunk queries (never a full-table load, and never inside a read iterator).
+export function resolveBookMetricColumns(accumulators: Accumulators): void {
+  const books = new Map<string, TopBook>();
+  for (const scope of BOOK_SCOPES) {
+    for (const acc of Object.values(accumulators[scope.id].metrics)) {
+      for (const book of acc.heap) books.set(book.id, book);
+    }
+  }
+  if (books.size === 0) return;
+
+  const db = getDb();
+  const ids = [...books.keys()];
+  for (let offset = 0; offset < ids.length; offset += 500) {
+    const chunk = ids.slice(offset, offset + 500);
+    const placeholders = chunk.map(() => '?').join(',');
+    const rows = db
+      .prepare(
+        `SELECT bp.book_id, b.ratings, bp.reviews_count, bp.currently_reading, bp.to_read, bp.editions_count
+         FROM book_page bp
+         LEFT JOIN books b ON b.id = bp.book_id
+         WHERE bp.book_id IN (${placeholders})`,
+      )
+      .all(...chunk) as Array<{
+        book_id: string;
+        ratings: string | number | null;
+        reviews_count: string | null;
+        currently_reading: number | null;
+        to_read: number | null;
+        editions_count: number | null;
+      }>;
+    for (const row of rows) {
+      const book = books.get(String(row.book_id));
+      if (book) book.metrics = { ...book.metrics, ...bookMetricValues(row) };
+    }
+  }
+}
+
 export function scanBookPages(accumulators: Accumulators, limit: number): void {
   const sql = `
     SELECT bp.book_id AS id, bp.reviews_count, bp.currently_reading, bp.to_read, bp.editions_count,
@@ -1308,7 +1662,7 @@ export function scanBookPages(accumulators: Accumulators, limit: number): void {
 // (e.g. Harry Potter #3).
 const ENGLISH_WORKS_SQL = `
   WITH english AS (
-    SELECT b.id, b.title, b.author, b.author_id, b.work_id, b.ratings, b.avg_rating,
+    SELECT b.id, b.title, b.author, b.author_id, b.work_id, b.published, b.ratings, b.avg_rating,
            0 AS is_work_rep,
            bp.reviews_count, bp.currently_reading, bp.to_read, bp.editions_count,
            bp.ratings_skewness, bp.ratings_variance, bp.ratings_kurtosis,
@@ -1321,7 +1675,7 @@ const ENGLISH_WORKS_SQL = `
     WHERE bp.language = 'English'
       AND b.work_id IS NOT NULL AND b.work_id != ''
   )
-  SELECT id, title, author, author_id, work_id, ratings, avg_rating, is_work_rep,
+  SELECT id, title, author, author_id, work_id, published, ratings, avg_rating, is_work_rep,
          reviews_count, currently_reading, to_read, editions_count,
          ratings_skewness, ratings_variance, ratings_kurtosis
   FROM english
@@ -1347,21 +1701,30 @@ function isBetterWorkRow(candidate: BookPageRow, current: BookPageRow): boolean 
 // Collapse duplicate work_ids that share a normalized title and author. The
 // best (most ratings, then lowest id) edition survives. Rows without a usable
 // title keep their own work_id key so unrelated untitled rows never collapse.
+function englishWorkKey(row: BookPageRow): string {
+  const title = normalizeWorkTitle(row.title ?? '');
+  const authorKey = row.author_id || (row.author ?? '').trim().toLowerCase();
+  return title ? `${title}|${authorKey}` : `work:${row.work_id ?? row.id}`;
+}
+
 export function dedupeEnglishWorks(rows: BookPageRow[]): BookPageRow[] {
   const best = new Map<string, BookPageRow>();
   for (const row of rows) {
-    const title = normalizeWorkTitle(row.title ?? '');
-    const authorKey = row.author_id || (row.author ?? '').trim().toLowerCase();
-    const key = title ? `${title}|${authorKey}` : `work:${row.work_id ?? row.id}`;
+    const key = englishWorkKey(row);
     const current = best.get(key);
     if (!current || isBetterWorkRow(row, current)) best.set(key, row);
   }
   return [...best.values()];
 }
 
-export function scanEnglishWorks(accumulators: Accumulators, limit: number): void {
+export function scanEnglishWorks(
+  accumulators: Accumulators,
+  limit: number,
+  topRatedYearHeaps: Map<number, YearBook[]> = new Map(),
+): void {
   const acc = accumulators['works-en'];
   const bookPageMetrics = BOOK_METRICS.filter((metric) => metric.source === 'book_page');
+  const yearCandidates = new Map<number, Map<string, YearBook>>();
   for (const row of dedupeEnglishWorks([...streamRows<BookPageRow>(ENGLISH_WORKS_SQL)])) {
     const value = toInt(row.ratings) ?? 0;
     acc.total++;
@@ -1375,12 +1738,46 @@ export function scanEnglishWorks(accumulators: Accumulators, limit: number): voi
         authorId: row.author_id ?? '',
         workId: row.work_id ?? '',
         value,
+        ratings: value,
+        avgRating: parseAvgRating(row.avg_rating),
+        metrics: bookMetricValues(row),
       },
       limit,
     );
     addBookPageMetrics(acc, row, bookPageMetrics, limit);
     addDerivedReports(acc, row, limit);
     addAvgRatingHistograms(acc, row);
+
+    // Top Rated by Year: same one-work-per-page rule as the English works
+    // report, but bucketed by the selected edition's publication year and
+    // ranked by ratings count (no minimum floor).
+    const year = parsePublishedYear(row.published);
+    if (year !== null) {
+      const candidate: YearBook = {
+        id: String(row.id),
+        title: row.title ?? '',
+        author: row.author ?? '',
+        authorId: row.author_id ?? '',
+        avgRating: parseAvgRating(row.avg_rating) ?? 0,
+        ratings: value,
+        year,
+      };
+      let candidates = yearCandidates.get(year);
+      if (!candidates) {
+        candidates = new Map();
+        yearCandidates.set(year, candidates);
+      }
+      const key = englishWorkKey(row);
+      if (!candidates.has(key)) candidates.set(key, candidate);
+    }
+  }
+
+  for (const [year, candidates] of yearCandidates) {
+    const heap: YearBook[] = [];
+    for (const candidate of candidates.values()) {
+      pushTop(heap, candidate, YEAR_REPORT_LIMIT, compareTopRatedYearWorstFirst);
+    }
+    topRatedYearHeaps.set(year, heap);
   }
 }
 
@@ -1410,10 +1807,26 @@ export function renderHistogram(acc: MetricAccumulator, total: number): string {
   ].join('\n');
 }
 
+// Row data attributes for the client-side sort script. Kebab-case ids match
+// the metric ids used by the CLI and the nav/url paths.
+export const BOOK_METRIC_SORT_ATTRIBUTES: Record<BookMetricId | 'avgRating', string> = {
+  ratings: 'ratings',
+  reviews: 'reviews',
+  'currently-reading': 'currently-reading',
+  'to-read': 'to-read',
+  'edition-count': 'edition-count',
+  avgRating: 'avg-rating',
+};
+
 export function renderTopBooks(heap: TopBook[], metric: BookMetric, showWorkId: boolean): string {
   if (heap.length === 0) return '<p>No books with this metric.</p>';
 
   const books = [...heap].sort((a, b) => compareWorstFirst(b, a));
+  const sortableHead = (id: BookMetricId | 'avgRating', label: string, ranked = false): string =>
+    `<th class="num${ranked ? ' rank-metric' : ''}"><button type="button" class="sort-btn" data-sort="${id}">${escapeHtml(
+      label,
+    )} <span class="sort-arrow" aria-hidden="true"></span></button></th>`;
+
   const rows = books.map((book, index) => {
     const title = escapeHtml(book.title || book.id);
     const href = `https://www.goodreads.com/book/show/${encodeURIComponent(book.id)}`;
@@ -1425,18 +1838,91 @@ export function renderTopBooks(heap: TopBook[], metric: BookMetric, showWorkId: 
             : '—'
         }</td>`
       : '';
-    return `<tr><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td>${author}</td>${workCell}<td class="num">${formatCount(book.value)}</td></tr>`;
+    const values = BOOK_METRICS.map((candidate) => {
+      const value = bookMetricValue(book, candidate.id, metric.id);
+      return {
+        value,
+        cell: `<td class="num${candidate.id === metric.id ? ' rank-metric' : ''}">${
+          value === null ? '—' : formatCount(value)
+        }</td>`,
+      };
+    });
+    const metricCells = values.map((entry) => entry.cell).join('');
+    const dataAttrs = values
+      .map(
+        (entry, i) =>
+          `data-${BOOK_METRIC_SORT_ATTRIBUTES[BOOK_METRICS[i].id]}="${entry.value === null ? '' : entry.value}"`,
+      )
+      .join(' ');
+    const avgRating = book.avgRating === null ? '—' : book.avgRating.toFixed(2);
+    return `<tr data-book-id="${escapeHtml(book.id)}" ${dataAttrs} data-avg-rating="${
+      book.avgRating === null ? '' : book.avgRating.toFixed(2)
+    }"><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td>${author}</td>${workCell}${metricCells}<td class="num">${avgRating}</td></tr>`;
   });
   const workHead = showWorkId ? '<th>Work ID</th>' : '';
+  const metricHeads = BOOK_METRICS.map((candidate) =>
+    sortableHead(candidate.id, candidate.label, candidate.id === metric.id),
+  ).join('');
   return [
-    '<table>',
-    `<thead><tr><th class="num">#</th><th>Title</th><th>Author</th>${workHead}<th class="num">${escapeHtml(metric.label)}</th></tr></thead>`,
+    `<table id="top-books-table" data-default-sort="${metric.id}">`,
+    `<thead><tr><th class="num">#</th><th>Title</th><th>Author</th>${workHead}${metricHeads}${sortableHead(
+      'avgRating',
+      'Avg rating',
+    )}</tr></thead>`,
     '<tbody>',
     rows.join('\n'),
     '</tbody>',
     '</table>',
   ].join('\n');
 }
+
+export const BOOK_METRIC_SORT_SCRIPT = `
+(function () {
+  var table = document.querySelector('#top-books-table');
+  if (!table) return;
+  var tbody = table.querySelector('tbody');
+  if (!tbody) return;
+  var rows = Array.prototype.slice.call(tbody.rows);
+  var key = table.getAttribute('data-default-sort') || 'ratings';
+  var dir = 'desc';
+  var dataAttrs = ${JSON.stringify(BOOK_METRIC_SORT_ATTRIBUTES)};
+  function value(row, field) {
+    var raw = row.getAttribute('data-' + dataAttrs[field]);
+    return raw === null || raw === '' ? null : Number(raw);
+  }
+  function bookId(row) { return row.getAttribute('data-book-id') || ''; }
+  function refresh() {
+    Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+      var field = button.getAttribute('data-sort');
+      var arrow = button.querySelector('.sort-arrow');
+      if (arrow) arrow.textContent = field === key ? (dir === 'asc' ? '\\u2191' : '\\u2193') : '';
+    });
+  }
+  function apply(field, direction) {
+    key = field;
+    dir = direction;
+    rows.sort(function (a, b) {
+      var av = value(a, field);
+      var bv = value(b, field);
+      if (av === null && bv !== null) return 1;
+      if (bv === null && av !== null) return -1;
+      if (av !== null && bv !== null && av !== bv) {
+        return (av < bv ? -1 : 1) * (direction === 'asc' ? 1 : -1);
+      }
+      return bookId(a).localeCompare(bookId(b));
+    });
+    rows.forEach(function (row) { tbody.appendChild(row); });
+    refresh();
+  }
+  Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+    button.addEventListener('click', function () {
+      var field = button.getAttribute('data-sort');
+      apply(field, field === key && dir === 'desc' ? 'asc' : 'desc');
+    });
+  });
+  refresh();
+})();
+`.trim();
 
 export function renderBookMetricPage(scope: BookScope, metric: BookMetric, acc: ScopeAccumulator, limit: number): string {
   const metricAcc = acc.metrics[metric.id];
@@ -1463,12 +1949,19 @@ export function renderBookMetricPage(scope: BookScope, metric: BookMetric, acc: 
 export function renderDerivedTable(heap: DerivedBook[], report: DerivedReport, showWorkId: boolean): string {
   if (heap.length === 0) return '<p>No books matched this report.</p>';
 
+  // The distribution-stat reports (skewness/variance/kurtosis) show the source
+  // edition's average rating instead of its Work ID. Other derived reports keep
+  // the scope-driven Work ID column.
+  const isDistributionStat =
+    report.kind === 'skewness' || report.kind === 'variance' || report.kind === 'kurtosis';
+  const showWorkIdColumn = showWorkId && !isDistributionStat;
+
   const books = [...heap].sort((a, b) => compareDerivedWorstFirst(b, a, report.direction));
   const rows = books.map((book, index) => {
     const title = escapeHtml(book.title || book.id);
     const href = `https://www.goodreads.com/book/show/${encodeURIComponent(book.id)}`;
     const author = renderAuthorLink(book.author, book.authorId);
-    const workCell = showWorkId
+    const workCell = showWorkIdColumn
       ? `<td>${
           book.workId
             ? `<a href="https://www.goodreads.com/work/editions/${encodeURIComponent(book.workId)}" target="_blank" rel="noopener noreferrer">${escapeHtml(book.workId)}</a>`
@@ -1476,15 +1969,19 @@ export function renderDerivedTable(heap: DerivedBook[], report: DerivedReport, s
         }</td>`
       : '';
     const valueCell = `<td class="num">${formatDerivedValue(report.kind, book.value)}</td>`;
+    const avgRatingCell = isDistributionStat
+      ? `<td class="num">${book.avgRating === null || book.avgRating === undefined ? '—' : book.avgRating.toFixed(2)}</td>`
+      : '';
     const reviewsCell =
       report.kind === 'review-ratio' ? `<td class="num">${formatCount(book.reviews)}</td>` : '';
-    return `<tr><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td>${author}</td>${workCell}${valueCell}${reviewsCell}<td class="num">${formatCount(book.ratings)}</td></tr>`;
+    return `<tr><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td>${author}</td>${workCell}${valueCell}${avgRatingCell}${reviewsCell}<td class="num">${formatCount(book.ratings)}</td></tr>`;
   });
-  const workHead = showWorkId ? '<th>Work ID</th>' : '';
+  const workHead = showWorkIdColumn ? '<th>Work ID</th>' : '';
+  const avgRatingHead = isDistributionStat ? '<th class="num">Avg rating</th>' : '';
   const reviewsHead = report.kind === 'review-ratio' ? '<th class="num">Reviews</th>' : '';
   return [
     '<table>',
-    `<thead><tr><th class="num">#</th><th>Title</th><th>Author</th>${workHead}<th class="num">${escapeHtml(report.valueLabel)}</th>${reviewsHead}<th class="num"># ratings</th></tr></thead>`,
+    `<thead><tr><th class="num">#</th><th>Title</th><th>Author</th>${workHead}<th class="num">${escapeHtml(report.valueLabel)}</th>${avgRatingHead}${reviewsHead}<th class="num"># ratings</th></tr></thead>`,
     '<tbody>',
     rows.join('\n'),
     '</tbody>',
@@ -1628,19 +2125,24 @@ export function sortListRows(rows: ListRow[], report: ListReport): ListRow[] {
 export function aggregateListCreators(rows: ListRow[]): ListCreatorRow[] {
   const creators = new Map<string, ListCreatorRow>();
   for (const row of rows) {
-    if (!row.creatorId) continue;
-    let creator = creators.get(row.creatorId);
+    // Deleted users have no creator_id; group those rows by the plain-text
+    // name from the list meta line so they still get a single ranked row.
+    // Older scrapes left the name NULL on some of those lists; Goodreads still
+    // labels them "deleted user", so fold them into the same row.
+    const name = row.creatorName || (row.creatorId ? '' : 'deleted user');
+    const key = row.creatorId || `name:${name}`;
+    let creator = creators.get(key);
     if (!creator) {
       creator = {
         creatorId: row.creatorId,
-        creatorName: row.creatorName || '',
+        creatorName: name,
         numLists: 0,
         numBooks: 0,
         numVoters: 0,
         numLikes: 0,
         hasLikes: false,
       };
-      creators.set(row.creatorId, creator);
+      creators.set(key, creator);
     }
     creator.numLists++;
     creator.numBooks += row.numBooks;
@@ -1657,8 +2159,13 @@ export function aggregateListCreators(rows: ListRow[]): ListCreatorRow[] {
 export function sortListCreators(creators: ListCreatorRow[]): ListCreatorRow[] {
   return [...creators].sort((a, b) => {
     if (a.numLists !== b.numLists) return b.numLists - a.numLists;
-    if (a.creatorId === b.creatorId) return 0;
-    return a.creatorId < b.creatorId ? -1 : 1;
+    if (a.creatorId !== b.creatorId) {
+      if (a.creatorId === null) return 1;
+      if (b.creatorId === null) return -1;
+      return a.creatorId < b.creatorId ? -1 : 1;
+    }
+    if (a.creatorName === b.creatorName) return 0;
+    return a.creatorName < b.creatorName ? -1 : 1;
   });
 }
 
@@ -1723,7 +2230,7 @@ export function renderListTable(rows: ListRow[], sortBy: ListSortField): string 
   const labelOf = (field: ListSortField): string =>
     LIST_FIELDS.find((candidate) => candidate.field === field)!.label;
   const sortableHead = (field: ListSortField): string => {
-    const cls = field === 'createdAt' ? '' : ' class="num"';
+    const cls = field === 'createdAt' ? ' class="date"' : ' class="num"';
     return `<th${cls}><button type="button" class="sort-btn" data-sort="${field}">${escapeHtml(labelOf(field))} <span class="sort-arrow" aria-hidden="true"></span></button></th>`;
   };
 
@@ -1738,7 +2245,7 @@ export function renderListTable(rows: ListRow[], sortBy: ListSortField): string 
       const likesValue = row.numLikes === null ? '' : String(row.numLikes);
       const created = row.createdAt ? escapeHtml(row.createdAt) : '—';
       const createdValue = row.createdAt ? escapeHtml(row.createdAt) : '';
-      return `<tr data-list-id="${escapeHtml(row.listId)}" data-books="${row.numBooks}" data-voters="${row.numVoters}" data-likes="${likesValue}" data-created="${createdValue}"><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td class="num">${formatCount(row.numBooks)}</td><td class="num">${formatCount(row.numVoters)}</td><td class="num">${likes}</td><td>${created}</td><td>${creator}</td></tr>`;
+      return `<tr data-list-id="${escapeHtml(row.listId)}" data-books="${row.numBooks}" data-voters="${row.numVoters}" data-likes="${likesValue}" data-created="${createdValue}"><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td class="num">${formatCount(row.numBooks)}</td><td class="num">${formatCount(row.numVoters)}</td><td class="num">${likes}</td><td class="date">${created}</td><td>${creator}</td></tr>`;
     })
     .join('\n');
 
@@ -1817,7 +2324,9 @@ const LIST_CREATOR_SORT_SCRIPT = `
     return raw === null || raw === '' ? null : Number(raw);
   }
   function creatorId(row) {
-    return row.getAttribute('data-creator-id') || '';
+    // Link-less creator rows have an empty id; keep them last on ties, as the
+    // server-side default sort does.
+    return row.getAttribute('data-creator-id') || '~';
   }
   function refresh() {
     Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
@@ -1859,11 +2368,15 @@ export function renderListCreatorTable(creators: ListCreatorRow[]): string {
 
   const body = creators
     .map((creator, index) => {
-      const name = escapeHtml(creator.creatorName || creator.creatorId);
-      const href = `https://www.goodreads.com/list/created/${encodeURIComponent(creator.creatorId)}`;
+      const name = escapeHtml(creator.creatorName || creator.creatorId || '—');
+      // Creator-less lists (deleted users) have no lists-created URL: show the
+      // scraped name as plain text, as the per-list reports do.
+      const creatorCell = creator.creatorId
+        ? `<a href="https://www.goodreads.com/list/created/${encodeURIComponent(creator.creatorId)}" target="_blank" rel="noopener noreferrer">${name}</a>`
+        : name;
       const likes = creator.hasLikes ? formatCount(creator.numLikes) : '—';
       const likesValue = creator.hasLikes ? String(creator.numLikes) : '';
-      return `<tr data-creator-id="${escapeHtml(creator.creatorId)}" data-lists="${creator.numLists}" data-books="${creator.numBooks}" data-voters="${creator.numVoters}" data-likes="${likesValue}"><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${name}</a></td><td class="num">${formatCount(creator.numLists)}</td><td class="num">${formatCount(creator.numBooks)}</td><td class="num">${formatCount(creator.numVoters)}</td><td class="num">${likes}</td></tr>`;
+      return `<tr data-creator-id="${escapeHtml(creator.creatorId || '')}" data-lists="${creator.numLists}" data-books="${creator.numBooks}" data-voters="${creator.numVoters}" data-likes="${likesValue}"><td class="num">${index + 1}</td><td>${creatorCell}</td><td class="num">${formatCount(creator.numLists)}</td><td class="num">${formatCount(creator.numBooks)}</td><td class="num">${formatCount(creator.numVoters)}</td><td class="num">${likes}</td></tr>`;
     })
     .join('\n');
 
@@ -1876,6 +2389,78 @@ export function renderListCreatorTable(creators: ListCreatorRow[]): string {
     '</table>',
   ].join('\n');
 }
+
+export function renderGenreStatsTable(rows: GenreStatRow[], sortBy: GenreSortField): string {
+  if (rows.length === 0) return '<p>No genres matched this report.</p>';
+
+  const sortableHead = (field: GenreSortField): string =>
+    `<th class="num"><button type="button" class="sort-btn" data-sort="${field}">${escapeHtml(
+      GENRE_SORT_FIELDS.find((candidate) => candidate.field === field)!.label,
+    )} <span class="sort-arrow" aria-hidden="true"></span></button></th>`;
+
+  const body = rows
+    .map((row, index) => {
+      const name = escapeHtml(row.name);
+      const tagHref = `https://www.goodreads.com/shelf/show/${encodeURIComponent(row.slug)}`;
+      const genreHref = `https://www.goodreads.com/genres/${encodeURIComponent(row.slug)}`;
+      return `<tr data-genre="${name}" data-books="${row.books}" data-points="${row.points}" data-ratings="${row.ratings}" data-weighted-ratings="${row.weightedRatings}"><td class="num">${index + 1}</td><td>${name} <span class="genre-links">(<a href="${tagHref}" target="_blank" rel="noopener noreferrer">tag</a> · <a href="${genreHref}" target="_blank" rel="noopener noreferrer">genre</a>)</span></td><td class="num">${formatCount(row.books)}</td><td class="num">${formatCount(row.points)}</td><td class="num">${formatCount(row.ratings)}</td><td class="num">${formatCount(row.weightedRatings)}</td></tr>`;
+    })
+    .join('\n');
+
+  const head = GENRE_SORT_FIELDS.map((field) => sortableHead(field.field)).join('');
+  return [
+    `<table id="genre-stats" data-default-sort="${sortBy}">`,
+    `<thead><tr><th class="num">#</th><th>Genre</th>${head}</tr></thead>`,
+    '<tbody>',
+    body,
+    '</tbody>',
+    '</table>',
+  ].join('\n');
+}
+
+export const GENRE_SORT_SCRIPT = `
+(function () {
+  var table = document.querySelector('#genre-stats');
+  if (!table) return;
+  var tbody = table.querySelector('tbody');
+  if (!tbody) return;
+  var rows = Array.prototype.slice.call(tbody.rows);
+  var key = table.getAttribute('data-default-sort') || 'points';
+  var dir = 'desc';
+  var dataAttrs = ${JSON.stringify(GENRE_SORT_ATTRIBUTES)};
+  function value(row, field) {
+    var raw = row.getAttribute('data-' + dataAttrs[field]);
+    return raw === null || raw === '' ? null : Number(raw);
+  }
+  function name(row) { return row.getAttribute('data-genre') || ''; }
+  function refresh() {
+    Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+      var field = button.getAttribute('data-sort');
+      var arrow = button.querySelector('.sort-arrow');
+      if (arrow) arrow.textContent = field === key ? (dir === 'asc' ? '\\u2191' : '\\u2193') : '';
+    });
+  }
+  function apply(field, direction) {
+    key = field;
+    dir = direction;
+    rows.sort(function (a, b) {
+      var av = value(a, field);
+      var bv = value(b, field);
+      if (av !== bv) return (av < bv ? -1 : 1) * (direction === 'asc' ? 1 : -1);
+      return name(a).localeCompare(name(b));
+    });
+    rows.forEach(function (row) { tbody.appendChild(row); });
+    refresh();
+  }
+  Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+    button.addEventListener('click', function () {
+      var field = button.getAttribute('data-sort');
+      apply(field, field === key && dir === 'desc' ? 'asc' : 'desc');
+    });
+  });
+  refresh();
+})();
+`.trim();
 
 // ---------------------------------------------------------------------------
 // List tags (unified list_tags xref)
@@ -1947,6 +2532,374 @@ export function renderTagFirstPagePicksTable(rows: TagFirstPagePickRow[]): strin
   ].join('\n');
 }
 
+// ---------------------------------------------------------------------------
+// Top tags from the /shelf directory snapshot
+// ---------------------------------------------------------------------------
+
+export interface TopTagRow extends ShelfTagDirectoryRow {
+  hasListTag: boolean;
+  // Exact genre match, falling back to a curated genre_tag_xref association.
+  genreName: string | null;
+}
+
+// The snapshot rows already arrive in directory order (book count desc, rank
+// asc). Enrich them with existence flags so the report can link out to the
+// local list-tag and genre catalogs without one query per row.
+export function loadTopTagRows(limit: number = TAG_DIRECTORY_REPORT_LIMIT): TopTagRow[] {
+  const rows = loadShelfTagDirectory(limit);
+  const db = getDb();
+  const listTags = new Set(
+    (db.prepare('SELECT DISTINCT tag_name FROM list_tags').all() as { tag_name: string }[]).map(
+      (row) => String(row.tag_name).toLowerCase(),
+    ),
+  );
+  const genreNames = new Set(
+    (db.prepare('SELECT name FROM genres').all() as { name: string }[]).map((row) => String(row.name).toLowerCase()),
+  );
+  const genreByTag = new Map<string, string>();
+  const xrefs = db
+    .prepare(
+      `SELECT tag_name AS tagName, genre_name AS genreName, kind
+       FROM genre_tag_xref
+       ORDER BY CASE kind WHEN 'exact' THEN 0 ELSE 1 END, genre_name ASC`,
+    )
+    .all() as { tagName: string; genreName: string; kind: string }[];
+  for (const xref of xrefs) {
+    const tag = String(xref.tagName).toLowerCase();
+    if (!genreByTag.has(tag)) genreByTag.set(tag, xref.genreName);
+  }
+
+  return rows.map((row) => {
+    const tag = String(row.tagName).toLowerCase();
+    return {
+      ...row,
+      hasListTag: listTags.has(tag),
+      genreName: genreNames.has(tag) ? tag : genreByTag.get(tag) ?? null,
+    };
+  });
+}
+
+export function renderTopTagIntro(rows: TopTagRow[]): string {
+  const scraped = rows
+    .map((row) => row.scrapedAt)
+    .filter(Boolean)
+    .sort();
+  const stamp = scraped.length > 0 ? ` Snapshot taken ${escapeHtml(formatGeneratedAt(scraped[scraped.length - 1]))}.` : '';
+  return `<p>Top ${formatCount(TAG_DIRECTORY_REPORT_LIMIT)} tags from the Goodreads <code>/shelf</code> directory snapshot, in directory order. Shows the directory rank, advertised # books and scrape date. Shelf links go to Goodreads; list tag and genre links appear only when a matching local entry exists.${stamp}</p>`;
+}
+
+export type TopTagSortField = 'rank' | 'tagName' | 'bookCount' | 'scrapedAt';
+
+export const TOP_TAG_SORT_ATTRIBUTES: Record<TopTagSortField, string> = {
+  rank: 'rank',
+  tagName: 'tag-name',
+  bookCount: 'book-count',
+  scrapedAt: 'scraped-at',
+};
+
+export function renderTopTagTable(rows: TopTagRow[]): string {
+  if (rows.length === 0) {
+    return '<p>No shelf directory snapshot found. Run <code>npm run shelf-tag-directory</code> to capture one.</p>';
+  }
+
+  const sortableHead = (field: TopTagSortField, label: string, numeric = false): string =>
+    `<th${numeric ? ' class="num"' : ''}><button type="button" class="sort-btn" data-sort="${field}">${escapeHtml(
+      label,
+    )} <span class="sort-arrow" aria-hidden="true"></span></button></th>`;
+  const ordered = [...rows].sort(
+    (a, b) => a.rank - b.rank || a.tagName.localeCompare(b.tagName),
+  );
+  const body = ordered
+    .map((row) => {
+      const href = `https://www.goodreads.com/shelf/show/${encodeURIComponent(row.tagName)}`;
+      const links = [
+        `<a href="${href}" target="_blank" rel="noopener noreferrer">shelf</a>`,
+        row.hasListTag
+          ? `<a href="https://www.goodreads.com/list/tag/${encodeURIComponent(row.tagName)}" target="_blank" rel="noopener noreferrer">list tag</a>`
+          : '',
+        row.genreName
+          ? `<a href="https://www.goodreads.com/genres/${encodeURIComponent(row.genreName)}" target="_blank" rel="noopener noreferrer">genre</a>`
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return `<tr data-rank="${row.rank}" data-tag-name="${escapeHtml(
+        row.tagName,
+      )}" data-book-count="${row.bookCount}" data-scraped-at="${escapeHtml(
+        row.scrapedAt,
+      )}"><td class="num">${formatCount(row.rank)}</td><td>${escapeHtml(row.tagName)}</td><td class="num">${formatCount(
+        row.bookCount,
+      )}</td><td class="date">${escapeHtml(row.scrapedAt ? formatGeneratedAt(row.scrapedAt) : '—')}</td><td>${links}</td></tr>`;
+    })
+    .join('\n');
+
+  return [
+    '<table id="top-tags-table" data-default-sort="rank">',
+    `<thead><tr>${sortableHead('rank', '#', true)}${sortableHead('tagName', 'Tag')}${sortableHead(
+      'bookCount',
+      '# books',
+      true,
+    )}${sortableHead('scrapedAt', 'Scraped')}<th>Links</th></tr></thead>`,
+    '<tbody>',
+    body,
+    '</tbody>',
+    '</table>',
+  ].join('\n');
+}
+
+export const TOP_TAG_SORT_SCRIPT = `
+(function () {
+  var table = document.querySelector('#top-tags-table');
+  if (!table) return;
+  var tbody = table.querySelector('tbody');
+  if (!tbody) return;
+  var rows = Array.prototype.slice.call(tbody.rows);
+  var key = table.getAttribute('data-default-sort') || 'rank';
+  var dir = 'asc';
+  var dataAttrs = ${JSON.stringify(TOP_TAG_SORT_ATTRIBUTES)};
+  var numeric = { rank: true, bookCount: true };
+  function value(row, field) {
+    var raw = row.getAttribute('data-' + dataAttrs[field]);
+    if (raw === null || raw === '') return null;
+    return numeric[field] ? Number(raw) : raw;
+  }
+  function refresh() {
+    Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+      var field = button.getAttribute('data-sort');
+      var arrow = button.querySelector('.sort-arrow');
+      if (arrow) arrow.textContent = field === key ? (dir === 'asc' ? '\\u2191' : '\\u2193') : '';
+    });
+  }
+  function apply(field, direction) {
+    key = field;
+    dir = direction;
+    rows.sort(function (a, b) {
+      var av = value(a, field);
+      var bv = value(b, field);
+      if (av === null && bv !== null) return 1;
+      if (bv === null && av !== null) return -1;
+      if (av === null && bv === null) return Number(a.getAttribute('data-rank')) - Number(b.getAttribute('data-rank'));
+      var cmp = numeric[field]
+        ? av - bv
+        : String(av).localeCompare(String(bv));
+      if (cmp !== 0) return (cmp < 0 ? -1 : 1) * (direction === 'asc' ? 1 : -1);
+      return Number(a.getAttribute('data-rank')) - Number(b.getAttribute('data-rank'));
+    });
+    rows.forEach(function (row) { tbody.appendChild(row); });
+    refresh();
+  }
+  Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+    button.addEventListener('click', function () {
+      var field = button.getAttribute('data-sort');
+      apply(field, field === key && dir === 'asc' ? 'desc' : 'asc');
+    });
+  });
+  refresh();
+})();
+`.trim();
+
+// ---------------------------------------------------------------------------
+// Top books per shelf tag (tag_books xref)
+// ---------------------------------------------------------------------------
+
+export interface TagBookRow {
+  id: string;
+  title: string;
+  author: string;
+  authorId: string;
+  ratings: number;
+  avgRating: number | null;
+  // tag_books.shelved for this tag: how many times Goodreads showed the book
+  // as shelved under the tag on the shelf page.
+  shelved: number;
+}
+
+// Membership comes from the tag_books xref; the reported count is this tag's
+// own shelf count, not the book's total number of distinct tags.
+export function loadTagBookReports(
+  tags: string[],
+  limit: number = TAG_BOOK_REPORT_LIMIT,
+): Map<string, TagBookRow[]> {
+  const db = getDb();
+  const byTag = new Map<string, TagBookRow[]>();
+  const select = db.prepare(
+    `SELECT b.id AS id, b.title AS title, b.author AS author, b.author_id AS authorId,
+            b.ratings AS ratings, b.avg_rating AS avgRating, tb.shelved AS shelved
+     FROM tag_books tb
+     JOIN books b ON b.id = tb.book_id
+     WHERE tb.tag_name = ?
+     ORDER BY b.ratings DESC, CAST(b.id AS INTEGER) ASC, b.id ASC
+     LIMIT ?`,
+  );
+  for (const tag of tags) {
+    const rows = select.all(tag, limit) as (Omit<TagBookRow, 'shelved'> & { shelved: number | null })[];
+    const books: TagBookRow[] = rows.map((row) => ({
+      id: String(row.id),
+      title: row.title ?? '',
+      author: row.author ?? '',
+      authorId: row.authorId ?? '',
+      ratings: Number(row.ratings) || 0,
+      avgRating: row.avgRating == null ? null : Number(row.avgRating),
+      shelved: Number(row.shelved) || 0,
+    }));
+    byTag.set(tag, books);
+  }
+  return byTag;
+}
+
+// True top-N by the tag's own shelf count for books carrying each tag, which
+// reproduces the order of https://www.goodreads.com/shelf/show/<tag>. One CTE
+// ranks each tag's xref rows with ROW_NUMBER(), so this is not merely the
+// ratings top-N re-sorted and the 4.5M-row xref is not scanned once per tag.
+export function loadTagBookReportsByTagCount(
+  tags: string[],
+  limit: number = TAG_BOOK_REPORT_LIMIT,
+): Map<string, TagBookRow[]> {
+  const db = getDb();
+  const byTag = new Map<string, TagBookRow[]>(tags.map((tag) => [tag, []]));
+  if (tags.length === 0) return byTag;
+
+  const holes = tags.map(() => '?').join(', ');
+  const rows = db
+    .prepare(
+      `WITH ranked AS (
+         SELECT t.tag_name AS tagName,
+                b.id AS id,
+                b.title AS title,
+                b.author AS author,
+                b.author_id AS authorId,
+                b.ratings AS ratings,
+                b.avg_rating AS avgRating,
+                t.shelved AS shelved,
+                ROW_NUMBER() OVER (
+                  PARTITION BY t.tag_name
+                  ORDER BY t.shelved DESC NULLS LAST, b.ratings DESC,
+                           CAST(b.id AS INTEGER) ASC, b.id ASC
+                ) AS rn
+         FROM tag_books t
+         JOIN books b ON b.id = t.book_id
+         WHERE t.tag_name IN (${holes})
+       )
+       SELECT tagName, id, title, author, authorId, ratings, avgRating, shelved
+       FROM ranked
+       WHERE rn <= ?
+       ORDER BY tagName ASC, rn ASC`,
+    )
+    .all(...tags, limit) as (TagBookRow & { tagName: string })[];
+
+  for (const row of rows) {
+    const books = byTag.get(row.tagName) ?? [];
+    books.push({
+      id: String(row.id),
+      title: row.title ?? '',
+      author: row.author ?? '',
+      authorId: row.authorId ?? '',
+      ratings: Number(row.ratings) || 0,
+      avgRating: row.avgRating == null ? null : Number(row.avgRating),
+      shelved: Number(row.shelved) || 0,
+    });
+    byTag.set(row.tagName, books);
+  }
+  return byTag;
+}
+
+export function renderTagBookIntro(report: TagBookReport): string {
+  const listHref = `https://www.goodreads.com/list/tag/${encodeURIComponent(report.tag)}`;
+  const shelfHref = `https://www.goodreads.com/shelf/show/${encodeURIComponent(report.tag)}`;
+  const metric = report.ranking === 'tagCount' ? 'shelf count for the tag' : 'number of ratings';
+  return `<p>Top ${formatCount(TAG_BOOK_REPORT_LIMIT)} books tagged ${escapeHtml(report.tag)} by ${metric}, from the tag → book xref. Also shown: average rating and how many times each book was shelved under this tag. Browse the <a href="${listHref}" target="_blank" rel="noopener noreferrer">list tag for ${escapeHtml(report.tag)}</a>, <a href="${shelfHref}" target="_blank" rel="noopener noreferrer">shelf tag for ${escapeHtml(report.tag)}</a>, or click a column heading to sort.</p>`;
+}
+
+export const TAG_BOOK_SORT_ATTRIBUTES: Record<TagBookSortField, string> = {
+  ratings: 'ratings',
+  avgRating: 'avg-rating',
+  shelved: 'shelved',
+};
+
+export type TagBookSortField = 'ratings' | 'avgRating' | 'shelved';
+
+export function renderTagBookTable(books: TagBookRow[], ranking: TagBookRanking = 'ratings'): string {
+  if (books.length === 0) return '<p>No books matched this report.</p>';
+
+  const byId = (a: TagBookRow, b: TagBookRow): number =>
+    (Number(a.id) || 0) - (Number(b.id) || 0) || a.id.localeCompare(b.id);
+  const ordered = [...books].sort((a, b) =>
+    ranking === 'tagCount'
+      ? b.shelved - a.shelved || b.ratings - a.ratings || byId(a, b)
+      : b.ratings - a.ratings || byId(a, b),
+  );
+  const sortableHead = (field: TagBookSortField, label: string): string =>
+    `<th class="num"><button type="button" class="sort-btn" data-sort="${field}">${escapeHtml(label)} <span class="sort-arrow" aria-hidden="true"></span></button></th>`;
+  const rows = ordered
+    .map((book, index) => {
+      const title = escapeHtml(book.title || book.id);
+      const href = `https://www.goodreads.com/book/show/${encodeURIComponent(book.id)}`;
+      const author = renderAuthorLink(book.author, book.authorId);
+      const avg = book.avgRating === null ? '—' : book.avgRating.toFixed(2);
+      return `<tr data-book-id="${escapeHtml(book.id)}" data-ratings="${book.ratings}" data-avg-rating="${
+        book.avgRating === null ? '' : book.avgRating.toFixed(2)
+      }" data-shelved="${book.shelved}"><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td>${author}</td><td class="num">${formatCount(book.ratings)}</td><td class="num">${avg}</td><td class="num">${formatCount(book.shelved)}</td></tr>`;
+    })
+    .join('\n');
+
+  return [
+    `<table id="tag-books-table" data-default-sort="${ranking === 'tagCount' ? 'shelved' : 'ratings'}">`,
+    `<thead><tr><th class="num">#</th><th>Title</th><th>Author</th>${sortableHead('ratings', 'Ratings')}${sortableHead('avgRating', 'Avg rating')}${sortableHead('shelved', 'Shelved')}</tr></thead>`,
+    '<tbody>',
+    rows,
+    '</tbody>',
+    '</table>',
+  ].join('\n');
+}
+
+export const TAG_BOOK_SORT_SCRIPT = `
+(function () {
+  var table = document.querySelector('#tag-books-table');
+  if (!table) return;
+  var tbody = table.querySelector('tbody');
+  if (!tbody) return;
+  var rows = Array.prototype.slice.call(tbody.rows);
+  var key = table.getAttribute('data-default-sort') || 'ratings';
+  var dir = 'desc';
+  var dataAttrs = ${JSON.stringify(TAG_BOOK_SORT_ATTRIBUTES)};
+  function value(row, field) {
+    var raw = row.getAttribute('data-' + dataAttrs[field]);
+    return raw === null || raw === '' ? null : Number(raw);
+  }
+  function bookId(row) { return row.getAttribute('data-book-id') || ''; }
+  function refresh() {
+    Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+      var field = button.getAttribute('data-sort');
+      var arrow = button.querySelector('.sort-arrow');
+      if (arrow) arrow.textContent = field === key ? (dir === 'asc' ? '\\u2191' : '\\u2193') : '';
+    });
+  }
+  function apply(field, direction) {
+    key = field;
+    dir = direction;
+    rows.sort(function (a, b) {
+      var av = value(a, field);
+      var bv = value(b, field);
+      if (av === null && bv !== null) return 1;
+      if (bv === null && av !== null) return -1;
+      if (av !== null && bv !== null && av !== bv) {
+        return (av < bv ? -1 : 1) * (direction === 'asc' ? 1 : -1);
+      }
+      return bookId(a).localeCompare(bookId(b));
+    });
+    rows.forEach(function (row) { tbody.appendChild(row); });
+    refresh();
+  }
+  Array.prototype.forEach.call(table.querySelectorAll('[data-sort]'), function (button) {
+    button.addEventListener('click', function () {
+      var field = button.getAttribute('data-sort');
+      apply(field, field === key && dir === 'desc' ? 'asc' : 'desc');
+    });
+  });
+  refresh();
+})();
+`.trim();
+
 export function renderAuthorTopBookHistogram(data: AuthorTopBookHistogramData): string {
   const intro = `<p>For each author, take their highest-rated book (by rating count) and bin it. Authors: ${formatCount(data.totalAuthors)} — ${formatCount(data.inAuthorCache)} in author cache, ${formatCount(data.notInAuthorCache)} not.</p>`;
   const body = data.buckets.map((bucket, i) => {
@@ -1970,26 +2923,41 @@ export function renderAuthorTopBookHistogram(data: AuthorTopBookHistogramData): 
 // Highest Rated by Year rendering
 // ---------------------------------------------------------------------------
 
-export function renderYearTable(books: YearBook[], year: number): string {
-  const intro = `<p>Books published in ${year} with at least ${formatCount(YEAR_MIN_RATINGS)} ratings, excluding flagged books. One edition per work (highest-ratings edition kept).</p>`;
+function renderYearTableBody(books: YearBook[], intro: string, ordered: YearBook[]): string {
   if (books.length === 0) return `${intro}\n<p>No books matched this report.</p>`;
 
-  const ordered = [...books].sort((a, b) => compareYearWorstFirst(b, a));
   const rows = ordered.map((book, index) => {
     const title = escapeHtml(book.title || book.id);
     const href = `https://www.goodreads.com/book/show/${encodeURIComponent(book.id)}`;
     const author = renderAuthorLink(book.author, book.authorId);
-    return `<tr><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td>${author}</td><td class="num">${book.avgRating.toFixed(2)}</td><td class="num">${formatCount(book.ratings)}</td><td class="num">${book.year}</td></tr>`;
+    return `<tr><td class="num">${index + 1}</td><td><a href="${href}" target="_blank" rel="noopener noreferrer">${title}</a></td><td>${author}</td><td class="num">${book.avgRating.toFixed(2)}</td><td class="num">${formatCount(book.ratings)}</td></tr>`;
   });
   return [
     intro,
     '<table>',
-    '<thead><tr><th class="num">#</th><th>Title</th><th>Author</th><th class="num">Avg rating</th><th class="num"># ratings</th><th class="num">Published</th></tr></thead>',
+    '<thead><tr><th class="num">#</th><th>Title</th><th>Author</th><th class="num">Avg rating</th><th class="num"># ratings</th></tr></thead>',
     '<tbody>',
     rows.join('\n'),
     '</tbody>',
     '</table>',
   ].join('\n');
+}
+
+function yearBrowseLinks(year: number): string {
+  const listTagHref = `https://www.goodreads.com/list/tag/${year}`;
+  const shelfTagHref = `https://www.goodreads.com/shelf/show/${year}`;
+  const popularHref = `https://www.goodreads.com/book/popular_by_date/${year}`;
+  return `Browse the <a href="${listTagHref}" target="_blank" rel="noopener noreferrer">list tag for ${year}</a>, <a href="${shelfTagHref}" target="_blank" rel="noopener noreferrer">shelf tag for ${year}</a>, and <a href="${popularHref}" target="_blank" rel="noopener noreferrer">most popular books for ${year}</a>.`;
+}
+
+export function renderYearTable(books: YearBook[], year: number): string {
+  const intro = `<p>Books published in ${year} with at least ${formatCount(YEAR_MIN_RATINGS)} ratings, excluding flagged books. One edition per work (highest-ratings edition kept). ${yearBrowseLinks(year)}</p>`;
+  return renderYearTableBody(books, intro, [...books].sort((a, b) => compareYearWorstFirst(b, a)));
+}
+
+export function renderTopRatedYearTable(books: YearBook[], year: number): string {
+  const intro = `<p>English-language works published in ${year}, ordered by number of ratings (most rated first), top ${formatCount(YEAR_REPORT_LIMIT)}. No minimum ratings requirement. One edition per work (highest-ratings edition kept). ${yearBrowseLinks(year)}</p>`;
+  return renderYearTableBody(books, intro, [...books].sort((a, b) => compareTopRatedYearWorstFirst(b, a)));
 }
 
 // ---------------------------------------------------------------------------
@@ -2171,10 +3139,13 @@ function coverageRows(
   }));
 }
 
-// A compact fieldCoverage.sh: per-table column population for the main tables.
+// HTML form of fieldCoverage.ts: one table per report-backed schema table,
+// with cheap aggregate queries only (no 20M-row JSON scan).
 export function loadFieldCoverageRows(): FieldCoverageRow[] {
   const db = getDb();
   const rows: FieldCoverageRow[] = [];
+  const hasTable = (table: string): boolean =>
+    !!db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`).get(table);
 
   const books = db.prepare(`
     SELECT
@@ -2187,7 +3158,13 @@ export function loadFieldCoverageRows(): FieldCoverageRow[] {
       SUM(CASE WHEN series_pos IS NOT NULL THEN 1 ELSE 0 END) AS 'series_pos',
       SUM(CASE WHEN genres IS NOT NULL AND genres != '' AND genres != '[]' THEN 1 ELSE 0 END) AS 'genres',
       SUM(CASE WHEN tags IS NOT NULL AND tags != '' AND tags != '{}' THEN 1 ELSE 0 END) AS 'tags',
-      SUM(CASE WHEN work_id IS NOT NULL AND work_id != '' THEN 1 ELSE 0 END) AS 'work_id'
+      SUM(CASE WHEN work_id IS NOT NULL AND work_id != '' THEN 1 ELSE 0 END) AS 'work_id',
+      SUM(CASE WHEN is_bad IS NOT NULL THEN 1 ELSE 0 END) AS 'is_bad',
+      SUM(CASE WHEN requires_auth IS NOT NULL THEN 1 ELSE 0 END) AS 'requires_auth',
+      SUM(CASE WHEN fail_count IS NOT NULL THEN 1 ELSE 0 END) AS 'fail_count',
+      SUM(CASE WHEN is_work_rep IS NOT NULL THEN 1 ELSE 0 END) AS 'is_work_rep',
+      SUM(CASE WHEN first_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'first_seen',
+      SUM(CASE WHEN last_updated IS NOT NULL THEN 1 ELSE 0 END) AS 'last_updated'
     FROM books
   `).get() as Record<string, number>;
   const booksDistinct = db.prepare(`
@@ -2196,7 +3173,11 @@ export function loadFieldCoverageRows(): FieldCoverageRow[] {
       COUNT(DISTINCT avg_rating) AS 'avg_rating',
       COUNT(DISTINCT pages) AS 'pages',
       COUNT(DISTINCT series_pos) AS 'series_pos',
-      COUNT(DISTINCT work_id) AS 'work_id'
+      COUNT(DISTINCT work_id) AS 'work_id',
+      COUNT(DISTINCT is_bad) AS 'is_bad',
+      COUNT(DISTINCT requires_auth) AS 'requires_auth',
+      COUNT(DISTINCT fail_count) AS 'fail_count',
+      COUNT(DISTINCT is_work_rep) AS 'is_work_rep'
     FROM books
   `).get() as Record<string, number>;
   rows.push(...coverageRows('books', Number(books.total), books, booksDistinct));
@@ -2210,13 +3191,175 @@ export function loadFieldCoverageRows(): FieldCoverageRow[] {
       SUM(CASE WHEN num_shelves IS NOT NULL AND num_shelves > 0 THEN 1 ELSE 0 END) AS 'num_shelves',
       SUM(CASE WHEN slug IS NOT NULL AND slug != '' THEN 1 ELSE 0 END) AS 'slug',
       SUM(CASE WHEN catalog_pages IS NOT NULL AND catalog_pages > 0 THEN 1 ELSE 0 END) AS 'catalog_pages',
-      SUM(CASE WHEN source IS NOT NULL AND source != '' THEN 1 ELSE 0 END) AS 'source'
+      SUM(CASE WHEN source IS NOT NULL AND source != '' THEN 1 ELSE 0 END) AS 'source',
+      SUM(CASE WHEN ratings_rate IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_rate',
+      SUM(CASE WHEN first_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'first_seen',
+      SUM(CASE WHEN last_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'last_seen'
     FROM authors
   `).get() as Record<string, number>;
   const authorDistinct = db.prepare(`
     SELECT COUNT(DISTINCT slug) AS 'slug', COUNT(DISTINCT source) AS 'source' FROM authors
   `).get() as Record<string, number>;
   rows.push(...coverageRows('authors', Number(authors.total), authors, authorDistinct));
+
+  const authorSlugs = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN author_id IS NOT NULL THEN 1 ELSE 0 END) AS 'author_id',
+      SUM(CASE WHEN slug IS NOT NULL AND slug != '' THEN 1 ELSE 0 END) AS 'slug',
+      SUM(CASE WHEN name IS NOT NULL AND name != '' THEN 1 ELSE 0 END) AS 'name',
+      SUM(CASE WHEN first_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'first_seen',
+      SUM(CASE WHEN last_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'last_seen'
+    FROM author_slugs
+  `).get() as Record<string, number>;
+  const authorSlugsDistinct = db.prepare(`
+    SELECT COUNT(DISTINCT author_id) AS 'author_id', COUNT(DISTINCT slug) AS 'slug' FROM author_slugs
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('author_slugs', Number(authorSlugs.total), authorSlugs, authorSlugsDistinct));
+
+  const authorFailures = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN author_id IS NOT NULL THEN 1 ELSE 0 END) AS 'author_id',
+      SUM(CASE WHEN fail_count IS NOT NULL THEN 1 ELSE 0 END) AS 'fail_count',
+      SUM(CASE WHEN last_error IS NOT NULL AND last_error != '' THEN 1 ELSE 0 END) AS 'last_error',
+      SUM(CASE WHEN first_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'first_seen',
+      SUM(CASE WHEN last_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'last_seen'
+    FROM author_scrape_failures
+  `).get() as Record<string, number>;
+  const authorFailuresDistinct = db.prepare(`
+    SELECT COUNT(DISTINCT author_id) AS 'author_id' FROM author_scrape_failures
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('author_scrape_failures', Number(authorFailures.total), authorFailures, authorFailuresDistinct));
+
+  const tagBooks = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN tag_name IS NOT NULL THEN 1 ELSE 0 END) AS 'tag_name',
+      SUM(CASE WHEN book_id IS NOT NULL THEN 1 ELSE 0 END) AS 'book_id',
+      SUM(CASE WHEN position IS NOT NULL THEN 1 ELSE 0 END) AS 'position',
+      SUM(CASE WHEN shelved IS NOT NULL THEN 1 ELSE 0 END) AS 'shelved',
+      SUM(CASE WHEN harvested_at IS NOT NULL THEN 1 ELSE 0 END) AS 'harvested_at'
+    FROM tag_books
+  `).get() as Record<string, number>;
+  const tagBooksDistinct = db.prepare(`
+    SELECT
+      COUNT(DISTINCT tag_name) AS 'tag_name',
+      COUNT(DISTINCT book_id) AS 'book_id',
+      COUNT(DISTINCT harvested_at) AS 'harvested_at'
+    FROM tag_books
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('tag_books', Number(tagBooks.total), tagBooks, tagBooksDistinct));
+
+  const workTagBooks = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN work_id IS NOT NULL THEN 1 ELSE 0 END) AS 'work_id',
+      SUM(CASE WHEN tag_name IS NOT NULL THEN 1 ELSE 0 END) AS 'tag_name',
+      SUM(CASE WHEN position IS NOT NULL THEN 1 ELSE 0 END) AS 'position',
+      SUM(CASE WHEN shelved IS NOT NULL THEN 1 ELSE 0 END) AS 'shelved',
+      SUM(CASE WHEN harvested_at IS NOT NULL THEN 1 ELSE 0 END) AS 'harvested_at'
+    FROM work_tag_books
+  `).get() as Record<string, number>;
+  const workTagBooksDistinct = db.prepare(`
+    SELECT
+      COUNT(DISTINCT work_id) AS 'work_id',
+      COUNT(DISTINCT tag_name) AS 'tag_name',
+      COUNT(DISTINCT harvested_at) AS 'harvested_at'
+    FROM work_tag_books
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('work_tag_books', Number(workTagBooks.total), workTagBooks, workTagBooksDistinct));
+
+  const genres = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN member_count IS NOT NULL THEN 1 ELSE 0 END) AS 'member_count',
+      SUM(CASE WHEN first_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'first_seen',
+      SUM(CASE WHEN last_updated IS NOT NULL THEN 1 ELSE 0 END) AS 'last_updated'
+    FROM genres
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('genres', Number(genres.total), genres));
+
+  const genreTagXref = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN genre_name IS NOT NULL THEN 1 ELSE 0 END) AS 'genre_name',
+      SUM(CASE WHEN tag_name IS NOT NULL THEN 1 ELSE 0 END) AS 'tag_name',
+      SUM(CASE WHEN kind IS NOT NULL AND kind != '' THEN 1 ELSE 0 END) AS 'kind'
+    FROM genre_tag_xref
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('genre_tag_xref', Number(genreTagXref.total), genreTagXref));
+
+  const tagStats = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN last_page_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'last_page_seen',
+      SUM(CASE WHEN estimate_page IS NOT NULL THEN 1 ELSE 0 END) AS 'estimate_page',
+      SUM(CASE WHEN estimate_source IS NOT NULL AND estimate_source != '' THEN 1 ELSE 0 END) AS 'estimate_source',
+      SUM(CASE WHEN updated IS NOT NULL THEN 1 ELSE 0 END) AS 'updated'
+    FROM tag_stats
+  `).get() as Record<string, number>;
+  const tagStatsDistinct = db.prepare(`
+    SELECT COUNT(DISTINCT estimate_source) AS 'estimate_source' FROM tag_stats
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('tag_stats', Number(tagStats.total), tagStats, tagStatsDistinct));
+
+  const shelfDirectory = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN tag_name IS NOT NULL THEN 1 ELSE 0 END) AS 'tag_name',
+      SUM(CASE WHEN book_count IS NOT NULL THEN 1 ELSE 0 END) AS 'book_count',
+      SUM(CASE WHEN "rank" IS NOT NULL THEN 1 ELSE 0 END) AS 'rank',
+      SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS 'scraped_at'
+    FROM shelf_tag_directory
+  `).get() as Record<string, number>;
+  const shelfDirectoryDistinct = db.prepare(`
+    SELECT COUNT(DISTINCT tag_name) AS 'tag_name' FROM shelf_tag_directory
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('shelf_tag_directory', Number(shelfDirectory.total), shelfDirectory, shelfDirectoryDistinct));
+
+  const popularByDate = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN page_key IS NOT NULL AND page_key != '' THEN 1 ELSE 0 END) AS 'page_key',
+      SUM(CASE WHEN book_id IS NOT NULL THEN 1 ELSE 0 END) AS 'book_id',
+      SUM(CASE WHEN "rank" IS NOT NULL THEN 1 ELSE 0 END) AS 'rank',
+      SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) AS 'title',
+      SUM(CASE WHEN work_id IS NOT NULL AND work_id != '' THEN 1 ELSE 0 END) AS 'work_id',
+      SUM(CASE WHEN stats_ratings IS NOT NULL THEN 1 ELSE 0 END) AS 'stats_ratings',
+      SUM(CASE WHEN stats_reviews IS NOT NULL THEN 1 ELSE 0 END) AS 'stats_reviews',
+      SUM(CASE WHEN stats_avg IS NOT NULL THEN 1 ELSE 0 END) AS 'stats_avg',
+      SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS 'scraped_at'
+    FROM popular_by_date_book
+  `).get() as Record<string, number>;
+  const popularByDateDistinct = db.prepare(`
+    SELECT
+      COUNT(DISTINCT page_key) AS 'page_key',
+      COUNT(DISTINCT book_id) AS 'book_id'
+    FROM popular_by_date_book
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('popular_by_date_book', Number(popularByDate.total), popularByDate, popularByDateDistinct));
+
+  const tagTailScrapes = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN tag_name IS NOT NULL THEN 1 ELSE 0 END) AS 'tag_name',
+      SUM(CASE WHEN last_scraped IS NOT NULL THEN 1 ELSE 0 END) AS 'last_scraped',
+      SUM(CASE WHEN last_page_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'last_page_seen',
+      SUM(CASE WHEN books_added IS NOT NULL THEN 1 ELSE 0 END) AS 'books_added',
+      SUM(CASE WHEN authors_added IS NOT NULL THEN 1 ELSE 0 END) AS 'authors_added'
+    FROM tag_tail_scrapes
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('tag_tail_scrapes', Number(tagTailScrapes.total), tagTailScrapes));
+
+  const tagTailMonitor = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN run_started_at IS NOT NULL THEN 1 ELSE 0 END) AS 'run_started_at',
+      SUM(CASE WHEN run_completed IS NOT NULL THEN 1 ELSE 0 END) AS 'run_completed'
+    FROM tag_tail_monitor_state
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('tag_tail_monitor_state', Number(tagTailMonitor.total), tagTailMonitor));
 
   const bookPage = db.prepare(`
     SELECT
@@ -2231,9 +3374,18 @@ export function loadFieldCoverageRows(): FieldCoverageRow[] {
       SUM(CASE WHEN series IS NOT NULL THEN 1 ELSE 0 END) AS 'series',
       SUM(CASE WHEN reviews_count IS NOT NULL THEN 1 ELSE 0 END) AS 'reviews_count',
       SUM(CASE WHEN ratings_dist IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_dist',
+      SUM(CASE WHEN ratings_mean IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_mean',
+      SUM(CASE WHEN ratings_median IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_median',
+      SUM(CASE WHEN ratings_mode IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_mode',
+      SUM(CASE WHEN ratings_variance IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_variance',
+      SUM(CASE WHEN ratings_stddev IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_stddev',
+      SUM(CASE WHEN ratings_skewness IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_skewness',
+      SUM(CASE WHEN ratings_kurtosis IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_kurtosis',
+      SUM(CASE WHEN ratings_total IS NOT NULL THEN 1 ELSE 0 END) AS 'ratings_total',
       SUM(CASE WHEN currently_reading IS NOT NULL THEN 1 ELSE 0 END) AS 'currently_reading',
       SUM(CASE WHEN to_read IS NOT NULL THEN 1 ELSE 0 END) AS 'to_read',
-      SUM(CASE WHEN editions_count IS NOT NULL THEN 1 ELSE 0 END) AS 'editions_count'
+      SUM(CASE WHEN editions_count IS NOT NULL THEN 1 ELSE 0 END) AS 'editions_count',
+      SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS 'scraped_at'
     FROM book_page
   `).get() as Record<string, number>;
   const bookPageDistinct = db.prepare(`
@@ -2245,44 +3397,49 @@ export function loadFieldCoverageRows(): FieldCoverageRow[] {
   `).get() as Record<string, number>;
   rows.push(...coverageRows('book_page', Number(bookPage.total), bookPage, bookPageDistinct));
 
-  const tagBooks = db.prepare(`
+  const browserScrape = db.prepare(`
     SELECT
       COUNT(*) AS total,
-      SUM(CASE WHEN position IS NOT NULL THEN 1 ELSE 0 END) AS 'position',
-      SUM(CASE WHEN shelved IS NOT NULL THEN 1 ELSE 0 END) AS 'shelved'
-    FROM tag_books
+      SUM(CASE WHEN status IS NOT NULL THEN 1 ELSE 0 END) AS 'status',
+      SUM(CASE WHEN http IS NOT NULL THEN 1 ELSE 0 END) AS 'http',
+      SUM(CASE WHEN bytes IS NOT NULL THEN 1 ELSE 0 END) AS 'bytes',
+      SUM(CASE WHEN elapsed_ms IS NOT NULL THEN 1 ELSE 0 END) AS 'elapsed_ms',
+      SUM(CASE WHEN error IS NOT NULL AND error != '' THEN 1 ELSE 0 END) AS 'error',
+      SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS 'scraped_at'
+    FROM browser_scrape
   `).get() as Record<string, number>;
-  const tagBooksDistinct = db.prepare(`
-    SELECT COUNT(DISTINCT tag_name) AS 'tag_name', COUNT(DISTINCT book_id) AS 'book_id' FROM tag_books
-  `).get() as Record<string, number>;
-  rows.push(...coverageRows('tag_books', Number(tagBooks.total), tagBooks, tagBooksDistinct));
+  rows.push(...coverageRows('browser_scrape', Number(browserScrape.total), browserScrape));
 
-  const lists = db.prepare(`
-    SELECT
-      COUNT(*) AS total,
-      SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) AS 'title',
-      SUM(CASE WHEN last_count IS NOT NULL THEN 1 ELSE 0 END) AS 'last_count',
-      SUM(CASE WHEN seen_book_ids IS NOT NULL THEN 1 ELSE 0 END) AS 'seen_book_ids',
-      SUM(CASE WHEN ingested IS NOT NULL THEN 1 ELSE 0 END) AS 'ingested',
-      SUM(CASE WHEN discovery_page IS NOT NULL THEN 1 ELSE 0 END) AS 'discovery_page',
-      SUM(CASE WHEN url IS NOT NULL AND url != '' THEN 1 ELSE 0 END) AS 'url'
-    FROM lists
-  `).get() as Record<string, number>;
-  rows.push(...coverageRows('lists', Number(lists.total), lists));
+  // list_walk is created lazily by the browser list walker.
+  if (hasTable('list_walk')) {
+    const listWalk = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) AS 'title',
+        SUM(CASE WHEN status IS NOT NULL THEN 1 ELSE 0 END) AS 'status',
+        SUM(CASE WHEN current_page IS NOT NULL THEN 1 ELSE 0 END) AS 'current_page',
+        SUM(CASE WHEN total_pages IS NOT NULL THEN 1 ELSE 0 END) AS 'total_pages',
+        SUM(CASE WHEN total_books IS NOT NULL THEN 1 ELSE 0 END) AS 'total_books',
+        SUM(CASE WHEN walkable_books IS NOT NULL THEN 1 ELSE 0 END) AS 'walkable_books',
+        SUM(CASE WHEN resume_pos IS NOT NULL THEN 1 ELSE 0 END) AS 'resume_pos',
+        SUM(CASE WHEN scraped_at IS NOT NULL THEN 1 ELSE 0 END) AS 'scraped_at'
+      FROM list_walk
+    `).get() as Record<string, number>;
+    rows.push(...coverageRows('list_walk', Number(listWalk.total), listWalk));
+  }
 
-  const listMeta = db.prepare(`
+  const listScrapes = db.prepare(`
     SELECT
       COUNT(*) AS total,
-      SUM(CASE WHEN num_books IS NOT NULL THEN 1 ELSE 0 END) AS 'num_books',
-      SUM(CASE WHEN num_voters IS NOT NULL THEN 1 ELSE 0 END) AS 'num_voters',
-      SUM(CASE WHEN created_at IS NOT NULL THEN 1 ELSE 0 END) AS 'created_at',
-      SUM(CASE WHEN created_at_raw IS NOT NULL THEN 1 ELSE 0 END) AS 'created_at_raw',
-      SUM(CASE WHEN creator_id IS NOT NULL THEN 1 ELSE 0 END) AS 'creator_id',
-      SUM(CASE WHEN creator_name IS NOT NULL THEN 1 ELSE 0 END) AS 'creator_name',
-      SUM(CASE WHEN num_likes IS NOT NULL THEN 1 ELSE 0 END) AS 'num_likes'
-    FROM list_meta
+      SUM(CASE WHEN list_id IS NOT NULL AND list_id != '' THEN 1 ELSE 0 END) AS 'list_id',
+      SUM(CASE WHEN list_name IS NOT NULL AND list_name != '' THEN 1 ELSE 0 END) AS 'list_name',
+      SUM(CASE WHEN first_scraped IS NOT NULL THEN 1 ELSE 0 END) AS 'first_scraped',
+      SUM(CASE WHEN last_scraped IS NOT NULL THEN 1 ELSE 0 END) AS 'last_scraped',
+      SUM(CASE WHEN num_scraped IS NOT NULL THEN 1 ELSE 0 END) AS 'num_scraped',
+      SUM(CASE WHEN num_books_scraped IS NOT NULL THEN 1 ELSE 0 END) AS 'num_books_scraped'
+    FROM list_scrapes
   `).get() as Record<string, number>;
-  rows.push(...coverageRows('list_meta', Number(listMeta.total), listMeta));
+  rows.push(...coverageRows('list_scrapes', Number(listScrapes.total), listScrapes));
 
   const listTags = db.prepare(`
     SELECT
@@ -2297,6 +3454,48 @@ export function loadFieldCoverageRows(): FieldCoverageRow[] {
     SELECT COUNT(DISTINCT tag_name) AS 'tag_name', COUNT(DISTINCT list_id) AS 'list_id' FROM list_tags
   `).get() as Record<string, number>;
   rows.push(...coverageRows('list_tags', Number(listTags.total), listTags, listTagsDistinct));
+
+  const lists = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN title IS NOT NULL AND title != '' THEN 1 ELSE 0 END) AS 'title',
+      SUM(CASE WHEN last_count IS NOT NULL THEN 1 ELSE 0 END) AS 'last_count',
+      SUM(CASE WHEN seen_book_ids IS NOT NULL THEN 1 ELSE 0 END) AS 'seen_book_ids',
+      SUM(CASE WHEN ingested IS NOT NULL THEN 1 ELSE 0 END) AS 'ingested',
+      SUM(CASE WHEN discovery_page IS NOT NULL THEN 1 ELSE 0 END) AS 'discovery_page',
+      SUM(CASE WHEN url IS NOT NULL AND url != '' THEN 1 ELSE 0 END) AS 'url'
+    FROM lists
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('lists', Number(lists.total), lists));
+
+  const listTagWalkHistory = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN first_walked IS NOT NULL THEN 1 ELSE 0 END) AS 'first_walked',
+      SUM(CASE WHEN last_walked IS NOT NULL THEN 1 ELSE 0 END) AS 'last_walked',
+      SUM(CASE WHEN num_walks IS NOT NULL THEN 1 ELSE 0 END) AS 'num_walks',
+      SUM(CASE WHEN num_lists IS NOT NULL THEN 1 ELSE 0 END) AS 'num_lists'
+    FROM list_tag_walk_history
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('list_tag_walk_history', Number(listTagWalkHistory.total), listTagWalkHistory));
+
+  const listMeta = db.prepare(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(CASE WHEN num_books IS NOT NULL THEN 1 ELSE 0 END) AS 'num_books',
+      SUM(CASE WHEN num_voters IS NOT NULL THEN 1 ELSE 0 END) AS 'num_voters',
+      SUM(CASE WHEN created_at IS NOT NULL THEN 1 ELSE 0 END) AS 'created_at',
+      SUM(CASE WHEN created_at_raw IS NOT NULL THEN 1 ELSE 0 END) AS 'created_at_raw',
+      SUM(CASE WHEN creator_id IS NOT NULL THEN 1 ELSE 0 END) AS 'creator_id',
+      SUM(CASE WHEN creator_name IS NOT NULL THEN 1 ELSE 0 END) AS 'creator_name',
+      SUM(CASE WHEN num_likes IS NOT NULL THEN 1 ELSE 0 END) AS 'num_likes',
+      SUM(CASE WHEN meta_missing IS NOT NULL THEN 1 ELSE 0 END) AS 'meta_missing',
+      SUM(CASE WHEN is_static IS NOT NULL THEN 1 ELSE 0 END) AS 'is_static',
+      SUM(CASE WHEN first_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'first_seen',
+      SUM(CASE WHEN last_seen IS NOT NULL THEN 1 ELSE 0 END) AS 'last_seen'
+    FROM list_meta
+  `).get() as Record<string, number>;
+  rows.push(...coverageRows('list_meta', Number(listMeta.total), listMeta));
 
   return rows;
 }
@@ -2374,26 +3573,28 @@ export function renderOverallRatingsHistogram(
     rollups.set(subset.key, inclusivePrefix(counts[subset.key]));
   }
 
+  const groupStart = (index: number): string => (index > 0 ? ' group-start' : '');
   const groupHead = RATINGS_HISTOGRAM_SUBSETS.map(
-    (subset) =>
-      `<th colspan="2" class="num" title="${escapeHtml(subset.description)}">${escapeHtml(subset.label)}</th>`,
+    (subset, index) =>
+      `<th colspan="2" class="num${groupStart(index)}" title="${escapeHtml(subset.description)}">${escapeHtml(subset.label)}</th>`,
   ).join('');
   const subHead = RATINGS_HISTOGRAM_SUBSETS.map(
-    () => '<th class="num">#</th><th class="num" title="This bracket and every higher one">↑</th>',
+    (_subset, index) =>
+      `<th class="num${groupStart(index)}">#</th><th class="num" title="This bracket and every higher one">↑</th>`,
   ).join('');
 
   const body = buckets.map((bucket, index) => {
-    const cells = RATINGS_HISTOGRAM_SUBSETS.map((subset) => {
+    const cells = RATINGS_HISTOGRAM_SUBSETS.map((subset, subsetIndex) => {
       const count = counts[subset.key][index] ?? 0;
       const rollup = rollups.get(subset.key)![index] ?? 0;
-      return `<td class="num${count === 0 ? ' zero' : ''}">${formatCount(count)}</td><td class="num${rollup === 0 ? ' zero' : ''}">${formatCount(rollup)}</td>`;
+      return `<td class="num${groupStart(subsetIndex)}${count === 0 ? ' zero' : ''}">${formatCount(count)}</td><td class="num${rollup === 0 ? ' zero' : ''}">${formatCount(rollup)}</td>`;
     }).join('');
     return `<tr><td>${escapeHtml(bucket.label)}</td>${cells}</tr>`;
   });
 
-  const totalCells = RATINGS_HISTOGRAM_SUBSETS.map((subset) => {
+  const totalCells = RATINGS_HISTOGRAM_SUBSETS.map((subset, index) => {
     const total = counts[subset.totalKey];
-    return `<td class="num">${formatCount(total)}</td><td class="num">${formatCount(total)}</td>`;
+    return `<td class="num${groupStart(index)}">${formatCount(total)}</td><td class="num">${formatCount(total)}</td>`;
   }).join('');
 
   return [
@@ -2596,6 +3797,8 @@ table { border-collapse:collapse; width:100%; font-size:0.88rem; }
 th, td { border-bottom:1px solid var(--border); padding:6px 8px; text-align:left; }
 th { position:sticky; top:0; background:#fff; }
 td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+th.group-start, td.group-start { border-left:2px solid #cbd0d8; }
+td.date, th.date { white-space:nowrap; font-variant-numeric:tabular-nums; }
 tbody tr:hover { background:#fafafa; }
 a { color:var(--accent); }
 button { font:inherit; padding:4px 10px; border:1px solid var(--border); background:#fff; border-radius:4px; cursor:pointer; }
@@ -2603,6 +3806,7 @@ button:hover { background:#e9e9ec; }
 .sort-btn { padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; white-space:nowrap; }
 .sort-btn:hover { background:transparent; text-decoration:underline; }
 .sort-arrow { display:inline-block; min-width:0.8em; }
+.rank-metric { font-weight:600; }
 .zero { color:var(--muted); }
 .sort-controls { margin:12px 0; }
 @media (max-width:720px) { .layout { display:block; } .sidebar { width:auto; height:auto; position:static; } main { padding:16px; } }
@@ -2690,10 +3894,12 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
   const accumulators = createAccumulators();
   const pageFrequency = new Map<number, number>();
   const yearHeaps = new Map<number, YearBook[]>();
+  const topRatedYearHeaps = new Map<number, YearBook[]>();
   scanBooks(accumulators, pageFrequency, limit, yearHeaps);
-  scanEnglishWorks(accumulators, limit);
+  scanEnglishWorks(accumulators, limit, topRatedYearHeaps);
   resolveBookTitles(accumulators, yearHeaps);
   scanBookPages(accumulators, limit);
+  resolveBookMetricColumns(accumulators);
 
   for (const scope of BOOK_SCOPES) {
     const acc = accumulators[scope.id];
@@ -2704,6 +3910,7 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
         activeId: `${scope.id}/${metric.id}`,
         rootPrefix: '../',
         content: renderScopeToggle(scope, metric.id) + renderBookMetricPage(scope, metric, acc, limit),
+        script: BOOK_METRIC_SORT_SCRIPT,
       });
     }
     for (const report of DERIVED_REPORTS) {
@@ -2738,6 +3945,18 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
     });
   }
   console.log(chalk.gray(`   Highest Rated by Year: ${YEAR_REPORTS.length} year(s)`));
+
+  console.log(chalk.gray('   Writing top-rated-by-year pages...'));
+  for (const report of TOP_RATED_YEAR_REPORTS) {
+    writePage(path.join(outDir, `${report.id}.html`), {
+      title: report.title,
+      nav,
+      activeId: report.id,
+      rootPrefix: '../',
+      content: renderTopRatedYearTable(topRatedYearHeaps.get(report.year) ?? [], report.year),
+    });
+  }
+  console.log(chalk.gray(`   Top Rated by Year: ${TOP_RATED_YEAR_REPORTS.length} year(s)`));
 
   console.log(chalk.gray('   Scanning titles for title reports...'));
   const titleStats = scanTitles();
@@ -2846,6 +4065,20 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
     console.log(chalk.gray(`   ${report.title}: ${publishers.length} publisher(s)`));
   }
 
+  console.log(chalk.gray('   Loading genres...'));
+  const genreWorks = loadWorksWithGenres(GENRE_MIN_RATINGS, true);
+  const allGenres = aggregateGenreStats(genreWorks);
+  const topGenres = sortGenreStats(allGenres, 'points').slice(0, GENRE_REPORT_LIMIT);
+  writePage(path.join(outDir, `${GENRE_STATS_REPORT.id}.html`), {
+    title: GENRE_STATS_REPORT.title,
+    nav,
+    activeId: GENRE_STATS_REPORT.id,
+    rootPrefix: '../',
+    content: `<p>Based on ${formatCount(allGenres.length)} genres across ${formatCount(genreWorks.length)} works with at least ${formatCount(GENRE_MIN_RATINGS)} ratings. Books score 1 point each; position-weighted points start at 10 for a book's first genre, 9 for its second, and so on. Click a column heading to sort by books, points, ratings, or weighted ratings.</p>\n${renderGenreStatsTable(topGenres, 'points')}`,
+    script: GENRE_SORT_SCRIPT,
+  });
+  console.log(chalk.gray(`   ${GENRE_STATS_REPORT.title}: ${topGenres.length} genre(s)`));
+
   console.log(chalk.gray('   Loading lists...'));
   const listRows = loadListRows();
   const listsWithLikes = listRows.filter((row) => row.numLikes !== null).length;
@@ -2902,6 +4135,18 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
   });
   console.log(chalk.gray(`   ${LIST_TAG_REPORT.title}: ${listTagRows.length} tag(s)`));
 
+  console.log(chalk.gray('   Loading top tags from shelf directory snapshot...'));
+  const topTagRows = loadTopTagRows();
+  writePage(path.join(outDir, `${TAG_DIRECTORY_REPORT.id}.html`), {
+    title: TAG_DIRECTORY_REPORT.title,
+    nav,
+    activeId: TAG_DIRECTORY_REPORT.id,
+    rootPrefix: '../',
+    content: `${renderTopTagIntro(topTagRows)}\n${renderTopTagTable(topTagRows)}`,
+    script: TOP_TAG_SORT_SCRIPT,
+  });
+  console.log(chalk.gray(`   ${TAG_DIRECTORY_REPORT.title}: ${topTagRows.length} tag(s)`));
+
   console.log(chalk.gray('   Loading books on first page of tags...'));
   const firstPagePicks = loadTagFirstPagePicks({ limit: TAG_FIRST_PAGE_LIMIT });
   writePage(path.join(outDir, `${TAG_FIRST_PAGE_REPORT.id}.html`), {
@@ -2912,6 +4157,23 @@ export async function runPublishSite(options: PublishOptions = {}): Promise<void
     content: `<p>Books appearing on the most tag first pages (positions 1–50), based on ${formatCount(firstPagePicks.totalTags)} tags and ${formatCount(firstPagePicks.totalDistinctBooks)} distinct first-page books (${formatCount(firstPagePicks.uncached)} not in cache). Top ${formatCount(firstPagePicks.picks.length)} shown.</p>\n${renderTagFirstPagePicksTable(firstPagePicks.picks)}`,
   });
   console.log(chalk.gray(`   ${TAG_FIRST_PAGE_REPORT.title}: ${firstPagePicks.picks.length} book(s)`));
+
+  console.log(chalk.gray('   Loading top books per tag (by ratings and by # tags)...'));
+  const tagBookRows = loadTagBookReports([...TAG_BOOK_TAGS]);
+  const tagBookRowsByTagCount = loadTagBookReportsByTagCount([...TAG_BOOK_TAGS]);
+  for (const report of TAG_BOOK_REPORTS) {
+    const byTag = report.ranking === 'tagCount' ? tagBookRowsByTagCount : tagBookRows;
+    const books = byTag.get(report.tag) ?? [];
+    writePage(path.join(outDir, `${report.id}.html`), {
+      title: report.title,
+      nav,
+      activeId: report.id,
+      rootPrefix: '../',
+      content: `${renderTagBookIntro(report)}\n${renderTagBookTable(books, report.ranking)}`,
+      script: TAG_BOOK_SORT_SCRIPT,
+    });
+    console.log(chalk.gray(`   ${report.title}: ${books.length} book(s)`));
+  }
 
   console.log(chalk.gray('   Loading author top-book ratings histogram...'));
   const authorTopBookHistogram = loadAuthorTopBookHistogram();

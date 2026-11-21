@@ -317,6 +317,16 @@ export function deleteBook(id: string): boolean {
   return getDb().prepare('DELETE FROM books WHERE id = ?').run(id).changes > 0;
 }
 
+// One author credited on an author-page book row. A multi-author edition links
+// every credit, but only the first link supplies `authorId`; the rest used to be
+// dropped, which left their ids referenced by `books.author_id` with no
+// `authors` row.
+export interface AuthorCredit {
+  id: string;
+  name?: string;
+  slug?: string;
+}
+
 export interface AuthorPageBookRow {
   id: string;
   title: string;
@@ -326,6 +336,7 @@ export interface AuthorPageBookRow {
   avgRating?: string;
   published?: string;
   workId?: string;
+  credits?: AuthorCredit[];
 }
 
 export type AuthorPageMergeOutcome =
@@ -368,8 +379,32 @@ export function computeAuthorPageMerge(existing: CachedBook | undefined, inc: Au
   return { kind: 'update', book: { ...existing, ...patch, lastUpdated: now } };
 }
 
+// Mint every author credited on the page, not just the page owner. A row's
+// `author_id` comes from its first author link, so co-authors on multi-author
+// editions would otherwise be referenced by `books.author_id` but never get an
+// `authors` row — the author-page merge was the one ingestion path that skipped
+// the author sync every other path runs. Reusing `syncAuthorsToCache` keeps the
+// write path non-destructive: an existing row keeps its scraped name/stats and
+// only gets the observed slug refreshed.
+function syncAuthorCreditsFromAuthorPage(books: AuthorPageBookRow[]): void {
+  const seen = new Set<string>();
+  const credits: { author: string; authorId: string; authorSlug: string }[] = [];
+  for (const book of books) {
+    for (const credit of book.credits ?? []) {
+      const id = String(credit.id || '');
+      const name = credit.name?.trim();
+      const slug = credit.slug?.trim();
+      if (!id || !name || !slug || seen.has(id)) continue;
+      seen.add(id);
+      credits.push({ author: name, authorId: id, authorSlug: slug });
+    }
+  }
+  if (credits.length) syncAuthorsToCache(credits, {}, 'author_page_merge');
+}
+
 export function mergeBooksFromAuthorPage(books: AuthorPageBookRow[]): { inserted: number; updated: number; skipped: number } {
   const db = getDb();
+  syncAuthorCreditsFromAuthorPage(books);
   const result = { inserted: 0, updated: 0, skipped: 0 };
   const updateStmt = db.prepare(`
     UPDATE books SET
@@ -619,6 +654,47 @@ export function loadTagStats(tag?: string): TagStatsRow[] {
 // rows already present, including measured last_page_seen values, are kept).
 export function backfillTagPageEstimates(): void {
   getDb().exec(TAG_PAGE_ESTIMATE_BACKFILL_SQL);
+}
+
+// ── Goodreads /shelf directory snapshot ───────────────────────────
+// Separates the directory's advertised "# books" count and popularity rank
+// from our crawl bookkeeping (tag_stats) and the different /genres/list counts
+// (genres.member_count). One row per tag, refreshed on each directory scrape.
+
+export interface ShelfTagDirectoryRow {
+  tagName: string;
+  bookCount: number;
+  rank: number;
+  scrapedAt: string;
+}
+
+export function upsertShelfTagDirectory(rows: ShelfTagDirectoryRow[]): void {
+  const db = getDb();
+  if (rows.length === 0) return;
+  const stmt = db.prepare(`
+    INSERT INTO shelf_tag_directory (tag_name, book_count, rank, scraped_at)
+    VALUES (@tagName, @bookCount, @rank, @scrapedAt)
+    ON CONFLICT(tag_name) DO UPDATE SET
+      book_count = excluded.book_count,
+      rank = excluded.rank,
+      scraped_at = excluded.scraped_at
+  `);
+  for (const row of rows) {
+    const tagName = row.tagName.trim().toLowerCase();
+    if (!tagName) continue;
+    stmt.run({ tagName, bookCount: row.bookCount, rank: row.rank, scrapedAt: row.scrapedAt });
+  }
+}
+
+export function loadShelfTagDirectory(limit = 1000): ShelfTagDirectoryRow[] {
+  return getDb()
+    .prepare(
+      `SELECT tag_name AS tagName, book_count AS bookCount, rank, scraped_at AS scrapedAt
+       FROM shelf_tag_directory
+       ORDER BY book_count DESC, rank ASC
+       LIMIT ?`,
+    )
+    .all(limit) as ShelfTagDirectoryRow[];
 }
 
 // ── List scrapes ────────────────────────────────────────────────

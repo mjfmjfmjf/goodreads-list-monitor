@@ -212,7 +212,7 @@ describe('runListMetaBackfill', () => {
     expect(getDb().prepare('SELECT 1 FROM list_meta WHERE list_id = ?').get('9')).toBeUndefined();
   });
 
-  it('counts and skips a dead list instead of aborting', async () => {
+  it('marks a dead list terminal so the next run does not re-queue it', async () => {
     scrapeRow('9', '2026-01-01T00:00:00.000Z');
 
     const results = await runListMetaBackfill({
@@ -222,8 +222,27 @@ describe('runListMetaBackfill', () => {
     });
 
     expect(results).toEqual([]);
-    expect(getDb().prepare('SELECT 1 FROM list_meta WHERE list_id = ?').get('9')).toBeUndefined();
-    expect(selectListsMissingMeta()).toEqual(['9']);
+    const row = getDb().prepare('SELECT meta_missing FROM list_meta WHERE list_id = ?').get('9') as any;
+    expect(row.meta_missing).toBe(1);
+    expect(selectListsMissingMeta()).toEqual([]);
+  });
+
+  it('waits between lists on success and on 404 failures', async () => {
+    scrapeRow('9', '2026-01-01T00:00:00.000Z');
+    scrapeRow('10', '2026-01-02T00:00:00.000Z');
+    scrapeRow('11', '2026-01-03T00:00:00.000Z');
+    const wait = vi.fn(async () => {});
+
+    await runListMetaBackfill({
+      wait,
+      fetchListPage: async (listId) => {
+        if (listId === '10') return listPageHtml();
+        throw Object.assign(new Error('Request failed with status code 404'), { response: { status: 404 } });
+      },
+    });
+
+    // Pace after list 9 (404) and list 10 (success), but not after the last id.
+    expect(wait).toHaveBeenCalledTimes(2);
   });
 
   it('records a no-metadata page and does not requeue it', async () => {

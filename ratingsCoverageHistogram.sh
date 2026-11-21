@@ -12,4 +12,5 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-npm run ratings-coverage-histogram -- "$@"
+time npm run ratings-coverage-histogram -- "$@"
+date
